@@ -1,0 +1,53 @@
+##################################
+# Car load  language File        #
+##################################
+
+# Once a text file is saved to lang\, it'll be detected by Car load
+# Those are predefined constants, you can't rename them.
+
+
+
+[MAIN]
+TITLE=Re-Volt Car Studio
+LOADING=Loading
+
+
+[CONFIGURATION]
+Message=Welcome to Car Load. Please Select your favorite Language.
+TRANSLATOR=Translated by Kallel A.Y
+Next=&Next >
+Previous=< &Previous
+
+[SELECTFOLDER]
+Message=Select Re-Volt Directory
+Special folders=Special folders
+Drive=Drive
+Next=&Next >
+
+[CARSELECTION]
+body_poly_count=Body Poly Count:
+wheel_poly_count=Wheels Poly Count:
+Selectable=Selectable:
+Timetrial=Timetrial:
+rank=Class:
+Obtain=Obtain:
+Rating=Rating:
+Top_Speed=Top Speed:
+Made_by=Made by:
+View_Readme=View Readme
+memory=memory
+Wheel_Rotation=Wheels Rotation
+Auto_Rotate_car=Auto Rotate Car
+VisitRVL=Visit Re-Volt Live
+Search=Search	
+Approx=The render isn't accurate.
+
+[FINISHCONFIG]
+Message=Thanks! Car Load is now ready to be used!
+Next=&Finish
+
+
+[YESNO]
+Yes= &Yes 
+No= &No
+Confirmation Quit=Do you really want to quit Car load?

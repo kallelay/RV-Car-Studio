@@ -1,0 +1,12 @@
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\bin\Debug\RVStudioComponents.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\bin\Debug\RVStudioComponents.pdb
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\bin\Debug\RVStudioComponents.xml
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\ResolveAssemblyReference.cache
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\CarStudio.mCheckbox.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\CarStudio.Resources.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\RVStudioComponents.vbproj.GenerateResource.Cache
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\RVStudioComponents.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\RVStudioComponents.xml
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\RVStudioComponents.pdb
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\CarStudio.mTextBox.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RVStudioComponents\obj\Debug\CarStudio.mButton.resources

@@ -1,0 +1,644 @@
+Welcome to Parameters Notes v5.2!
+
+See bottom of file for version log and changes from the previous version.
+
+Please note:  The creators of this file are not paid employees of Acclaim or it's software development team.  The idea for this stems from a post to the Re-Volt Forum at RacersPoint which pointed out the need for definitions for this stuff.  Also note:  some things seem to do nothing in the game, those we know of will be marked as such.  If we are unsure of some setting, but are making a reasonable guess, that setting's notes will be marked "*UNSURE*".  If we have left out something that you know, do us a favor and drop us a line.  Please however do not e-mail the whole file - just reference the section to which your tip/comment/whatever concerns.  E-mail us at brgpug@ccsi.com or laserbeams@re-volt.com
+
+The original "Parameters Notes" were created by Rex Reynolds.
+
+A caution about editing these settings:  always keep a back up copy of a working set of parameters just in case you change something that causes the game to crash.  You will need it to reset the game especially if you don't take the precaution of leaving the game set on a different car than the one you are currently working on.  If you run a race/practice/time trial with another car before you exit the game you will minimize the possibility of having a nonrecoverable crash, as the game will default to the previous car rather than the one that caused the crash.  Remember, we warned you, so if you screw it up, it's not our fault.
+
+Coordinate values are based on the Cartesian coordinate system.  Looking at the car from above, with the front of the car pointing up, positive x-values are to the right, positive y-values are away from you, and positive z-values are up.  Exception:  Center of Mass - positive y-values are towards you.
+Re-Volt coordinate values are based on the metric system.  1 Re-Volt unit = .5 centimeters.  1 inch equals approximately 2.5 cm.
+
+Lines which start with ";" (without quotes) are comments in the original file.  Notes sections are set off by "#"'s.  In the notes sections, lines of code in the original file are surrounded by "==="s, and variables are represented as either "#" for a number, "Text" for a text string, or a set value (such as "0") or variables that should not be changed.
+
+Parameters Notes v5 by:
+SuperTard (coordinator), LaserBeams (base notes + revisions), Nairb (added notes + revisions)
+
+----------Begin Notes----------
+
+{
+
+;============================================================
+;============================================================
+; RC Bandit
+;============================================================
+;============================================================
+Name      	"RC Bandit"
+
+
+#############
+***-NOTES-***
+
+===;NameOfCar===
+This is the internal name of the car - it is not displayed.  Sometimes you'll see what car an author based their parameters on here (if they opted not to change it).
+===Name			"NameOfCar"===
+This is the external name of the car - it is displayed as the car name while loading and racing.
+
+#############
+
+
+;====================
+; Model Filenames
+;====================
+
+MODEL 	0 	"cars\rc\body.prm"
+MODEL 	1 	"cars\rc\wheelfl.prm"
+MODEL 	2 	"cars\rc\wheelfr.prm"
+MODEL 	3 	"cars\rc\wheelbl.prm"
+MODEL 	4 	"cars\rc\wheelbr.prm"
+MODEL 	5 	"cars\rc\spring.prm"
+MODEL 	6 	"NONE"
+MODEL 	7 	"NONE"
+MODEL 	8 	"NONE"
+MODEL 	9 	"cars\rc\axle.prm"
+MODEL 	10 	"NONE"
+MODEL 	11 	"NONE"
+MODEL 	12 	"NONE"
+MODEL 	13 	"cars\rc\pin.prm"
+MODEL 	14 	"NONE"
+MODEL 	15 	"NONE"
+MODEL 	16 	"NONE"
+MODEL 	17 	"cars\misc\Aerial.m"
+MODEL 	18 	"cars\misc\AerialT.m"
+TPAGE 	"cars\rc\car.bmp"
+COLL 	"cars\rc\hull.hul"
+EnvRGB 	200 200 200
+
+
+#############
+***-NOTES-***
+
+===MODEL		#	"directory\filename"===
+This is the declaration for each of the models displayed in the game.  "MODEL" is required as is.  "#" is the model number, referenced to by other parts of the parameters.  "directory\filename" is the file (with its path, starting from ..\Re-Volt\) referenced to by that model number.  "directory" usually consists of "cars\", meaning the "X:\...\Re-Volt\cars" directory, and the directory name for that specific car (or "misc" for the antenna/aerial).  "filename" is the name of the file assigned to that model number.  Basically, every model you plan to use to make your car needs to be assigned a ModelNum here.
+===TPAGE		"directory\filename"===
+This is the declaration for the texture map used by the car (must be Windows Bitmap  file, 256x256 pixels).  "TPAGE" is required as is.  "directory\filename" is the file referenced to (again, including its path starting from ..\Re-Volt\).  "directory" usually consists of "cars\", meaning the "X:\...\Re-Volt\cars" directory, and the directory name for that specific car.  "filename" is the name of the texture file.
+===COLL			"directory\filename"===
+This is the declaration for the collision file used by the car.  "COLL" is required as is.  "directory\filename" is the file referenced to.  "directory" usually consists of "cars\", meaning the "X:\...\Re-Volt\cars" directory, and the directory name for that specific car.  "filename" is the name of the .hul file.
+===EnvRGB		# # #===
+This is the declaration for the reflection color used by the car.  "EnvRGB" is required as is.  Each "#" is a value from 0 to 255 (no decimals) that determines the reflection colors for the car body (higher numbers reflect a brighter color).  The first "#" is the red reflection value, the second is the green reflection value, and the third is the blue reflection value.  Note: an EnvRGB number set of equal numbers (I.E. - 156 156 156) will be a neutral (gray) value between pure black (0 0 0) and pure white (255 255 255).
+
+#############
+
+
+
+;====================
+; Stuff mainly for frontend display and car selectability
+;====================
+
+BestTime   	TRUE
+Selectable 	TRUE
+Class      	0 			; Engine type (0=Elec, 1=Glow, 2=Other)
+Obtain     	0 			; Obtain method
+Rating     	0 			; Skill level (rookie, amateur, ...)
+TopEnd     	2860.595215 			; Actual top speed (mph) for frontend bars
+Acc        	6.863463 			; Acceleration rating (empirical)
+Weight     	1.200000 			; Scaled weight (for frontend bars)
+Handling   	90.000000 			; Handling ability (empirical and totally subjective)
+Trans      	0 			; Transmission type (calculate in game anyway...)
+MaxRevs    	0.300000 			; Max Revs (for rev counter)
+
+
+#############
+***-NOTES-***
+
+===BestTime		TRUE/FALSE===
+This may be a toggle that determines whether this car's time can be recorded as a "Best Time".  *UNSURE*
+===Selectable		TRUE/FALSE===
+This determines whether this car can be selected by the user in the car selection screen.  For user-created cars, this should be set to "TRUE".
+===Class		#===
+This is the class for the car.  It is a number from 0 to 2.  0 = Electric, 1 = Glow, 2 = Special.  Electric cars sound like electric cars, and have faster acceleration, but less overall power.  Glow (combustion engine) cars sound like weed whackers, and have slower acceleration, but more power once they get moving.  "Special" cars are basically the same as Glow cars, except Re-Volt displays Special when selecting the car.
+===Obtain		#===
+This determines when the user has access to this car.  It is a number from -1 to 4.  0 = Starting Car, 1 = Cup Cars, 3 = Practice Mode, 4 = Single Race, -1 = Special.  The special cars are not available to the user without using the "carnival" cheat.  For custom cars, this should usually be "0" so anybody can access the car no matter what is checked in the progress table.
+===Rating		#===
+This is the rating for the car.  It is a number from 0 to 4.  0 = Rookie, 1 = Amateur, 2 = Advanced, 3 = Semi-Pro, 4 = Pro.  This should be set to put the car in whatever class it races best with.
+===TopEnd		#===
+This is the car's actual top speed in feet per minute.  It is best to test this in Toytanic or some other really long and flat track.  To convert miles per hour into feet per minute:  multiply MPH by 5280, then divide by 60.  To convert kilometers per hour into feet per minute:  multiply KPH by 3273.6, then divide by 60.  This is only for the frontend display, and does not affect the car.  This is only displayed for default Re-Volt cars, so it doesn't matter for user cars.  Re-Volt displays "???" when selecting a custom car no matter what this value is.
+===Acc			#===
+This is the car's acceleration rating.  Appears to be based on a reverse scale from 0 to 12, with 0 being very high acceleration and 12 being very low acceleration.  May have different bounds than this.  This is only for the frontend display, and does not affect the car.  This is only displayed for default Re-Volt cars, so it doesn't matter for user cars.  Re-Volt displays "???" when selecting a custom car no matter what this value is.  *UNSURE*
+===Weight		#===
+This is the car's total weight in kilograms.  1 kilogram is approximately 2.21 pounds.  For comparison:  R6 Turbo (lightest) weighs about 0.8 kilograms, and Bertha Ballistics (heaviest) weighs about 3 kilograms.  To convert from pounds to kilograms, divide pounds by 2.21.  This is only for the frontend display, and does not affect the car.  This is only displayed for default Re-Volt cars, so it doesn't matter for user cars.  Re-Volt displays "???" when selecting a custom car no matter what this value is.
+===Handling		#===
+This may be the car's percieved handling ability.  Appears to be based on a scale from 0 to 100.  For some unknown reason, this is set to 50 for all cars, except RC Bandit and Sprinter XL.  Best bet:  leave it at 50.  This is not for the frontend display, and does not affect the car.  This is not displayed at all, and seems to have no effects.  *UNSURE*
+===Trans		#===
+This is the car's transmission type.  It is a number ranging from 0 to 2.  0 = 4 wheel drive, 1 = rear wheel drive, 2 = front wheel drive.  This is only for the frontend display, and does not affect the car.  As we gather from experience and from Acclaim's comments in parenthesis, this value is worthless.  Re-Volt figures the transmission type from settings in the "Car Wheel Details" section.  The only reason to change this would be to note for yourself which transmission a car has, because Re-Volt doesn't use this value.
+===MaxRevs		#===
+This appears to have something to do with the "Rev counter" in the lower right of the racing display, but we do not know what it is.  *UNSURE*
+
+#############
+
+
+;====================
+; Handling related stuff
+;====================
+
+SteerRate  	3.000000 			; Rate at which steer angle approaches value from input
+SteerMod   	0.400000 			;
+EngineRate 	4.500000 			; Rate at which Engine voltage approaches set value
+TopSpeed   	33.500000 			; Car's theoretical top speed (not including friction...)
+DownForceMod	2.000000 			; Down force modifier when car on floor
+CoM        	0.000000 -5.000000 1.000000 		; Centre of mass relative to model centre
+Weapon     	0.000000 -32.000000 64.000000 		; Weapon genration offset
+
+
+#############
+***-NOTES-***
+
+===SteerRate		#===
+This is the speed at which the actual turn of the steering wheels on the car approaches the turn of the controlling device (joystick, wheel, gamepad, keyboard).  Lower values make the wheels snap more quickly to where your controller is set, while higher values make the steering wheels turn more sluggishly.
+===SteerMod		#===
+We are unsure what this does.  Best bet:  leave it alone.  *UNSURE*
+===EngineRate		#===
+This is like setting the amount the throttle on the car will stick.  The lower the value, the longer it takes before the car will respond to the throttle input.  Higher values than 4.5 don't really matter.
+===TopSpeed		#===
+This is the car's theoretical top speed in MPH, assuming no friction, weight, etc.  This is usually 1 to 3 MPH over what the actual observed top speed is.  May vary depending on car.  Note:  if a car is NOT 4WD, this value is rarely achieved.
+===DownForceMod		#===
+This is the car's tendency to stick to the floor once put there - kind of like magnetism.  2 seems about average for Re-Volt cars.  Lower values will let the car lift off the track much more easily, and higher values will cause it to stick.  Adjusting this to a slightly higher value can keep the car from rolling, if you're having problems.
+===CoM			# # #===
+Center of Mass relative to car model center.  Basically:  the point in the car's body where the car will rotate around while in midair.  A positive second value moves the CoM up, and a negative value moves it down, unlike everything else.
+===Weapon		# # #===
+Point at which weapons generate from.  Should be above and slightly in front of a car, to keep weapons from hitting the person who fires them.  The default is usually okay, unless the car is "jacked up" or very tall because of major body offset values.
+
+#############
+
+
+;====================
+; Car Body details
+;====================
+
+BODY {		; Start Body
+ModelNum   	0 			; Model Number in above list
+Offset     	0, 0, 0 		; Calculated in game
+Mass       	1.200000
+Inertia    	1050.000000 0.000000 0.000000
+           	0.000000 1200.000000 0.000000
+           	0.000000 0.000000 300.000000
+Gravity		2200 			; No longer used
+Hardness   	0.000000
+Resistance 	0.001000 			; Linear air esistance
+AngRes     	0.001000 			; Angular air resistance
+ResMod     	30.000000 			; Ang air resistnce scale when in air
+Grip       	0.010000 			; Converts downforce to friction value
+StaticFriction 0.800000
+KineticFriction 0.400000
+}     		; End Body
+
+
+#############
+***-NOTES-***
+
+===ModelNum		#===
+The model number in the top list for the body of the car.  -1 means no model, but do not do that for the body, as RV will not work if you do that.
+===Offset		# # #===
+The coordinates to which the car body should be offset.  Usually 0, 0, 0, unless the car is "jacked up" or raised off the ground.  Note: changing this does NOT move the collision boundaries accordingly.  That means that if you offset the body too high above the hull boundaries, it will sink into the ground when flipped over.  The example is the same in x and z directions, too.  If you become skilled with these settings, a body can actually be offset in just the right way to match an existing hull.hul very closely (depending on how similar the shape & size is).  AFAIK nobody does this on purpose yet.
+===Mass			#===
+This is the car's total weight in kilograms.  1 kilogram is approximately 2.21 pounds.  For comparison:  R6 Turbo (lightest) weighs about 0.8 kilograms, and Bertha Ballistics (heaviest) weighs about 3 kilograms.  To convert from pounds to kilograms, divide pounds by 2.21.  This is the value that actually affects car.  Making this negative or too small is a bad idea.  This setting influences acceleration, suspension, turning ability, and other behaviors, so we suggest deciding on a weight early in the tweaking process and sticking with it.
+===Inertia		# 0 0
+			0 # 0
+			0 0 #===
+This is the car's inertia matrix.  The first number is the widest width of the car body in RV-Units, multiplied by 25.  The second number is the car's length in RV-Units, multiplied by 25.  The third number is the car's height in RV-Units, multiplied by 25.  *UNSURE*  (about calculation)  This helps determine the car's willingness to rotate or spin about the respective x, y, or z axis.  Higher values = more inertia (less willing to rotate) and lower values = less inertia (more willing to rotate).  Messing with these values can make a car overly floppy and unstable.  I suggest copying an original Re-Volt car's values and sticking with them.  Pick a car that has stability characteristics that you're looking for.  Note: this only affects a car body's dynamics, not wheel grip or anything like that.
+===Gravity		#===
+It was previously said that this doesn't affect anything.  It does.  After the car "hits" the ground, the lower this is, the longer it will take for the car to get traction on the ground.  A value of 100 causes the car to take about 5 seconds to get traction.  2200 is standard for all default cars.  It is best to keep this at this setting.
+===Hardness		#===
+The car body's "hardness" value.  0 is default.  Higher values make the car act bouncy, or taut, like a drumhead or a fully inflated beach ball.  If too high, the car will bounce extremely far when it hits anything at speed.  Lower values cause the car to recieve small shocks well, but will cause the car body to bounce after hard hits - like a rebounding rubber ball.
+===Resistance		#===
+The car's linear air resistance.  While the car is moving, the car will slow because of air resistance.  .001 is the default, and should be good for most cars.  Higher values will make the car act as if moving in a thicker substance than air.  Does not affect rotation.
+===AngRes		#===
+The car's rotational air resistance.  This the car is airborne, the car will often rotate, roll, flip end over end, or do flat spins.  This value determines the amount of resistance the car will encounter while spinning or turning.  Again, .001 is the default, and should be good for most cars.  Higher values will make the car act as if turning in a thicker substance than air.  High values can also keep the car from rotating at all in the air, which is very unrealistic.  To make the car act more realistically, this should be the same as Resistance and close to the default value.  Does not affect linear air resistance.
+===ResMod		#===
+This is the angular air resistance scale when airborne.  When this value is near the default of 25-30, the car will act like most RV cars in midair.  Higher values will cause the car to rotate more slowly and with less ease while in the air.  Lower values will cause the car to act more realistically, and therefore more erratic.  This is one of the factors Acclaim may have used to "dumb down" the physics of the cars (they made it higher).
+===Grip			#===
+This is the general grip of the car body.  Higher values will cause it to stick to the track better, like a magnet.  Lower values will decrease this friction.
+===StaticFriction	#===
+This is the car body's resistance to movement while not moving.  I.E. if the car is upside-down and stationary and is hit by another car:  if this value is higher, the car will be harder to budge; if it is lower, the car will start moving more easily.  This also controls how much the body sticks to and opposes movement when touching a wall.  Do not make this value close to 0 - very bad idea.  Should be higher than kinetic friction.
+===KineticFriction	#===
+This is the car body's resistance to movement while moving.  I.E. if the car is upside-down and stationary and is hit by another car:  once the car starts moving, lower values will cause the car to slide further before stopping; higher values will cause the car to slide less.  This also controls how much a car is slowed down by grinding against walls.  Do not make this value close to 0 - very bad idea.
+
+#############
+
+
+;====================
+; Car Wheel details
+;====================
+
+WHEEL 0 { 	; Start Wheel
+ModelNum 	1
+Offset1  	-18.000000 7.000000 42.000000
+Offset2  	-4.500000 0.000000 0.000000
+IsPresent   	TRUE
+IsPowered   	TRUE
+IsTurnable  	TRUE
+SteerRatio  	-0.500000
+EngineRatio 	6500.000000
+Radius      	10.000000
+Mass        	0.150000
+Gravity     	2200.000000
+MaxPos      	8.000000
+SkidWidth   	10.000000
+ToeIn       	0.000000
+AxleFriction    	0.020000
+Grip            	0.015000
+StaticFriction  	1.500000
+KineticFriction 	1.450000
+}          	; End Wheel
+
+WHEEL 1 { 	; Start Wheel
+ModelNum 	2
+Offset1  	18.000000 7.000000 42.000000
+Offset2  	4.500000 0.000000 0.000000
+IsPresent   	TRUE
+IsPowered   	TRUE
+IsTurnable  	TRUE
+SteerRatio  	-0.500000
+EngineRatio 	6500.000000
+Radius      	10.000000
+Mass        	0.150000
+Gravity     	2200.000000
+MaxPos      	8.000000
+SkidWidth   	10.000000
+ToeIn       	0.000000
+AxleFriction    	0.020000
+Grip            	0.015000
+StaticFriction  	1.500000
+KineticFriction 	1.450000
+}          	; End Wheel
+
+WHEEL 2 { 	; Start Wheel
+ModelNum 	3
+Offset1  	-18.000000 9.000000 -42.000000
+Offset2  	-6.000000 0.000000 0.000000
+IsPresent   	TRUE
+IsPowered   	TRUE
+IsTurnable  	FALSE
+SteerRatio  	1.000000
+EngineRatio 	6500.000000
+Radius      	10.000000
+Mass        	0.150000
+Gravity     	2200.000000
+MaxPos      	8.000000
+SkidWidth   	10.000000
+ToeIn       	0.000000
+AxleFriction    	0.050000
+Grip            	0.015000
+StaticFriction  	1.500000
+KineticFriction 	1.450000
+}          	; End Wheel
+
+WHEEL 3 { 	; Start Wheel
+ModelNum 	4
+Offset1  	18.000000 9.000000 -42.000000
+Offset2  	6.000000 0.000000 0.000000
+IsPresent   	TRUE
+IsPowered   	TRUE
+IsTurnable  	FALSE
+SteerRatio  	1.000000
+EngineRatio 	6500.000000
+Radius      	10.000000
+Mass        	0.150000
+Gravity     	2200.000000
+MaxPos      	8.000000
+SkidWidth   	10.000000
+ToeIn       	0.000000
+AxleFriction    	0.050000
+Grip            	0.015000
+StaticFriction  	1.500000
+KineticFriction 	1.450000
+}          	; End Wheel
+
+
+#############
+***-NOTES-***
+
+General wheel #'s (can be changed):  0 = front left, 1 = front right, 2 = back left, 3 = back right.
+===ModelNum		#===
+This is the model number used by that wheel, taken from the list at the top of the file.  A model can be used more than once in a parameters file.  -1 means no model.
+===Offset1		# # #===
+Coordinates for the offset of the center of the visible wheel in relation to the car's own XYZ axes.
+===Offset2		# # #===
+Coordinates for the offset of the wheel's collision sphere in relation to the wheel's XYZ coordinates.  Each wheel's collision detection is performed by a sphere, its size determined by the Radius value.  This sphere can be offset with relation to the wheel's visual coordinates.  Moving this sphere farther outwards causes the car to have a wider stance than it appears, though doing this will cause the invisible sphere to run into things when it doesn't look like you're going to and the skid marks won't match.  Moving these forward and back or up and down from the actual wheels is not recommended, but moving them left or right can help.
+===IsPresent		TRUE/FALSE===
+This is a flag to determine whether that wheel will be computed or not.
+===IsPowered		TRUE/FALSE===
+This is a flag to determine whether that wheel receives power from the "engine".
+===IsTurnable		TRUE/FALSE===
+This is a flag to determine whether that wheel is turnable (by steering) or not.
+===SteerRatio		#===
+This is how much that wheel will turn, I.E. its turning range.  This may be a fraction of 180 degrees, as .25 seems to rotate the wheels about 45 degrees.  Should be negative for front wheels, positive for rear wheels.  Left and right wheels should be the same.
+===EngineRatio		#===
+This is how much "oomph" (torque) that wheel will have.  Higher number = more power = higher acceleration.  Left and right should be the same, but often front and back are different.
+===Radius		#===
+A value in RV-Units that determines the radius of the collision sphere for that wheel.  See Offset2.  A sphere is 3 dimensional, so the radius determines the wheel's width as well as its height.  The radius should usually be set the same as the wheel model's radius.  The correct value will prevent the wheel model from sinking into or floating above the ground.  Note: the radius also affects acceleration.  A smaller radius wheel needs less power to turn fast, and a larger radius needs a higher EngineRatio to turn adequately.  I.E. - a car whose wheels have a small radius and a high EngineRatio might spin those wheels uncontrollably fast and will suffer from insufficient tire grip and/or overabundant acceleration.
+===Mass			#===
+How much that wheel weighs, in kilograms.  1 pound = 2.21 kilograms.  Note: changing this value can have adverse effects on handling on the ground and in the air.
+===Gravity		#===
+It was previously said that this doesn't affect anything.  It does.  After the wheel "hits" the ground, the lower this is, the longer it will take for the tire to get traction on the ground.  A value of 100 causes the wheel to take about 5 seconds to get traction.  2200 is standard for all default cars.  It is best to keep this at this setting.  This should be the same for the wheels as it is for the body, but we are unsure about this.  *UNSURE*
+===MaxPos		#===
+This is the maximum vertical displacement of the wheels on their respective "springs."  The maximum displacement is both up and down, so the wheel can move # units in either direction from rest.  Basically, it's the wheel's total vertical travel, divided by 2.
+===SkidWidth		#===
+The width of that wheel's skid marks in RV units.  Should be the same as the width of the tires.  The position of the skids is affected by the Offset2.
+===ToeIn		#===
+We are unsure about this.  "Toe in" generally means the amount a car's wheels will be pointed towards the center axis of the car while the car is standing still.  Increasing this value slightly may allow for better turn-in.  *UNSURE*  (someone, please test)
+===AxleFriction		#===
+This is that wheel's internal resistance to turning.  Should generally be kept fairly low.  Higher values will cause the wheels to stop spinning sooner, and slow the car.
+===Grip			#===
+This is the general grip of the wheel.  Higher values will cause it to stick to the track better, like a magnet.  Lower values will decrease this friction.  We recommend leaving this alone and adjust the tire friction with the two settings below, unless your car is having real problems staying on the ground.
+===StaticFriction	#===
+This is the wheel's resistance to sliding while not moving.  I.E. if the car is stationary and is hit by another car:  if this value is higher, the car will be harder to budge sideways; if it is lower, the car will start sliding sideways more easily.  This also determines how much grip the tires get when you first get on the gas while stopped.  Do not make this value close to 0 - very bad idea.  Should definitely be higher than kinetic friction.
+===KineticFriction	#===
+This is the wheel's resistance to sliding while moving.  I.E. if the car is stationary and is hit by another car:  once the car starts sliding, lower values will cause the car to slide further before stopping; higher values will cause the car to slide less.  Do not make this value close to 0 - very bad idea.
+
+#############
+
+
+;====================
+; Car Spring details
+;====================
+
+SPRING 0 { 	; Start Spring
+ModelNum    	5
+Offset      	-6.000000 -10.000000 41.000000
+Length      	16.000000
+Stiffness   	300.000000
+Damping     	7.000000
+Restitution 	-0.950000
+}           	; End Spring
+
+SPRING 1 { 	; Start Spring
+ModelNum    	5
+Offset      	6.000000 -10.000000 41.000000
+Length      	16.000000
+Stiffness   	300.000000
+Damping     	7.000000
+Restitution 	-0.950000
+}           	; End Spring
+
+SPRING 2 { 	; Start Spring
+ModelNum    	5
+Offset      	-8.000000 -12.000000 -38.000000
+Length      	16.000000
+Stiffness   	300.000000
+Damping     	7.000000
+Restitution 	-0.950000
+}           	; End Spring
+
+SPRING 3 { 	; Start Spring
+ModelNum    	5
+Offset      	8.000000 -12.000000 -38.000000
+Length      	16.000000
+Stiffness   	300.000000
+Damping     	7.000000
+Restitution 	-0.950000
+}           	; End Spring
+
+
+#############
+***-NOTES-***
+
+===ModelNum		#===
+The model number used by the spring/shock model (-1 if none) as listed in the table at top of file.
+===Offset		#===
+Offset from center of car for base of shock absorber (base = point where shock is attached to chassis of car, usually the top).  Only applies to shocks that are displayed.
+===Length		#===
+Only used when shock is displayed.  This is the length of the shock model in RV units from origin (base/top of shock tower) to wheel centerpoint in the 3D modeling program.  If you use an existing shock model, use of the value defined in the original car's spring section is recommended.  The length does not affect handling.  For information on creating your own shock models, see the additional info section below.
+===Stiffness		#===
+How stiff the response from the shock is; i.e. how stiff the spring (constant) is.  The higher the number, the harder the shock is to compress and the less body roll it will have.  R/C equivalent = Spring Stiffness.
+===Damping		#===
+How slowly the shock moves.  Higher damping values cause the shock to move more slowly, and with more resistance.  Lower values cause the shock to move quicker and more easily.  Higher values also cause the car to bounce less, while lower values will let the car bounce.  The more damping a shock has, the more force it can absorb.  If a car has less damping, it will tend to "bottom out" more.  R/C equivalent = piston hole size.
+===Restitution		#===
+Restitution is normally a value from -1 to 0.  This determines how "high" on the shocks the car will sit when sitting still.  If this is set at -1, when the car is sitting still, the shocks would be fully compressed.  If this is set at 0, the shocks would not be compressed at all, so if picked up off the track, the wheels would not drop away from the car.  If set at -.5, the car, when pushed down, would move down on the shocks, and if picked up, the wheels would lower a bit.  Positive values and values less than -1 near 0 may act strangely.  Positive values may make the car bounce - not a good idea.
+
+ADDITIONAL INFO:  Shock absorber models, as drawn in game, stretch according to a wheel's position on its virtual shocks.  The endpoints are fixed at the Offset and the center of the wheel model.  When a shock model is created, the top of a shock should be at the origin, and the bottom of the shock should point in the positive Z direction, or towards the front of the car model.  The endpoint of a shock, or where the wheel center would be located, is some distance away from the origin.  That value should be inserted into the "Length" field.
+
+#############
+
+
+;====================
+; Car Pin details
+;====================
+
+PIN 0 {    	; Start Pin
+ModelNum    	13
+Offset      	0.000000 0.000000 0.000000
+Length      	-1.350000
+}           	; End Pin
+
+PIN 1 {    	; Start Pin
+ModelNum    	13
+Offset      	0.000000 0.000000 0.000000
+Length      	-1.350000
+}           	; End Pin
+
+PIN 2 {    	; Start Pin
+ModelNum    	-1
+Offset      	0.000000 0.000000 0.000000
+Length      	0.000000
+}           	; End Pin
+
+PIN 3 {    	; Start Pin
+ModelNum    	-1
+Offset      	0.000000 0.000000 0.000000
+Length      	0.000000
+}           	; End Pin
+
+
+#############
+***-NOTES-***
+
+===ModelNum		#===
+The model number used by the pin model (-1 if none) as listed in the table at top of file.
+===Offset		#===
+Would normally be offset from center of car for base of pin (base = point where pin is attached to chassis of car, usually the top), but this appears to have no effect in RV.  In Re-Volt, the pin automatically goes through the base point of the shocks/springs.
+===Length		#===
+Only used when pin is displayed.  This is the length multiplier for the pin models as read from the model file.  If the pin has length 10 in the model, a value of -1.5 here would make it 15 units long.  If you use an existing pin model, use of the value defined in the original car's pin section is recommended, unless it needs to be made longer or shorter.  The length does not affect handling.  For information on creating your own pin models, see the additional info section below.
+
+ADDITIONAL INFO:  Pin models, as drawn in game, are stiff, and do not stretch according to a wheel's position on its virtual shocks.  However, they do slide up and down through the point defined as the base of the shock for that wheel.  One endpoint is fixed at the center of the wheel model, and the other is free to float up and down, but only on the line from the center of the wheel to the offset of the shock.  When a pin model is created, the bottom of a pin should be at the origin, and the top of the pin should point in the negative Z direction, or towards the back of the car model.  If this rule is followed, a negative length multiplier should be used to make the pin point up.  If you create it in the opposite direction, a positive length modifier needs to be used.  The length value is a multiplier for the apparent length of the pin in game, see "length" field.
+
+#############
+
+
+;====================
+; Car axle details
+;====================
+
+AXLE 0 {   	; Start Axle
+ModelNum    	9
+Offset      	-7.000000 7.000000 42.000000
+Length      	12.000000
+}           	; End axle
+
+AXLE 1 {   	; Start Axle
+ModelNum    	9
+Offset      	7.000000 7.000000 42.000000
+Length      	12.000000
+}           	; End axle
+
+AXLE 2 {   	; Start Axle
+ModelNum    	9
+Offset      	-7.000000 7.000000 -30.000000
+Length      	12.000000
+}           	; End axle
+
+AXLE 3 {   	; Start Axle
+ModelNum    	9
+Offset      	7.000000 7.000000 -30.000000
+Length      	12.000000
+}           	; End axle
+
+
+#############
+***-NOTES-***
+
+===ModelNum		#===
+The model number used by the axle model (-1 if none) as listed in the table at top of file.
+===Offset		#===
+Offset from center of car for base of axle (base = point where axle is attached to chassis of car, usually the bottom edge of the chassis).  Only applies to axles that are displayed.
+===Length		#===
+Only used when axle is displayed.  This is the length of the axle model in RV units from origin (base, bottom edge of chassis) to wheel centerpoint in the 3D modeling program.  If you use an existing axle model, use of the value defined in the original car's spring section is recommended.  The length does not affect handling.  For information on creating your own axle models, see the additional info section below.
+
+ADDITIONAL INFO:  Axle models, as drawn in game, stretch according to a wheel's position on its virtual shocks.  The endpoints are fixed at the Offset and the center of the wheel model.  When an axle model is created, the base point of the axle should be at the origin, and the end of the axle should point in the negative Y direction, or towards the top of the car model.  The top side of the axle should point in the positive Z direction.  The endpoint of an axle, or where the wheel center would be located, is some distance away from the origin.  That value should be inserted into the "Length" field.
+
+#############
+
+
+;====================
+; Car spinner details
+;====================
+
+SPINNER {   	; Start spinner
+ModelNum    	-1
+Offset      	0.000000 0.000000 0.000000
+Axis        	0.000000 1.000000 0.000000
+AngVel      	0.000000
+}           	; End Spinner
+
+
+#############
+***-NOTES-***
+
+===ModelNum		#===
+This is the model number used by the spinner, taken from the list at the top of the file.  A model can be used more than once in a parameters file.  -1 means no model.
+===Offset		# # #===
+Coordinates for the offset of the center of the spinner in relation to the car's own XYZ axes.
+===Axis			# # #===
+This set of three coordinates defines a point in 3D space with relation to Offset.  If you were to draw a line between the Offset point and the Axis point, the spinner would spin around that line.  For example, if your axis is 0.000000 -1.000000 1.000000, the spinner would spin around a line tilted 45 degrees forward of vertical.
+===AngVel		#===
+This is the angular velocity of the spinner rotation.  A value of 1 means that the spinner will spin once in 1 second.  A value of 2 means 2 rotations in one second, and so forth.  A negative value will make the spinner spin in the opposite direction.
+
+#############
+
+
+;====================
+; Car Aerial details
+;====================
+
+AERIAL {    	; Start Aerial
+SecModelNum 	17
+TopModelNum 	18
+Offset      	-5.000000 -6.000000 -30.000000
+Direction   	0.000000 -1.000000 0.000000
+Length      	20.000000
+Stiffness   	2000.000000
+Damping     	5.500000
+}           	; End Aerial
+
+
+#############
+***-NOTES-***
+
+===SecModelNum		#===
+This is the model number used by the vertical sections of the antenna/aerial, taken from the list at the top of the file.  A model can be used more than once in a parameters file.  -1 means no model.  17 is the default and recommended number.
+===TopModelNum		#===
+This is the model number used by the top of the antenna/aerial, taken from the list at the top of the file.  A model can be used more than once in a parameters file.  -1 means no model.  18 is the default and recommended number.
+===Offset		# # #===
+Coordinates for the offset of the base point of the aerial in relation to the car's own XYZ axes.
+===Direction		# # #===
+This set of three coordinates defines a point in 3D space with relation to Offset.  If you were to draw a line between the Offset point and the Direction point, the aerial would point along that line.  For example, if your direction is 0.000000 -1.000000 -1.000000, the aerial would point through a line tilted 45 degrees backward of vertical.
+===Length		#===
+This is the overall length of the aerial, from base to tip.
+===Stiffness		#===
+This is basically how rigid the aerial is.  Sort of like stiffness for the springs.  Default is usually around 2000.
+===Damping		#===
+Damping is a factor used to slow down the wiggle of the aerial.  a value of 0 will let it wiggle forever, which looks really dumb.  Values near 5 are pretty close to default.
+
+#############
+
+
+;====================
+; Car AI details
+;====================
+
+AI {        	 ;Start AI
+UnderThresh 	64.660004
+UnderRange  	1915.359985
+UnderFront	 	450.000000
+UnderRear   	898.355530
+UnderMax    	0.830000
+OverThresh  	2510.375977
+OverRange   	134.339996
+OverMax     	1.000000
+OverAccThresh  	124.318031
+OverAccRange   	854.917969
+PickupBias     	22936
+BlockBias      	9830
+OvertakeBias   	16383
+Suspension     	22936
+Aggression     	0
+}           	; End AI
+
+}
+
+EF33426
+
+
+#############
+***-NOTES-***
+
+===UnderThresh		#===
+Unknown.
+===UnderRange		#===
+Unknown.
+===UnderFront		#===
+Unknown.
+===UnderRear		#===
+Unknown.
+===UnderMax		#===
+Unknown.
+===OverThresh		#===
+Unknown.
+===OverRange		#===
+Unknown.
+===OverMax		#===
+Unknown.
+===OverAccThresh	#===
+Unknown.
+===OverAccRange		#===
+Unknown.
+===PickupBias		#===
+Unknown.
+===BlockBias		#===
+Unknown.
+===OvertakeBias		#===
+Unknown.
+===Suspension		#===
+Unknown.
+===Aggression		#===
+Unknown.
+
+ADDITIONAL INFO:  The AI (artificial intelligence) parameters are currently unknown.  When we figure this out, v6.0 will be released.  Because *that* is a big deal.
+
+#############
+
+
+----------End Notes----------
+
+Version Log:
+
+Current Version:	v5.2
+Previous Version:	v5.1
+
+Changes from v5.1 to v5.2:
+	It was pointed out that the EnvRGB was defined in the wrong order.  This could be important to newbies, so I fixed it.  Also added "Thanks to" at the end of these descriptions.  Thanks to Rex R.  Author:  LaserBeams
+
+Changes from v5.0 to v5.1:
+	Changed information about the body model number, added info in the AngVel section of the spinner, and beefed up the AI section with "Unknown"'s.  Thanks to Rex R.  Author:  LaserBeamsCar information

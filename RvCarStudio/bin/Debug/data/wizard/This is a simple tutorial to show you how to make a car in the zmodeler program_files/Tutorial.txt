@@ -1,0 +1,14 @@
+@Tori {
+	Author: Gel
+	Title: How to make a car from Scratch in Zmodeler
+}
+
+
+
+	@Tori Image: image001.jpg
+	Click on "create\spline\linestrip".  
+	Then go to the view "right" (one of the side views)
+	@Tori Image: image002.jpg
+	Then click on the little 'X' in the center of the view and move up. 
+	Now u have to create a line of multiple points.
+	(I recommend not using more than 15 points on the top line, it will help cut down on the amount of polies).

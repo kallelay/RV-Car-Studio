@@ -1,0 +1,202 @@
+﻿###########################################
+# THIS IS Car Studio's English Tip file   
+#--------------------------------------------
+# if you want to modify it, you have just to write
+#  Name: What's he going to say
+# alternatively, it's possible to declare 'Name:' as a constant and use it as a variable
+# ATTENTION:
+# If we declare #Const halo = Halogaland:  and our dialogue contains a word containing 'halo' like in this example:
+# 		(ZR) I started to speak German, halo everybody or it's Halo? or hallo?
+# Car studio will interpret it as 
+# 		(ZR) I started to speak German, Halogaland: everybody or it's Halo? or hallo?
+# Thus make your constants more 'incontourable' like #Const _halo_ = Halogaland or #Const !UR! = Urbanrocker
+# Note: it's case sensitive
+# -----------------------------------------
+# Editors:
+# Kallel A.Y (December'2012)
+# Kallel A.Y (June'2013)
+###########################################
+
+#----------------------------
+# Constants go here
+# declaring #Const will force Car studio to read it once then treat it as a commentary!
+#----------------------------
+
+#Const (CW) = CityWalker:
+#Const (Halo) = Halogaland:
+#Const (B94) = Burner94:
+#Const (Nero) = Nero:
+#Const (Skarma) = Skarma:
+#Const (mm) = MythicMonkey:
+#Const (kay) = kay:
+#Const (Param) = Parameters Notes:
+#Const (Note) = Note:
+
+#----------------------------
+# let's have some randomies! (will appear only at the beginning)
+#----------------------------
+	
+
+	(Skarma) Simipour we love
+	(B94) Chiby
+	(Halo) Best parameters for me are those which makes you drive the car the best as you can. 
+	(Halo) If you like drifting, then use drift parameters and if you, as me, love drag params, use them but make the car handleable anyway.
+	(Halo) Personally the car is good first if you like it!  something you don't find ok isn't good enough (you should have objective point of view here)
+	(kay) Also as Halo. mentionned it's possible to redo anything if it's not perfect.
+	(Halo) Patience, focusing, perservance. The car you make deserve taking time! 
+	(Halo) Don't worry about others opinions and improve your work!
+	(Halo) If you rush stuffs, then, you car is completely... messed unless you're a professional (Take it easy)
+
+	
+#----------------------------
+# Main
+#----------------------------
+# Contains Name,folder,ClothFx, Flying, Flippable,Light,CarEnv
+Region name
+	(kay) A good name should attract the players. Picking a name for an original car is usually proportional to download rate
+End Region
+
+Region folder
+	Note: This is a direct-renamer and the folder is being renamed the moment you're writing.
+End Region
+
+Region clothfx
+	(Param) Mystery car cloth effect (similar to laundry on strings)
+End Region
+
+Region flying
+	(Param) Just Like UFO car
+End Region
+
+Region flippable
+	(Param) Can be flipped like Rotor
+End Region
+
+Region light
+	Note: Fictional Light.
+End Region 
+
+Region envcolor
+	(Param) This is the declaration for the reflection color used by the car.
+End Region	
+
+
+
+
+#----------------------------
+# BODY
+#----------------------------
+# POSITIONS (Offset, COM, WeaponGen)
+Region offset
+	
+End Region
+
+Region com
+
+End Region
+
+Region weapongen
+
+End Region
+
+
+
+# GEOMETRY (mass,Inertia)
+Region mass
+	(kay) Mass is a very important value, it'll decide how cars feels, moves and do rotations.
+	(Param) This is the car's total weight in kilograms. 1 kilogram is approximately 2.21 pounds.
+	(Param)  R6 Turbo (lightest) weighs about 0.8 kilograms, and Bertha Ballistics (heaviest) weighs about 3 kilograms.
+	(kay) Toyeca is around 2.0 and Adeon is around 1.2. Don't make it too light or too weighty.
+	
+End Region
+
+Region inertia
+	(Param) This is the car's inertia matrix. This helps determine the car's willingness to rotate or spin about the respective x, y, or z axis.
+	(kay) Structure: [Ixx,0,0][0,Iyy,0][0,0,Izz] where Ixx is the torque once projected on X Plane
+	(Param)  Higher values = more inertia (more willing to rotate) and lower values = less inertia (less willing to rotate).
+	(CW) (CW's method) X's Inertia=ref_inertia*weight+(weight-1)*inertia_coeff*weight. Y=X*1.5 and Z=X*0.5
+End Region
+
+
+# DYNAMICS (Hardness, Air Res, Ang Res, ResMod,Grip, and frictions)
+
+#I'm here
+
+Region statfric
+	(Skarma) Static friction is how much grip the car has normally when it's going straight or standing still.
+	(Skarma) Kinetic friction is NEVER higher than the Static.
+End Region
+
+Region kineticfric
+	(Skarma) Kinetic friction is how much it has when it is turning/skidding.
+	(Skarma) Higher values give it more grip and makes it more difficult to spin, lower values is the opposite.
+	(Skarma) Kinetic friction is NEVER higher than the Static .
+	(mm) Basically you would need to know that a KineticFriction value of 1.95 equates to a quantifiable amount of grip on real-world tires.
+	
+End Region
+Region body
+	(Halo) Another mistake: making something too much lowpoly.
+	(Halo) Avoiding the holes is really significant too, for the design of the car
+	(Halo) For the shape of the car, try to make it as smooth as possible.
+	(Halo) having the best shape of the car: TAKE YOUR TIME AND BE CAREFUL WITH THE FACES (there's a lot of tutorials for this)
+End Region
+
+
+Region bodydyn
+	(B94) Those won't affect the car in noticeable way: SteerMod, DownForceMod, Gravity, Hardness, AngRes,Resistance.
+	(B94) ResMod can be edited, putting it to 1 will increase real-feeling while in air. Put it 0 for real feel with bikes
+	(B94) After altering Grip, frictions of the body is kind of useless as you don't want to ahve a body which grips better than car's tires when scrapping on the ground, huh?
+End Region
+
+Region bodygeo
+	(B94) Those won't affect the car in noticeable way: SteerMod, DownForceMod, Gravity, Hardness, AngRes,Resistance.
+	(B94) ResMod can be edited, putting it to 1 will increase real-feeling while in air. Put it 0 for real feel with bikes
+	(B94) After altering Grip, frictions of the body is kind of useless as you don't want to ahve a body which grips better than car's tires when scrapping on the ground, huh?
+End Region
+
+Region bodygenuv
+	(B94) Those won't affect the car in noticeable way: SteerMod, DownForceMod, Gravity, Hardness, AngRes,Resistance.
+	(B94) ResMod can be edited, putting it to 1 will increase real-feeling while in air. Put it 0 for real feel with bikes
+	(B94) After altering Grip, frictions of the body is kind of useless as you don't want to ahve a body which grips better than car's tires when scrapping on the ground, huh?
+End Region
+
+
+
+#----------------------------
+# Render Settings
+#----------------------------
+
+Region rendersett
+	(kay) On clicking, you can toggle modes from wireframe to solid to transparent
+End region
+
+
+
+#and to force Car Studio to stop reading, we write #exit at the end
+#exit
+
+
+#Everything here won't be read because we asked Car Studio not to 
+
+[Random]
+
+
+[Main]
+
+
+[Body]
+
+
+[Axis]
+(Halo) In any program, the car axis should be centered on the car, it shouldn't be too much high or low (otherwise the params would be weird)
+
+[Wheels]
+(B94) Mass (most cars use a standard value, so who cares XD).
+(B94) ToeIn (all cars use 0...)
+(B94) AxleFriction (just affects directly the top speed and the slowdown ability of the car when accelerator isn't pressed, but all the stock cars use the same values.)
+
+[Aerial]
+(B94) It's also tricking to play around with aerial direction and coefficients.
+
+[Handling]
+(B94) SteerMod (pretty useless) | DownforceMod (2 is okay for all cars)

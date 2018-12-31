@@ -1,0 +1,10 @@
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\bin\Debug\CarStudio.exe
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\bin\Debug\CarStudio.pdb
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\bin\Debug\CarStudio.xml
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\obj\Debug\ResolveAssemblyReference.cache
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\obj\Debug\CarStudio.FolderConfig.resources
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\obj\Debug\CarStudio.Resources.resources
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\obj\Debug\CarStudio.vbproj.GenerateResource.Cache
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\obj\Debug\CarStudio.exe
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\obj\Debug\CarStudio.xml
+C:\Users\Kallel\AppData\Local\Temporary Projects\CarStudio\obj\Debug\CarStudio.pdb

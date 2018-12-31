@@ -1,0 +1,198 @@
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.exe
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.pdb
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.xml
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\ResolveAssemblyReference.cache
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Resources.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.vbproj.GenerateResource.Cache
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.exe
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.xml
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.pdb
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.SplashScreen.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Config.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.YESNO.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\OpenTK.GLControl.xml
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\OpenTK.xml
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.CarBrowser.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.TextViewer.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.CarEditor.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._main.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Frontend.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._Body.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._About.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.PICK_PRM.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Tablepad.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\lang\arabic.txt
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\lang\English.txt
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\lang\French.txt
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\axis.prm
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\CoM.prm
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\weagen.prm
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\firework.m
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\fmodex.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\Tips\English.txt
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.PICK_MATRIX.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.UVviewer.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Aerial.png
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Spring1.png
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Axle1.png
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Axle2.png
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Body.png
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Pin1.png
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Pin2.png
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Spring2.png
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Wheel.png
+F:\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.exe
+F:\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.xml
+F:\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.pdb
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Aerial.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Spring1.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Axle1.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Axle2.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Body.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Pin1.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Pin2.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Spring2.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Wheel.png
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\models\axis.prm
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\models\CoM.prm
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\models\weagen.prm
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\lang\arabic.txt
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\lang\English.txt
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\lang\French.txt
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\Tips\English.txt
+F:\RvCarStudio\RvCarStudio\bin\Debug\fmodex.dll
+F:\RvCarStudio\RvCarStudio\bin\Debug\data\models\firework.m
+F:\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.exe
+F:\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.pdb
+F:\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.xml
+F:\RvCarStudio\RvCarStudio\bin\Debug\QuickFont.pdb
+F:\RvCarStudio\RvCarStudio\bin\Debug\OpenTK.GLControl.xml
+F:\RvCarStudio\RvCarStudio\bin\Debug\OpenTK.xml
+F:\RvCarStudio\RvCarStudio\obj\Debug\ResolveAssemblyReference.cache
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.CarBrowser.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.CarEditor.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Config.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.PICK_MATRIX.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.PICK_PRM.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Tablepad.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._About.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._Body.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Frontend.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.UVviewer.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._main.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Resources.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.SplashScreen.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.TextViewer.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.YESNO.resources
+F:\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.vbproj.GenerateResource.Cache
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Console_.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.PICK_BMP.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Texture_.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RVStudioComponents.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RVStudioComponents.xml
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Preview_Frontend.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Copy_to_all_devices.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.theCarBox.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Wheels.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\splitter.prm
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.pv_carbox.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Handling.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Preview_texture.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Parameters_editor.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Suspens_.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\readme\Template1.txt
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\readme\template2.txt
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Spinner_.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.body_aider.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.shade.resources
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\PresentationCore.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\PresentationFramework.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Core.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Data.DataSetExtensions.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Data.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Deployment.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.DirectoryServices.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Drawing.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Windows.Forms.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Xml.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Xml.Linq.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\UIAutomationProvider.dll
+C:\Users\Kallel\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\WindowsBase.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.exe
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.xml
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.pdb
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Aerial.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Spring1.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Axle1.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Axle2.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Body.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Pin1.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Pin2.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Spring2.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\gfx\Wheel.png
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\readme\Template1.txt
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\axis.prm
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\CoM.prm
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\weagen.prm
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\lang\arabic.txt
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\lang\English.txt
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\lang\French.txt
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\readme\template2.txt
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\Tips\English.txt
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\fmodex.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\splitter.prm
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\data\models\firework.m
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.exe
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.pdb
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RvCarStudio.xml
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\PresentationCore.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\PresentationFramework.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RVStudioComponents.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Core.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Data.DataSetExtensions.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Data.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Deployment.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.DirectoryServices.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Drawing.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Windows.Forms.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Xml.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\System.Xml.Linq.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\UIAutomationProvider.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\WindowsBase.dll
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\RVStudioComponents.xml
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\OpenTK.GLControl.xml
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\bin\Debug\OpenTK.xml
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\ResolveAssemblyReference.cache
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.CarBrowser.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.CarEditor.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Config.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Copy_to_all_devices.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.body_aider.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.PICK_BMP.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.PICK_MATRIX.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.PICK_PRM.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Preview_Frontend.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Preview_texture.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.pv_carbox.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Handling.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.shade.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Spinner_.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Suspens_.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Tablepad.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._About.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._Body.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Console_.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Frontend.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.UVviewer.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Texture_.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.TheCarBox.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Wheels.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio._main.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Resources.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.Parameters_editor.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.SplashScreen.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.TextViewer.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\CarStudio.YESNO.resources
+G:\kdl\kallelpc\Documents\Visual Studio 2008\Projects\RvCarStudio\RvCarStudio\obj\Debug\RvCarStudio.vbproj.GenerateResource.Cache

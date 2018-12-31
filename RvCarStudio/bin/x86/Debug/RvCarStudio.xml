@@ -1,0 +1,105 @@
+﻿<?xml version="1.0"?>
+<doc>
+<assembly>
+<name>
+RvCarStudio
+</name>
+</assembly>
+<members>
+<member name="P:CarStudio.My.Resources.Resources.ResourceManager">
+	<summary>
+  Returns the cached ResourceManager instance used by this class.
+</summary>
+</member><member name="P:CarStudio.My.Resources.Resources.Culture">
+	<summary>
+  Overrides the current thread's CurrentUICulture property for all
+  resource lookups using this strongly typed resource class.
+</summary>
+</member><member name="T:CarStudio.My.Resources.Resources">
+	<summary>
+  A strongly-typed resource class, for looking up localized strings, etc.
+</summary>
+</member><member name="M:CarStudio.LanguageFile.LANGUAGE.#ctor(System.String)">
+	<summary>
+ Requires Path of language file
+ </summary>
+	<param name="path">Path of Language file</param>
+	<remarks></remarks>
+</member><member name="M:CarStudio.LanguageFile.LANGUAGE.LoadMain">
+ Load main section
+
+</member><member name="M:CarStudio.LanguageFile.LANGUAGE.LoadYESNO">
+ Load main section
+
+</member><member name="T:CarStudio.LanguageFile.LANGUAGE">
+	<summary>
+ Language Class
+ </summary>
+	<remarks></remarks>
+</member><member name="F:CarStudio.LanguageFile.Languages">
+	<summary>
+ The languages
+ </summary>
+	<remarks></remarks>
+</member><member name="M:CarStudio.LanguageFile.AddLanguage(System.String)">
+	<summary>
+ procedure to add a new language
+ </summary>
+	<param name="path">Path of language file</param>
+	<remarks></remarks>
+</member><member name="M:CarStudio.TexLib.TexUtil.InitTexturing">
+	<summary>
+ Initialize OpenGL state to enable alpha-blended texturing.
+ Disable again with GL.Disable(EnableCap.Texture2D).
+ Call this before drawing any texture, when you boot your
+ application, eg. in OnLoad() of GameWindow or Form_Load()
+ if you're building a WinForm app.
+ </summary>
+</member><member name="M:CarStudio.TexLib.TexUtil.CreateRGBTexture(System.Int32,System.Int32,System.Byte[])">
+	<summary>
+ Create an opaque OpenGL texture object from a given byte-array of r,g,b-triplets.
+ Make sure width and height is 1, 2, .., 32, 64, 128, 256 and so on in size since all
+ 3d graphics cards support those dimensions. Not necessarily square. Don't forget
+ to call GL.DeleteTexture(int) when you don't need the texture anymore (eg. when switching
+ levels in your game).
+ </summary>
+</member><member name="M:CarStudio.TexLib.TexUtil.CreateRGBATexture(System.Int32,System.Int32,System.Byte[])">
+	<summary>
+ Create a translucent OpenGL texture object from given byte-array of r,g,b,a-triplets.
+ See CreateRGBTexture for more info.
+ </summary>
+</member><member name="M:CarStudio.TexLib.TexUtil.CreateTextureFromBitmap(System.Drawing.Bitmap)">
+	<summary>
+ Create an OpenGL texture (translucent or opaque) from a given Bitmap.
+ 24- and 32-bit bitmaps supported.
+ </summary>
+</member><member name="M:CarStudio.TexLib.TexUtil.CreateTextureFromFile(System.String)">
+	<summary>
+ Create an OpenGL texture (translucent or opaque) by loading a bitmap
+ from file. 24- and 32-bit bitmaps supported.
+ </summary>
+</member><member name="T:CarStudio.TexLib.TexUtil">
+	<summary>
+ The TexUtil class is released under the MIT-license.
+ /Olof Bjarnason
+ </summary>
+</member><member name="F:CarStudio.Global_Variables.MajorVersion">
+	<summary>
+ Headers and application
+ </summary>
+	<remarks></remarks>
+ Versions
+
+</member><member name="F:CarStudio.Global_Variables.RVPATH">
+	<summary>
+ Applications Variable
+ </summary>
+	<remarks></remarks>
+</member><member name="T:CarStudio.Global_Variables.PolyType">
+	<summary>
+ Polygon types
+ </summary>
+	<remarks></remarks>
+</member>
+</members>
+</doc>
