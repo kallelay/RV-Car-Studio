@@ -18,14 +18,10 @@ Public Class CarEditor
 
 
     Private Sub Timer2_Tick(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Timer2.Tick
-        'timer2: the responsible of rendering time
+        'timer2: responsible for rendering timing
 
-        'if it's not a sperate thread, make sure that threads are separated!
-        If Not DO_NOT_THREAD Then If GlControl1.Context.IsCurrent And Not DO_NOT_THREAD Then GlControl1.Context.MakeCurrent(Nothing)
-
-        'if Thread didn't start, start it and start rendering
-        'if Thread isn't allowed to be used then render normally!
-        If Not TH_STARTED And Not DO_NOT_THREAD Then BackgroundWorker1.RunWorkerAsync() : TH_STARTED = True Else If Not FORCE_DO_NOT_RENDER Then DoRender()
+        ' Render the scene unless forced to pause
+        If Not FORCE_DO_NOT_RENDER Then DoRender()
 
         'get car name + FPS
         If cnt = 0 Then Swatch.Reset() : Swatch.Start() : TICK% = Swatch.ElapsedTicks : Label4.Text = cars(Active_Car).Theory.MainInfos.Name
@@ -57,40 +53,18 @@ Public Class CarEditor
 
     End Sub
     Sub DoRender()
+        ' Skip rendering if paused or already rendering
+        If FORCE_DO_NOT_RENDER OrElse DO_NOT_RENDER Then Exit Sub
 
-        'don't render twice & don't render if forced not to render
-
-        If FORCE_DO_NOT_RENDER Then
-            DO_NOT_RENDER_ACCEPETED = True
-            ' pause.Show()
-            Exit Sub
-
-        Else
-            DO_NOT_RENDER_ACCEPETED = False
-            ' pause.Hide()
-        End If
-
-
-        If DO_NOT_RENDER Then Exit Sub
-
-        If DO_NOT_RENDER Or FORCE_DO_NOT_RENDER Then Exit Sub
-        ' If FORCE_DO_NOT_RENDER Then DO_NOT_RENDER_ACCEPETED = True : DoRender()
-
-
-        'ok, render what again?
+        ' Validate GL control exists
         If GlControl1 Is Nothing Then Exit Sub
 
-
-
-        'locked rendering, calculating fps,lag
+        ' Lock rendering to prevent concurrent access
         DO_NOT_RENDER = True
+
+        ' Calculate FPS and lag metrics
         fps = Int(60 * 1000 / (Swatch.ElapsedMilliseconds))
         lag = Strings.Format(1 - (937.5 / (Swatch.ElapsedMilliseconds)), "0.00")
-
-        If Not DO_NOT_THREAD Then
-            If GlControl1.Context.IsCurrent Then GlControl1.Context.MakeCurrent(Nothing)
-            GlControl1.MakeCurrent()
-        End If
         ' ' Catch ex As Exception
         ' DO_NOT_RENDER = False
         '  End Try
@@ -311,7 +285,6 @@ Public Class CarEditor
 
 
         GlControl1.SwapBuffers()
-        If Not DO_NOT_THREAD Then GlControl1.Context.MakeCurrent(Nothing)
         DO_NOT_RENDER = False
 
 

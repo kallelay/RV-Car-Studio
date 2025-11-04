@@ -7,15 +7,16 @@ Imports CarStudio.POLY
 
 
 ' ///////////////////////////////////
-' //        File structure         //
+' //   PRM (Polygon Rendering Model) Class   //
 ' ///////////////////////////////////
 ' // First modification August'8th 2012
 ' // Latest              Dec'5th 2012
 ' // added TEXTURED     Dec'20th 2013
+' // Modernized          2025
 ' // By theKDL
-
-'PRM + Render settings (will be split later)
-
+'
+' This class handles loading, rendering, and manipulating Re-Volt PRM model files.
+' PRM files contain polygon meshes with vertex positions, normals, colors, and texture coordinates.
 
 'VOLTGL, modified engine  starts -->
 Public Class PRM
@@ -264,7 +265,9 @@ Public Class PRM
         Dim Clr = New OpenTK.Graphics.Color4(0.5!, 0.5!, 0.5!, 1) 'BBOX line color
         Dim ClrT = 0, CC
         Sub Render(ByVal Matrix As Matrix4, ByVal zoom!) 'render BBOX
-            Exit Sub 'causes problems??
+            ' BBOX rendering disabled - can cause rendering artifacts with current GL state
+            ' TODO: Re-enable when proper GL state isolation is implemented
+            Exit Sub
 
             GL.PushMatrix()
             GL.MultMatrix(Matrix)
@@ -363,19 +366,24 @@ Public Class PRM
     End Class
 
 
-    'New PRM
+    ''' <summary>
+    ''' Creates a new PRM model by loading from a file
+    ''' </summary>
+    ''' <param name="filepath">Full path to the .prm file</param>
+    ''' <param name="DoNotAdd">If true, don't add to global Models list</param>
+    ''' <param name="DoNeverRemove">If true, mark as persistent (won't be removed from memory)</param>
     Sub New(ByVal filepath As String, Optional ByVal DoNotAdd As Boolean = False, Optional ByVal DoNeverRemove As Boolean = False)
-        If filepath = "" Then Exit Sub
-        If IO.File.Exists(filepath) = False Then
+        If String.IsNullOrEmpty(filepath) Then Exit Sub
+        If Not IO.File.Exists(filepath) Then
             Console_.W("File doesn't exist (" & filepath & ")")
             Exit Sub
         End If
 
         Persistent = DoNeverRemove
 
-
-        'J=fopen(filepath,'rb')
-        Dim J As New BinaryReader(New FileStream(Replace(filepath, Chr(34), ""), FileMode.Open, FileAccess.Read))
+        Try
+            ' Open PRM file for reading
+            Dim J As New BinaryReader(New FileStream(Replace(filepath, Chr(34), ""), FileMode.Open, FileAccess.Read))
 
         'Vert/Poly count
         MyModel.polynum = J.ReadInt16()
@@ -456,7 +464,11 @@ Public Class PRM
         End If
 
 
-        J.Close()
+            J.Close()
+        Catch ex As Exception
+            Console_.W("Error loading PRM file (" & filepath & "): " & ex.Message)
+            Throw
+        End Try
     End Sub
     'export (save prm)
     Sub Export()
@@ -537,17 +549,15 @@ Public Class PRM
 
     End Sub
 
-    '  Class Matrix4
-
-    'End Class
+    ''' <summary>
+    ''' Renders the PRM model to the current OpenGL context
+    ''' Uses immediate mode rendering (deprecated but functional)
+    ''' Future optimization: Implement VBO (Vertex Buffer Objects) for better performance
+    ''' </summary>
     Sub Render()
-        'TODO: USE VBO
-        '^---Kay(Jan'18th 2014) yeah this!!!!!
-        '  If DO_NOT_RENDER Then Exit Sub
-
+        ' Skip rendering if model is not visible or rendering is disabled
         If Not isVisible Then Exit Sub
-
-        If FORCE_DO_NOT_RENDER Then Exit Sub
+        If DO_NOT_RENDER OrElse FORCE_DO_NOT_RENDER Then Exit Sub
 
 
 
@@ -568,15 +578,27 @@ Public Class PRM
 
         If RenderBBOX Then BoundingBox.Render(MATRIX, Zoom)
 
-        '   
-        For i = 0 To Me.MyModel.polynum - 1
+        ' Optimize texture binding - only bind when texture changes
+        Dim currentBoundTexture As Integer = -2 ' Invalid initial value to force first bind
 
+        For i = 0 To Me.MyModel.polynum - 1
+            ' Determine which texture to use for this polygon
+            Dim targetTexture As Integer
             If textured Then
-                If MyModel.polyl(i).Tpage <> -1 Then GL.BindTexture(TextureTarget.Texture2D, Textures(TextureI)) Else GL.BindTexture(TextureTarget.Texture2D, Textures(0))
+                If MyModel.polyl(i).Tpage <> -1 Then
+                    targetTexture = Textures(TextureI)
+                Else
+                    targetTexture = Textures(0)
+                End If
             Else
-                GL.BindTexture(TextureTarget.Texture2D, -1)
+                targetTexture = -1
             End If
 
+            ' Only bind if texture has changed
+            If targetTexture <> currentBoundTexture Then
+                GL.BindTexture(TextureTarget.Texture2D, targetTexture)
+                currentBoundTexture = targetTexture
+            End If
 
             GL.PushMatrix()
 
@@ -725,11 +747,15 @@ Public Structure POLY
             LongColor = lColor
             BakedColor = UintToColor(lColor, useAlpha)
         End Sub
-        Function ReturnBaked(ByVal GlobalAlpha) As Color4
-            If GlobalAlpha = 255 Then Return BakedColor
+        Function ReturnBaked(ByVal GlobalAlpha As Single) As Color4
+            ' GlobalAlpha should be in range 0.0 to 1.0
+            ' Clamp alpha to prevent overflow
+            If GlobalAlpha >= 1.0F Then Return BakedColor
+            If GlobalAlpha <= 0.0F Then Return New Color4(BakedColor.R, BakedColor.G, BakedColor.B, 0.0F)
 
-            Dim bck As Color4 = New Color4(BakedColor.R, BakedColor.G, BakedColor.B, BakedColor.A * GlobalAlpha)
-            'TODO: FIX Overflow!??
+            ' Apply global alpha multiplier safely
+            Dim finalAlpha As Single = Math.Max(0.0F, Math.Min(1.0F, BakedColor.A * GlobalAlpha))
+            Dim bck As Color4 = New Color4(BakedColor.R, BakedColor.G, BakedColor.B, finalAlpha)
 
             Return bck
         End Function

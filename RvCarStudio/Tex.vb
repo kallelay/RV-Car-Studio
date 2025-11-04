@@ -80,9 +80,12 @@ Namespace TexLib
         ''' 24- and 32-bit bitmaps supported.
         ''' </summary>
         Public Shared Function CreateTextureFromBitmap(ByVal bitmap As Bitmap) As Integer
-            bitmap.MakeTransparent(Color.Black)
-
-            'bitmap.RotateFlip(RotateFlipType.Rotate180FlipXY)
+            ' Note: MakeTransparent only for non-alpha bitmaps
+            ' 32-bit images with alpha channel should not be processed
+            If bitmap.PixelFormat <> Img.PixelFormat.Format32bppArgb AndAlso _
+               bitmap.PixelFormat <> Img.PixelFormat.Format32bppPArgb Then
+                bitmap.MakeTransparent(Color.Black)
+            End If
 
             Dim data As Img.BitmapData = bitmap.LockBits(New Rectangle(0, 0, bitmap.Width, bitmap.Height), Img.ImageLockMode.[ReadOnly], Img.PixelFormat.Format32bppArgb)
             Dim tex = GiveMeATexture()
@@ -101,8 +104,19 @@ Namespace TexLib
         ''' from file. 24- and 32-bit bitmaps supported.
         ''' </summary>
         Public Shared Function CreateTextureFromFile(ByVal path As String) As Integer
-            If IO.File.Exists(path) = False Then Return CreateTexture(1, 1, False, Nothing)
-            Return CreateTextureFromBitmap(New Bitmap(Bitmap.FromFile(path)))
+            If String.IsNullOrEmpty(path) OrElse Not IO.File.Exists(path) Then
+                ' Return a default 1x1 white texture for missing files
+                Return CreateTexture(1, 1, False, New Byte() {255, 255, 255})
+            End If
+
+            Try
+                Dim bitmap As New Bitmap(Bitmap.FromFile(path))
+                Return CreateTextureFromBitmap(bitmap)
+            Catch ex As Exception
+                ' Log error and return default texture
+                Debug.WriteLine("Failed to load texture from " & path & ": " & ex.Message)
+                Return CreateTexture(1, 1, False, New Byte() {255, 255, 255})
+            End Try
         End Function
 
         Public Shared Sub RemoveTexture(ByVal TextureID%)

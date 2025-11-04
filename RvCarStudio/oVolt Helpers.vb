@@ -40,19 +40,19 @@ Module oVolt_helpers
     Public Textures(2) As Integer
 
     Public Sub InitAllTextures(ByVal texture$)
-        'TODO: CLEANUP textures
-
+        ' Clean up existing textures before creating new ones
         Try
-            GL.DeleteTexture(Textures(0))
-            GL.DeleteTexture(Textures(1))
+            ' Only delete valid texture IDs (non-zero)
+            If Textures(0) <> 0 Then GL.DeleteTexture(Textures(0))
+            If Textures(1) <> 0 Then GL.DeleteTexture(Textures(1))
         Catch ex As Exception
-
+            ' Log texture deletion failure but continue initialization
+            Console_.W("Warning: Failed to delete textures during cleanup - " & ex.Message)
         End Try
+
+        ' Create new textures
         Textures(1) = TexLib.TexUtil.CreateTextureFromFile(texture)
         Textures(2) = TexLib.TexUtil.CreateTextureFromFile(RVPATH & "\gfx\fxpage1.bmp")
-        'Textures(i + 1) = LoadTexture(model.Directory & model.DirectoryName & Chr(i + 65) & ".bmp")
-
-
     End Sub
     'Idea from MS, code from Internet
 
