@@ -1,0 +1,631 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="3.5" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>9.0.30729</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{162621D9-6366-42B7-951B-75E709F50BA0}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <StartupObject>CarStudio.My.MyApplication</StartupObject>
+    <RootNamespace>CarStudio</RootNamespace>
+    <AssemblyName>RvCarStudio</AssemblyName>
+    <FileAlignment>512</FileAlignment>
+    <MyType>WindowsForms</MyType>
+    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionCompare>Binary</OptionCompare>
+    <OptionStrict>Off</OptionStrict>
+    <OptionInfer>On</OptionInfer>
+    <ApplicationManifest>My Project\app.manifest</ApplicationManifest>
+    <PublishUrl>publish\</PublishUrl>
+    <Install>true</Install>
+    <InstallFrom>Disk</InstallFrom>
+    <UpdateEnabled>false</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <IsWebBootstrapper>false</IsWebBootstrapper>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <DefineDebug>true</DefineDebug>
+    <DefineTrace>true</DefineTrace>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DocumentationFile>RvCarStudio.xml</DocumentationFile>
+    <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <DefineDebug>false</DefineDebug>
+    <DefineTrace>true</DefineTrace>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DocumentationFile>RvCarStudio.xml</DocumentationFile>
+    <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DefineDebug>true</DefineDebug>
+    <DefineTrace>true</DefineTrace>
+    <OutputPath>bin\x86\Debug\</OutputPath>
+    <DocumentationFile>RvCarStudio.xml</DocumentationFile>
+    <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
+    <DebugType>full</DebugType>
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+    <DefineTrace>true</DefineTrace>
+    <OutputPath>bin\x86\Release\</OutputPath>
+    <DocumentationFile>RvCarStudio.xml</DocumentationFile>
+    <Optimize>true</Optimize>
+    <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="OpenTK, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4" />
+    <Reference Include="OpenTK.GLControl, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
+    <Reference Include="PresentationCore">
+      <RequiredTargetFramework>3.0</RequiredTargetFramework>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="PresentationFramework">
+      <RequiredTargetFramework>3.0</RequiredTargetFramework>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="QuickFont, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\..\Desktop\QuickFont_1.0.2_0\QuickFont\QuickFont\bin\Debug\QuickFont.dll</HintPath>
+    </Reference>
+    <Reference Include="System">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Data">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Deployment">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.DirectoryServices">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Drawing">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Windows.Forms">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Xml">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Core">
+      <RequiredTargetFramework>3.5</RequiredTargetFramework>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Xml.Linq">
+      <RequiredTargetFramework>3.5</RequiredTargetFramework>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Data.DataSetExtensions">
+      <RequiredTargetFramework>3.5</RequiredTargetFramework>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="UIAutomationProvider">
+      <RequiredTargetFramework>3.0</RequiredTargetFramework>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="WindowsBase">
+      <RequiredTargetFramework>3.0</RequiredTargetFramework>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Import Include="Microsoft.VisualBasic" />
+    <Import Include="System" />
+    <Import Include="System.Collections" />
+    <Import Include="System.Collections.Generic" />
+    <Import Include="System.Data" />
+    <Import Include="System.Drawing" />
+    <Import Include="System.Diagnostics" />
+    <Import Include="System.Windows.Forms" />
+    <Import Include="System.Linq" />
+    <Import Include="System.Xml.Linq" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Axis_Grid_Etc.vb" />
+    <Compile Include="CAR.vb">
+    </Compile>
+    <Compile Include="CarEditor.Designer.vb">
+      <DependentUpon>CarEditor.vb</DependentUpon>
+    </Compile>
+    <Compile Include="CarEditor.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Check_My_Car.vb" />
+    <Compile Include="Config.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Config.Designer.vb">
+      <DependentUpon>Config.vb</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Car browser.Designer.vb">
+      <DependentUpon>Car browser.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Car browser.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Copy_to_all_devices.Designer.vb">
+      <DependentUpon>Copy_to_all_devices.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Copy_to_all_devices.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\body_aider.Designer.vb">
+      <DependentUpon>body_aider.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\body_aider.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\PICK_BMP.Designer.vb">
+      <DependentUpon>PICK_BMP.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\PICK_BMP.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\PICK_MATRIX.Designer.vb">
+      <DependentUpon>PICK_MATRIX.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\PICK_MATRIX.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\PICK_PRM.Designer.vb">
+      <DependentUpon>PICK_PRM.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\PICK_PRM.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\Preview Frontend.Designer.vb">
+      <DependentUpon>Preview Frontend.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\Preview Frontend.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\Preview_texture.Designer.vb">
+      <DependentUpon>Preview_texture.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\Preview_texture.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\pv_carbox.Designer.vb">
+      <DependentUpon>pv_carbox.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\pv_carbox.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\Handling.Designer.vb">
+      <DependentUpon>Handling.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\Handling.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\shade.Designer.vb">
+      <DependentUpon>shade.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\shade.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\Spinner_.Designer.vb">
+      <DependentUpon>Spinner_.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\Spinner_.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\Suspens_.Designer.vb">
+      <DependentUpon>Suspens_.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\Suspens_.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\TablePad.Designer.vb">
+      <DependentUpon>TablePad.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\TablePad.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\About.Designer.vb">
+      <DependentUpon>About.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\About.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\Body.Designer.vb">
+      <DependentUpon>Body.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\Body.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\Console_.Designer.vb">
+      <DependentUpon>Console_.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\Console_.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\Frontend.Designer.vb">
+      <DependentUpon>Frontend.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\Frontend.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\getUV.Designer.vb">
+      <DependentUpon>getUV.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\getUV.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\Texture_.Designer.vb">
+      <DependentUpon>Texture_.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\Texture_.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\theCarBox.Designer.vb">
+      <DependentUpon>theCarBox.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\theCarBox.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\Wheels.Designer.vb">
+      <DependentUpon>Wheels.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\Wheels.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Editor Forms\_main.Designer.vb">
+      <DependentUpon>_main.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Editor Forms\_main.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormAnimations.vb" />
+    <Compile Include="Global_Variables.vb" />
+    <Compile Include="GL_Extensions.vb" />
+    <Compile Include="GrabScreen.vb" />
+    <Compile Include="LanguageFile.vb" />
+    <Compile Include="My Project\AssemblyInfo.vb" />
+    <Compile Include="My Project\Application.Designer.vb">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Application.myapp</DependentUpon>
+    </Compile>
+    <Compile Include="My Project\Resources.Designer.vb">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="My Project\Settings.Designer.vb">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+    <Compile Include="OnBuild.vb" />
+    <Compile Include="oVolt Helpers.vb" />
+    <Compile Include="Parameters_editor.Designer.vb">
+      <DependentUpon>Parameters_editor.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Parameters_editor.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Parameters_helper.vb" />
+    <Compile Include="patches.vb" />
+    <Compile Include="PRM.vb" />
+    <Compile Include="Render.vb" />
+    <Compile Include="SettingsEtc.vb" />
+    <Compile Include="Singletons.vb" />
+    <Compile Include="SplashScreen.Designer.vb">
+      <DependentUpon>SplashScreen.vb</DependentUpon>
+    </Compile>
+    <Compile Include="SplashScreen.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Tex.vb" />
+    <Compile Include="TextViewer.Designer.vb">
+      <DependentUpon>TextViewer.vb</DependentUpon>
+    </Compile>
+    <Compile Include="TextViewer.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Dialogs\YESNO.Designer.vb">
+      <DependentUpon>YESNO.vb</DependentUpon>
+    </Compile>
+    <Compile Include="Dialogs\YESNO.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Tip.vb" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Car browser.resx">
+      <DependentUpon>Car browser.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="CarEditor.resx">
+      <DependentUpon>CarEditor.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Config.resx">
+      <DependentUpon>Config.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Copy_to_all_devices.resx">
+      <DependentUpon>Copy_to_all_devices.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\body_aider.resx">
+      <DependentUpon>body_aider.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\PICK_BMP.resx">
+      <DependentUpon>PICK_BMP.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\PICK_MATRIX.resx">
+      <DependentUpon>PICK_MATRIX.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\PICK_PRM.resx">
+      <DependentUpon>PICK_PRM.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\Preview Frontend.resx">
+      <DependentUpon>Preview Frontend.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\Preview_texture.resx">
+      <DependentUpon>Preview_texture.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\pv_carbox.resx">
+      <DependentUpon>pv_carbox.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\Handling.resx">
+      <DependentUpon>Handling.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\shade.resx">
+      <DependentUpon>shade.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\Spinner_.resx">
+      <DependentUpon>Spinner_.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\Suspens_.resx">
+      <DependentUpon>Suspens_.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\TablePad.resx">
+      <DependentUpon>TablePad.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\About.resx">
+      <DependentUpon>About.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\Body.resx">
+      <DependentUpon>Body.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\Console_.resx">
+      <DependentUpon>Console_.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\Frontend.resx">
+      <DependentUpon>Frontend.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\getUV.resx">
+      <DependentUpon>getUV.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\Texture_.resx">
+      <DependentUpon>Texture_.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\theCarBox.resx">
+      <DependentUpon>theCarBox.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\Wheels.resx">
+      <DependentUpon>Wheels.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Editor Forms\_main.resx">
+      <DependentUpon>_main.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="My Project\Resources.resx">
+      <Generator>VbMyResourcesResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.vb</LastGenOutput>
+      <CustomToolNamespace>My.Resources</CustomToolNamespace>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Parameters_editor.resx">
+      <DependentUpon>Parameters_editor.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SplashScreen.resx">
+      <DependentUpon>SplashScreen.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TextViewer.resx">
+      <DependentUpon>TextViewer.vb</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Dialogs\YESNO.resx">
+      <DependentUpon>YESNO.vb</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="My Project\app.manifest" />
+    <None Include="My Project\Application.myapp">
+      <Generator>MyApplicationCodeGenerator</Generator>
+      <LastGenOutput>Application.Designer.vb</LastGenOutput>
+    </None>
+    <None Include="My Project\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <CustomToolNamespace>My</CustomToolNamespace>
+      <LastGenOutput>Settings.Designer.vb</LastGenOutput>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework Client Profile</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.2.0">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 2.0 %28x86%29</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.0">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.0 %28x86%29</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Windows.Installer.3.1">
+      <Visible>False</Visible>
+      <ProductName>Windows Installer 3.1</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="art\undo.png" />
+    <None Include="art\window_close.png" />
+    <None Include="art\reload.png" />
+    <None Include="art\ok.png" />
+    <None Include="art\Checkbox.png" />
+    <None Include="art\Checkbox_checked_active.png" />
+    <None Include="art\Checkbox_active.png" />
+    <None Include="art\Checkbox_checked.png" />
+    <None Include="art\launchrv.png" />
+    <None Include="art\Frontend.png" />
+    <None Include="art\gradinv.png" />
+    <None Include="art\ufo.png" />
+    <None Include="art\glow.png" />
+    <None Include="art\electrique.png" />
+    <None Include="art\rookie.png" />
+    <None Include="art\advanced.png" />
+    <None Include="art\semipro.png" />
+    <None Include="art\pro.png" />
+    <None Include="art\amateur.png" />
+    <None Include="art\always.png" />
+    <None Include="art\bronze.png" />
+    <None Include="art\silver.png" />
+    <None Include="art\Gold.png" />
+    <None Include="art\plat.png" />
+    <None Include="art\never.png" />
+    <None Include="art\BaseCarbox.jpg" />
+    <None Include="art\Sprite1.png" />
+    <Content Include="data\gfx\Aerial.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Aerial_wire.png" />
+    <Content Include="data\gfx\Axle1_wire.png" />
+    <Content Include="data\gfx\Axle2_wire.png" />
+    <Content Include="data\gfx\Body_wire.png" />
+    <Content Include="data\gfx\Pin1_wire.png" />
+    <Content Include="data\gfx\Pin2_wire.png" />
+    <Content Include="data\gfx\Spring1.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Axle1.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Axle2.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Body.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Pin1.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Pin2.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Spring1_wire.png" />
+    <Content Include="data\gfx\Spring2.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Spring2_wire.png" />
+    <Content Include="data\gfx\Wheel.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\gfx\Wheel_wire.png" />
+    <Content Include="data\lang\arabic.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\lang\English.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\lang\French.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\readme\Template1.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\readme\template2.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="data\Tips\English.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="fmodex.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Include="Resources\rvcs3.jpg" />
+    <None Include="Resources\RVCS2.jpg" />
+    <None Include="Resources\RVCS.jpg" />
+    <None Include="data\models\splitter.prm">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="Resources\tex_active.png" />
+    <None Include="Resources\pin2.png" />
+    <None Include="Resources\pin.png" />
+    <None Include="Resources\aerial.png" />
+    <None Include="Resources\Axle2.png" />
+    <None Include="Resources\spring2.png" />
+    <None Include="Resources\body.png" />
+    <None Include="Resources\Axle1.png" />
+    <None Include="Resources\Wheel.png" />
+    <None Include="Resources\Axle.png" />
+    <None Include="data\models\axis.prm">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\CoM.prm">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\firework.m">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="data\models\weagen.prm">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Resources\cache.png" />
+    <None Include="Resources\folder_blue.png" />
+    <None Include="Resources\shadow.png" />
+    <None Include="Resources\RVL.png" />
+    <None Include="Resources\RVLB.png" />
+    <None Include="Resources\Panel_Back.png" />
+    <None Include="Resources\grad.jpg" />
+    <None Include="Resources\Button.jpg" />
+    <None Include="Resources\button3.jpg" />
+    <None Include="Resources\button2.jpg" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RVStudioComponents\RVStudioComponents.vbproj">
+      <Project>{5FA2DA7D-66BA-472C-BEAC-AD8053F15731}</Project>
+      <Name>RVStudioComponents</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>
