@@ -127,9 +127,26 @@ Config:
 Loadsettings:
 
         Progress("Loading Settings...")
-        're-Volt path
+        ' Load Re-Volt path from settings
         RVPATH = Sett_get("dir", "")
         'RVPATH = GetSetting("Car Load", "settings", "dir", "")
+
+        ' Validate RVPATH immediately after loading
+        Dim rvpathError As String = ""
+        If Not IsValidRVPath(RVPATH, rvpathError) Then
+            Console_.W("RVPATH validation failed: " & rvpathError)
+            ' Prompt user to reconfigure
+            If Not EnsureValidRVPath() Then
+                ' User cancelled or configuration failed
+                MsgBox("Cannot start without a valid Re-Volt installation path.", MsgBoxStyle.Critical, "Cannot Start")
+                Application.Exit()
+                Return
+            End If
+            ' RVPATH was successfully reconfigured
+            Console_.W("RVPATH reconfigured successfully: " & RVPATH)
+        Else
+            Console_.W("RVPATH validated: " & RVPATH)
+        End If
 
         Progress("Loading language")
 

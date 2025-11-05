@@ -64,6 +64,106 @@ Public Const Type As VerType = VerType.preAlpha
     ''' <remarks></remarks>
     ''' RVpath
     Public RVPATH As String
+
+    ''' <summary>
+    ''' Validates if RVPATH points to a valid Re-Volt installation directory
+    ''' </summary>
+    ''' <param name="path">Path to validate</param>
+    ''' <param name="errorMessage">Output error message if validation fails</param>
+    ''' <returns>True if path is valid, False otherwise</returns>
+    Public Function IsValidRVPath(ByVal path As String, ByRef errorMessage As String) As Boolean
+        ' Check if path is empty or null
+        If String.IsNullOrEmpty(path) Then
+            errorMessage = "Re-Volt path is not configured"
+            Return False
+        End If
+
+        ' Check if path exists and is accessible
+        Try
+            If Not IO.Directory.Exists(path) Then
+                errorMessage = "Re-Volt path does not exist: " & path
+                Return False
+            End If
+        Catch ex As IO.IOException
+            ' Device not ready (e.g., disconnected USB drive)
+            errorMessage = "Re-Volt path is not accessible (device not ready): " & path & vbNewLine & ex.Message
+            Return False
+        Catch ex As UnauthorizedAccessException
+            ' Permission denied
+            errorMessage = "Access denied to Re-Volt path: " & path & vbNewLine & ex.Message
+            Return False
+        Catch ex As Exception
+            ' Other errors
+            errorMessage = "Error accessing Re-Volt path: " & path & vbNewLine & ex.Message
+            Return False
+        End Try
+
+        ' Check if cars directory exists
+        Try
+            Dim carsPath As String = IO.Path.Combine(path, "cars")
+            If Not IO.Directory.Exists(carsPath) Then
+                errorMessage = "Invalid Re-Volt installation - 'cars' directory not found in: " & path
+                Return False
+            End If
+        Catch ex As Exception
+            errorMessage = "Error validating Re-Volt installation: " & ex.Message
+            Return False
+        End Try
+
+        ' Path is valid
+        errorMessage = ""
+        Return True
+    End Function
+
+    ''' <summary>
+    ''' Validates if RVPATH points to a valid Re-Volt installation directory (overload without error message)
+    ''' </summary>
+    Public Function IsValidRVPath(ByVal path As String) As Boolean
+        Dim dummy As String = ""
+        Return IsValidRVPath(path, dummy)
+    End Function
+
+    ''' <summary>
+    ''' Ensures RVPATH is valid, prompts user to reconfigure if not
+    ''' </summary>
+    ''' <returns>True if RVPATH is valid (or user successfully reconfigured), False if user cancelled</returns>
+    Public Function EnsureValidRVPath() As Boolean
+        Dim errorMsg As String = ""
+
+        ' Check if current RVPATH is valid
+        If IsValidRVPath(RVPATH, errorMsg) Then
+            Return True
+        End If
+
+        ' RVPATH is invalid - show error and prompt for reconfiguration
+        Dim result As MsgBoxResult = MsgBox(
+            "Re-Volt Car Studio cannot access the Re-Volt installation directory." & vbNewLine & vbNewLine &
+            "Error: " & errorMsg & vbNewLine & vbNewLine &
+            "Would you like to reconfigure the Re-Volt path now?" & vbNewLine & vbNewLine &
+            "Click 'Yes' to configure, 'No' to exit application.",
+            MsgBoxStyle.Exclamation Or MsgBoxStyle.YesNo,
+            "Invalid Re-Volt Path"
+        )
+
+        If result = MsgBoxResult.Yes Then
+            ' Show configuration dialog
+            Config.ShowDialog()
+
+            ' Reload RVPATH from settings
+            RVPATH = Sett_get("dir", "")
+
+            ' Validate again
+            If IsValidRVPath(RVPATH, errorMsg) Then
+                Return True
+            Else
+                MsgBox("Configuration failed. Path is still invalid: " & errorMsg, MsgBoxStyle.Critical, "Configuration Failed")
+                Return False
+            End If
+        Else
+            ' User chose to exit
+            Return False
+        End If
+    End Function
     ''' <summary>
     ''' Polygon types
     ''' </summary>

@@ -104,16 +104,51 @@ Public Class CarBrowser
 
     End Enum
     Sub LoadAllCarsIntoList()
-        'Car path
-        Dim carPath As String = RVPATH & "\cars"
+        ' Validate RVPATH before attempting to access it
+        If Not EnsureValidRVPath() Then
+            ' User cancelled reconfiguration or path is still invalid
+            MsgBox("Cannot load cars without a valid Re-Volt installation path. Application will now exit.", _
+                   MsgBoxStyle.Critical, "Cannot Continue")
+            Application.Exit()
+            Return
+        End If
 
-        'remove all cars
+        ' Car path (use Path.Combine for proper path handling)
+        Dim carPath As String = IO.Path.Combine(RVPATH, "cars")
+
+        ' Remove all cars
         ListBox2.Items.Clear()
         carList.Clear()
 
-
-        'get all cars folders
-        Dim cars() = IO.Directory.GetDirectories(carPath)
+        ' Get all cars folders with error handling
+        Dim cars() As String
+        Try
+            cars = IO.Directory.GetDirectories(carPath)
+        Catch ex As IO.IOException
+            MsgBox("Error accessing cars directory: " & ex.Message & vbNewLine & vbNewLine & _
+                   "The device may not be ready. Please check your Re-Volt installation path.", _
+                   MsgBoxStyle.Exclamation, "Cannot Access Cars")
+            ' Try to reconfigure
+            If EnsureValidRVPath() Then
+                ' Retry after reconfiguration
+                Try
+                    carPath = IO.Path.Combine(RVPATH, "cars")
+                    cars = IO.Directory.GetDirectories(carPath)
+                Catch retryEx As Exception
+                    MsgBox("Still cannot access cars directory after reconfiguration: " & retryEx.Message, _
+                           MsgBoxStyle.Critical, "Fatal Error")
+                    Application.Exit()
+                    Return
+                End Try
+            Else
+                Application.Exit()
+                Return
+            End If
+        Catch ex As Exception
+            MsgBox("Unexpected error loading cars: " & ex.Message, MsgBoxStyle.Critical, "Error")
+            Application.Exit()
+            Return
+        End Try
 
         'for each car...
         For i = LBound(cars) To UBound(cars)
@@ -176,6 +211,13 @@ Public Class CarBrowser
     End Sub
     Public Shared CarIsLoading = False 'for different car setups
     Sub LoadOneCar()
+        ' Validate RVPATH before attempting to load car
+        If Not EnsureValidRVPath() Then
+            MsgBox("Cannot load car without a valid Re-Volt installation path.", MsgBoxStyle.Exclamation, "Cannot Load Car")
+            CarIsLoading = False
+            Exit Sub
+        End If
+
         'get one car, main code
         PolyCount = 0
         Timer2.Stop()
@@ -213,27 +255,44 @@ Public Class CarBrowser
 
         Dim mycar = Split(Split(ListBox2.SelectedItem, "(")(1), ")")(0) 'get carfolder
 
-        cars.Add(New Car(RVPATH & "\cars\" & mycar)) 'add new car 
+        ' Use Path.Combine for proper path handling and wrap in Try-Catch
+        Try
+            Dim carPath As String = IO.Path.Combine(RVPATH, "cars", mycar)
+            cars.Add(New Car(carPath)) 'add new car
 
-        cars(Active_Car).Load() 'load car
+            cars(Active_Car).Load() 'load car
+        Catch ex As IO.IOException
+            MsgBox("Error loading car. The Re-Volt path may not be accessible." & vbNewLine & vbNewLine & _
+                   "Error: " & ex.Message, MsgBoxStyle.Exclamation, "Cannot Load Car")
+            CarIsLoading = False
+            Exit Sub
+        Catch ex As Exception
+            MsgBox("Unexpected error loading car: " & ex.Message, MsgBoxStyle.Critical, "Error")
+            CarIsLoading = False
+            Exit Sub
+        End Try
 
 
         '----------------------- get author name-------------------
         Dim auth$ = ""
 
-        If IO.Directory.Exists(RVPATH & "\cars\" & mycar) = False Then Exit Sub
+        Try
+            Dim carDirPath As String = IO.Path.Combine(RVPATH, "cars", mycar)
+            If Not IO.Directory.Exists(carDirPath) Then Exit Sub
 
+            ' Check for author name from car name
+            If InStr(cars(Active_Car).Theory.MainInfos.Name, "Halogaland", CompareMethod.Text) > 0 Then
+                auth = "Halogaland"
+                Label22.Text = auth
+            End If
 
-        If InStr(cars(Active_Car).Theory.MainInfos.Name, "Halogaland", CompareMethod.Text) > 0 Then
-            auth = "Halogaland"
-            Label22.Text = auth
-        End If
-
-        If IO.Directory.GetFiles(RVPATH & "\cars\" & mycar, "*read*me*").Length > 0 Then
-            made_by.Visible = True
-            Label22.Visible = True
-            view_readme.Visible = True
-            Dim rm = IO.File.ReadAllText(IO.Directory.GetFiles(RVPATH & "\cars\" & mycar, "*read*me*")(0))
+            ' Try to get author from readme file
+            Dim readmeFiles() As String = IO.Directory.GetFiles(carDirPath, "*read*me*")
+            If readmeFiles.Length > 0 Then
+                made_by.Visible = True
+                Label22.Visible = True
+                view_readme.Visible = True
+                Dim rm = IO.File.ReadAllText(readmeFiles(0))
             If InStr(rm, "---", CompareMethod.Text) > 0 And InStr(rm, "citywalker", CompareMethod.Text) > 0 Then
                 auth = "Citywalker"
 
@@ -276,30 +335,39 @@ Public Class CarBrowser
 
 
 xFail:
-            'author name not found
-            Label22.Text = auth
+                'author name not found
+                Label22.Text = auth
 
+            Else
+                made_by.Visible = False
+                Label22.Visible = False
+                view_readme.Visible = False
+            End If
 
+            'is stock? (then auth = Acclaim )
+            If InStr(Stock, "*" & mycar & "*", CompareMethod.Text) Then
+                auth = "Acclaim (STOCK CAR)"
+                Label22.Text = "Acclaim (STOCK CAR)"
+            End If
 
+            If auth <> "" Then
+                made_by.Visible = True
+                Label22.Visible = True
+            End If
 
-        Else
+        Catch ex As IO.IOException
+            ' Error reading author info - not critical, continue loading car
+            Console_.W("Warning: Could not read car author info - " & ex.Message)
             made_by.Visible = False
             Label22.Visible = False
             view_readme.Visible = False
-        End If
-
-        'is stock? (then auth = Acclaim ) 
-        If InStr(Stock, "*" & mycar & "*", CompareMethod.Text) Then
-            auth = "Acclaim (STOCK CAR)"
-            Label22.Text = "Acclaim (STOCK CAR)"
-        End If
-
-        If auth <> "" Then
-            made_by.Visible = True
-            Label22.Visible = True
-
-
-        End If
+        Catch ex As Exception
+            ' Other errors in author detection - not critical
+            Console_.W("Warning: Error detecting car author - " & ex.Message)
+            made_by.Visible = False
+            Label22.Visible = False
+            view_readme.Visible = False
+        End Try
 
 
 
