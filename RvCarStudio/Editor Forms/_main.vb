@@ -40,17 +40,26 @@ Public Class _main
 
     Private Sub Button1_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button1.Click
         If cars(Active_Car).Theory.MainInfos.Tpage = "" Then Beep() : Exit Sub
-        Dim X As New Form
-        X.Size = New Size(256, 256)
-        X.StartPosition = FormStartPosition.CenterScreen
 
-        X.BackgroundImage = Image.FromFile(RVPATH & "\" & Replace(Replace(Replace(cars(Active_Car).Theory.MainInfos.Tpage, "'", ""), ",", "."), Chr(9), ""))
-        X.BackgroundImageLayout = ImageLayout.Stretch
-        X.Text = "Preview Bitmap"
-        X.TopMost = True
+        ' Get texture path safely
+        Dim texturePath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If String.IsNullOrEmpty(texturePath) OrElse Not IO.File.Exists(texturePath) Then
+            MsgBox("Cannot preview texture - file not found", MsgBoxStyle.Exclamation)
+            Exit Sub
+        End If
 
-        X.Show()
-
+        Try
+            Dim X As New Form
+            X.Size = New Size(256, 256)
+            X.StartPosition = FormStartPosition.CenterScreen
+            X.BackgroundImage = Image.FromFile(texturePath)
+            X.BackgroundImageLayout = ImageLayout.Stretch
+            X.Text = "Preview Bitmap"
+            X.TopMost = True
+            X.Show()
+        Catch ex As Exception
+            MsgBox("Error loading texture preview: " & ex.Message, MsgBoxStyle.Critical)
+        End Try
     End Sub
 
     Private Sub Button4_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button4.Click
@@ -190,9 +199,17 @@ Public Class _main
         Label5.ForeColor = Color.Gray
         TextBox2.ForeColor = Color.Black
 
+        ' Build paths safely
+        Dim newCarPath As String = SafeRVPath("cars\" & TextBox2.Text)
+        Dim oldCarPath As String = SafeRVPath("cars\" & cars(Active_Car).DirName)
 
+        If String.IsNullOrEmpty(newCarPath) OrElse String.IsNullOrEmpty(oldCarPath) Then
+            MsgBox("Cannot rename car - invalid RVPATH", MsgBoxStyle.Exclamation)
+            Exit Sub
+        End If
 
-        If IO.Directory.Exists(RVPATH & "\cars\" & TextBox2.Text) Then
+        ' Check if target directory already exists
+        If IO.Directory.Exists(newCarPath) Then
             Label5.ForeColor = Color.DarkRed
             TextBox2.ForeColor = Color.Red
             Exit Sub
@@ -202,19 +219,17 @@ Public Class _main
         End If
 
         Try
-            My.Computer.FileSystem.RenameDirectory( _
-            RVPATH & "\cars\" & cars(Active_Car).DirName, _
-           TextBox2.Text)
+            My.Computer.FileSystem.RenameDirectory(oldCarPath, TextBox2.Text)
 
-
+            ' Update model paths
             For i = 0 To 19
-
                 cars(Active_Car).Theory.MainInfos.Model(i) = Replace(cars(Active_Car).Theory.MainInfos.Model(i), _
                                                                      "cars\" & cars(Active_Car).DirName, "cars\" & TextBox2.Text, , , CompareMethod.Text)
-
             Next
+
+            ' Update car directory info
             cars(Active_Car).DirName = TextBox2.Text
-            cars(Active_Car).Path = RVPATH & "\cars\" & TextBox2.Text
+            cars(Active_Car).Path = newCarPath
 
             cars(Active_Car).Sing.SaveToFile()
 
