@@ -28,33 +28,43 @@ Public Class Texture_
 
         If cars(Active_Car).Theory.MainInfos.Tpage = "NONE" Then Exit Sub
 
-        If Not IO.File.Exists(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage) Then
-            Console_.W("File " & RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage & " not found")
+        ' Get texture path safely
+        Dim texturePath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If String.IsNullOrEmpty(texturePath) Then
+            Console_.W("Cannot build texture path - RVPATH invalid")
             Exit Sub
         End If
 
+        If Not IO.File.Exists(texturePath) Then
+            Console_.W("Texture file not found: " & texturePath)
+            Exit Sub
+        End If
 
-        bmpstr = New IO.FileStream(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, IO.FileMode.Open, IO.FileAccess.Read)
-        cBMP = Bitmap.FromStream(bmpstr)
-        bmpstr.Close()
+        Try
+            bmpstr = New IO.FileStream(texturePath, IO.FileMode.Open, IO.FileAccess.Read)
+            cBMP = Bitmap.FromStream(bmpstr)
+            bmpstr.Close()
 
-        'init
-        DMatrix = Nothing : AvgMatrix = Nothing : CTable = Nothing
-        TrackBar1.Value = 0 : TrackBar2.Value = 0 : TrackBar3.Value = 0 : TrackBar4.Value = 0
-        TrackBar5.Value = 0 : TrackBar6.Value = 0 : TrackBar7.Value = 0
+            'init
+            DMatrix = Nothing : AvgMatrix = Nothing : CTable = Nothing
+            TrackBar1.Value = 0 : TrackBar2.Value = 0 : TrackBar3.Value = 0 : TrackBar4.Value = 0
+            TrackBar5.Value = 0 : TrackBar6.Value = 0 : TrackBar7.Value = 0
 
-        ReDim DMatrix(cBMP.Width, cBMP.Height)
-        ReDim AvgMatrix(cBMP.Width, cBMP.Height)
-        ReDim CTable(cBMP.Width * cBMP.Height * 4) 'TODO: was 3
-        For i = 0 To cBMP.Width - 1
-            For j = 0 To cBMP.Height - 1
-                DMatrix(i, j) = cBMP.GetPixel(i, j)
-                AvgMatrix(i, j) = (DMatrix(i, j).R / 3 + DMatrix(i, j).G / 3 + DMatrix(i, j).B / 3)
-                '   CMatrix(i, j) = DMatrix(i, j)
+            ReDim DMatrix(cBMP.Width, cBMP.Height)
+            ReDim AvgMatrix(cBMP.Width, cBMP.Height)
+            ReDim CTable(cBMP.Width * cBMP.Height * 4)
+            For i = 0 To cBMP.Width - 1
+                For j = 0 To cBMP.Height - 1
+                    DMatrix(i, j) = cBMP.GetPixel(i, j)
+                    AvgMatrix(i, j) = (DMatrix(i, j).R / 3 + DMatrix(i, j).G / 3 + DMatrix(i, j).B / 3)
+                Next
             Next
-        Next
 
-        loading = False
+            loading = False
+        Catch ex As Exception
+            Console_.W("Error loading texture for editing: " & ex.Message)
+            loading = False
+        End Try
 
 
     End Sub
@@ -64,15 +74,22 @@ Public Class Texture_
     End Sub
     Public tBMP As Integer(,)
     Sub EnterTexEditMode()
-
         CarEditor.Prv.Show()
-
-
         CarEditor.Prv.Controls.Add(Preview_texture.pbmp)
-        bmpstr = New IO.FileStream(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, IO.FileMode.Open)
-        Preview_texture.PictureBox1.Image = Image.FromStream(bmpstr)
-        bmpstr.Close()
 
+        ' Load texture preview safely
+        Dim texturePath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If Not String.IsNullOrEmpty(texturePath) AndAlso IO.File.Exists(texturePath) Then
+            Try
+                bmpstr = New IO.FileStream(texturePath, IO.FileMode.Open)
+                Preview_texture.PictureBox1.Image = Image.FromStream(bmpstr)
+                bmpstr.Close()
+            Catch ex As Exception
+                Console_.W("Error loading texture preview: " & ex.Message)
+            End Try
+        Else
+            Console_.W("Cannot load texture preview - file not found")
+        End If
     End Sub
     Private Sub Button1_TextChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles Button1.TextChanged
         If Not Initializd Then Exit Sub
@@ -193,16 +210,36 @@ Public Class Texture_
         CarEditor.Label11.Hide()
         If cars(Active_Car).Theory.MainInfos.Tpage = "NONE" Then Exit Sub
 
-        IO.File.Copy(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage & Environment.TickCount & ".bmp")
-        For j = 0 To cBMP.Height - 1
-            For i = 0 To cBMP.Width - 1
-                cBMP.SetPixel(i, j, Color.FromArgb(CTable(j * cBMP.Height * 4 + i * 4), CTable(j * cBMP.Height * 4 + i * 4 + 1), CTable(j * cBMP.Height * 4 + i * 4 + 2)))
+        ' Get texture path safely
+        Dim texturePath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If String.IsNullOrEmpty(texturePath) Then
+            MsgBox("Cannot save texture - invalid RVPATH", MsgBoxStyle.Exclamation)
+            Exit Sub
+        End If
+
+        Try
+            ' Create backup
+            Dim backupPath As String = texturePath & Environment.TickCount & ".bmp"
+            IO.File.Copy(texturePath, backupPath)
+
+            ' Update bitmap from color table
+            For j = 0 To cBMP.Height - 1
+                For i = 0 To cBMP.Width - 1
+                    cBMP.SetPixel(i, j, Color.FromArgb(CTable(j * cBMP.Height * 4 + i * 4), CTable(j * cBMP.Height * 4 + i * 4 + 1), CTable(j * cBMP.Height * 4 + i * 4 + 2)))
+                Next
             Next
-        Next
-        cBMP.Save(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, Drawing.Imaging.ImageFormat.Bmp)
+
+            ' Save texture
+            cBMP.Save(texturePath, Drawing.Imaging.ImageFormat.Bmp)
+        Catch ex As Exception
+            MsgBox("Error saving texture: " & ex.Message, MsgBoxStyle.Critical)
+            Exit Sub
+        End Try
         TrackBar1.Value = 0 : TrackBar2.Value = 0 : TrackBar3.Value = 0 : TrackBar4.Value = 0
         TrackBar5.Value = 0 : TrackBar6.Value = 0 : TrackBar7.Value = 0
-        Textures(1) = TexLib.TexUtil.CreateTextureFromFile(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage)
+
+        ' Reload texture into OpenGL
+        Textures(1) = TexLib.TexUtil.CreateTextureFromFile(texturePath)
         DOLOAD()
     End Sub
 

@@ -376,8 +376,12 @@ xFail:
         Application.DoEvents()
         setProgress(20)
 
-        'get texture
-        Dim ftex = (Replace(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, ",", "."))
+        'get texture safely
+        Dim ftex As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If String.IsNullOrEmpty(ftex) Then
+            Console_.W("Warning: Could not build texture path")
+            ftex = ""  ' Will use default texture
+        End If
         Application.DoEvents()
         setProgress(22)
         InitAllTextures(ftex)
@@ -413,40 +417,56 @@ xFail:
 
         'are we reloading parameters?
         If ReloadParams Then
+            Try
+                'remove & load
+                Dim mycar = cars(Active_Car).DirName
+                Dim carPath As String = SafeRVPath("cars\" & mycar)
+                If String.IsNullOrEmpty(carPath) Then
+                    Console_.W("Error: Cannot build car path for reload")
+                    CarIsLoading = False
+                    Exit Sub
+                End If
 
-            'remove & load
-            Dim mycar = cars(Active_Car).DirName
-            cars.Clear()
-            cars.Add(New Car(RVPATH & "\cars\" & mycar))
-            cars(Active_Car).Load()
-
-
+                cars.Clear()
+                cars.Add(New Car(carPath))
+                cars(Active_Car).Load()
+            Catch ex As Exception
+                Console_.W("Error reloading car parameters: " & ex.Message)
+                CarIsLoading = False
+                Exit Sub
+            End Try
         End If
 
 
 
         're-load textures?
         If Not KeepTextures Then
-            Dim ftex = (Replace(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, ",", "."))
-            InitAllTextures(ftex)
+            Dim ftex As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Tpage)
+            If Not String.IsNullOrEmpty(ftex) Then
+                InitAllTextures(ftex)
+            Else
+                Console_.W("Warning: Could not reload texture")
+            End If
         End If
 
 
         'load body
         If (cars(Active_Car).Theory.Body.modelNumber) <> -1 Then
-            If IO.File.Exists(Replace(Replace(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Body.modelNumber), Chr(34), ""), ",", ".")) = True Then
-                cars(Active_Car).models.BODY = New PRM(Replace(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Body.modelNumber), Chr(34), ""))
-                cars(Active_Car).models.BODY.TextureI = 1
-                Try
-                    cars(Active_Car).models.BODY.Position = cars(Active_Car).Theory.Body.Offset * Zoom  ' - cars(Active_Car).Theory.RealInfos.COM / 2
-                Catch
-                End Try
-
-
-
-            End If
-        Else
-
+            Try
+                Dim bodyModelPath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Body.modelNumber))
+                If Not String.IsNullOrEmpty(bodyModelPath) AndAlso IO.File.Exists(bodyModelPath) Then
+                    cars(Active_Car).models.BODY = New PRM(bodyModelPath)
+                    cars(Active_Car).models.BODY.TextureI = 1
+                    Try
+                        cars(Active_Car).models.BODY.Position = cars(Active_Car).Theory.Body.Offset * Zoom  ' - cars(Active_Car).Theory.RealInfos.COM / 2
+                    Catch
+                    End Try
+                Else
+                    Console_.W("Warning: Body model not found - " & bodyModelPath)
+                End If
+            Catch ex As Exception
+                Console_.W("Error loading body model: " & ex.Message)
+            End Try
         End If
 
         Application.DoEvents()
@@ -455,23 +475,22 @@ xFail:
         'load wheels
         For i = 0 To 3
             If cars(Active_Car).Theory.wheel(i).modelNumber <> -1 Then
-                If IO.File.Exists(Replace(RVPATH & "\" & Replace(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.wheel(i).modelNumber), Chr(34), ""), ",", ".")) = True Then
-                    cars(Active_Car).models.Wheel(i) = New PRM(RVPATH & "\" & Replace(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.wheel(i).modelNumber), Chr(34), ""))
-                    If cars(Active_Car).models.Wheel(i) IsNot Nothing Then
-                        cars(Active_Car).models.Wheel(i).TextureI = 1
-                        cars(Active_Car).models.Wheel(i).Position = cars(Active_Car).Theory.wheel(i).Offset(1) * Zoom  '+ cars(Active_Car).Theory.RealInfos  '+ cars(Active_Car).Theory.wheel(i).offset  * ZOOM  (2) '- cars(Active_Car).Theory.Body.offset  * ZOOM  
-                        cars(Active_Car).models.Wheel(i).isVisible = cars(Active_Car).Theory.wheel(i).IsPresent
-
-
-
-
+                Try
+                    Dim wheelModelPath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.wheel(i).modelNumber))
+                    If Not String.IsNullOrEmpty(wheelModelPath) AndAlso IO.File.Exists(wheelModelPath) Then
+                        cars(Active_Car).models.Wheel(i) = New PRM(wheelModelPath)
+                        If cars(Active_Car).models.Wheel(i) IsNot Nothing Then
+                            cars(Active_Car).models.Wheel(i).TextureI = 1
+                            cars(Active_Car).models.Wheel(i).Position = cars(Active_Car).Theory.wheel(i).Offset(1) * Zoom  '+ cars(Active_Car).Theory.RealInfos  '+ cars(Active_Car).Theory.wheel(i).offset  * ZOOM  (2) '- cars(Active_Car).Theory.Body.offset  * ZOOM
+                            cars(Active_Car).models.Wheel(i).isVisible = cars(Active_Car).Theory.wheel(i).IsPresent
+                        End If
+                    Else
+                        Console_.W("Warning: Wheel " & i & " model not found")
                     End If
-                Else
-                    'Tip.fShow("~~Error: MODEL(" & cars(Active_Car).Theory.wheel(i).modelNumber & ") doesn't exist" & vbNewLine)
-                End If
-
+                Catch ex As Exception
+                    Console_.W("Error loading wheel " & i & " model: " & ex.Message)
+                End Try
             End If
-
         Next
 
 
@@ -479,11 +498,20 @@ xFail:
 
         'load spring
         For i = 0 To 3
-
             If cars(Active_Car).Theory.Spring(i).modelNumber <> -1 Then
-
-                cars(Active_Car).models.Spring(i) = New PRM(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Spring(i).modelNumber).Replace(Chr(34), ""))
-                cars(Active_Car).models.Spring(i).TextureI = 1
+                Try
+                    Dim springModelPath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Spring(i).modelNumber))
+                    If Not String.IsNullOrEmpty(springModelPath) AndAlso IO.File.Exists(springModelPath) Then
+                        cars(Active_Car).models.Spring(i) = New PRM(springModelPath)
+                        cars(Active_Car).models.Spring(i).TextureI = 1
+                    Else
+                        Console_.W("Warning: Spring " & i & " model not found")
+                        Continue For
+                    End If
+                Catch ex As Exception
+                    Console_.W("Error loading spring " & i & " model: " & ex.Message)
+                    Continue For
+                End Try
 
 
                 'scale
@@ -510,10 +538,19 @@ xFail:
         'load axles
         For i = 0 To 3
             If cars(Active_Car).Theory.Axle(i).modelNumber <> -1 Then
-
-
-                cars(Active_Car).models.axle(i) = New PRM(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Axle(i).modelNumber).Replace(Chr(34), ""))
-                cars(Active_Car).models.axle(i).TextureI = 1
+                Try
+                    Dim axleModelPath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Axle(i).modelNumber))
+                    If Not String.IsNullOrEmpty(axleModelPath) AndAlso IO.File.Exists(axleModelPath) Then
+                        cars(Active_Car).models.axle(i) = New PRM(axleModelPath)
+                        cars(Active_Car).models.axle(i).TextureI = 1
+                    Else
+                        Console_.W("Warning: Axle " & i & " model not found")
+                        Continue For
+                    End If
+                Catch ex As Exception
+                    Console_.W("Error loading axle " & i & " model: " & ex.Message)
+                    Continue For
+                End Try
 
                 Dim Scale! = (cars(Active_Car).Theory.Axle(i).offSet - cars(Active_Car).Theory.wheel(i).Offset(1)).LengthFast / cars(Active_Car).Theory.Axle(i).Length
 
@@ -537,9 +574,19 @@ xFail:
         'load PINs
         For i = 0 To 3
             If cars(Active_Car).Theory.PIN(i).modelNumber <> -1 Then
-                'If _Pin(i) IsNot Nothing Then
-                cars(Active_Car).models.Pin(i) = New PRM(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.PIN(i).modelNumber).Replace(Chr(34), ""))
-                cars(Active_Car).models.Pin(i).TextureI = 1
+                Try
+                    Dim pinModelPath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.PIN(i).modelNumber))
+                    If Not String.IsNullOrEmpty(pinModelPath) AndAlso IO.File.Exists(pinModelPath) Then
+                        cars(Active_Car).models.Pin(i) = New PRM(pinModelPath)
+                        cars(Active_Car).models.Pin(i).TextureI = 1
+                    Else
+                        Console_.W("Warning: Pin " & i & " model not found")
+                        Continue For
+                    End If
+                Catch ex As Exception
+                    Console_.W("Error loading pin " & i & " model: " & ex.Message)
+                    Continue For
+                End Try
 
 
                 'Dim Scale! = (cars(Active_Car).Theory.Spring(i).offset  * ZOOM   - cars(Active_Car).Theory.wheel(i).offset  * ZOOM (1) ).Length / cars(Active_Car).Theory.PIN(i).Length
@@ -562,28 +609,29 @@ xFail:
 
         'load spinner
         If cars(Active_Car).Theory.Spinner.modelNumber <> -1 Then
-            cars(Active_Car).models.Spinner = New PRM(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Spinner.modelNumber).Replace(Chr(34), ""))
-
-            cars(Active_Car).models.Spinner.TextureI = 1
-            ' cars(Active_Car).models.spinner.Render()
-            '  MsgBox(_Spinner.PolysReadingProgress)
-            cars(Active_Car).models.Spinner.Position = cars(Active_Car).Theory.Spinner.offSet * Zoom
-
-            ' cars(Active_Car).Theory.Spinner.Axis()
-            '_Spinner.ScnNode.Scale = cars(Active_Car).Theory.Spinner.Axis 
-
+            Try
+                Dim spinnerModelPath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Spinner.modelNumber))
+                If Not String.IsNullOrEmpty(spinnerModelPath) AndAlso IO.File.Exists(spinnerModelPath) Then
+                    cars(Active_Car).models.Spinner = New PRM(spinnerModelPath)
+                    cars(Active_Car).models.Spinner.TextureI = 1
+                    cars(Active_Car).models.Spinner.Position = cars(Active_Car).Theory.Spinner.offSet * Zoom
+                Else
+                    Console_.W("Warning: Spinner model not found")
+                End If
+            Catch ex As Exception
+                Console_.W("Error loading spinner model: " & ex.Message)
+            End Try
         End If
 
 
         'load aerial
         If cars(Active_Car).Theory.Aerial.ModelNumber <> -1 Then
-            If IO.File.Exists(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Aerial.ModelNumber).Replace(Chr(34), "")) = False Then
-                ' Tip.fShow("~~Error: MODEL(" & cars(Active_Car).Theory.Aerial.ModelNumber & ") doesn't exist" & vbNewLine)
-            End If
-            cars(Active_Car).models.Aerial = New PRM(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Aerial.ModelNumber).Replace(Chr(34), ""))
-            If cars(Active_Car).models.Aerial IsNot Nothing Then
-
-                cars(Active_Car).models.Aerial.TextureI = 2 'RVPATH & "\gfx\fxpage1.bmp"
+            Try
+                Dim aerialModelPath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Aerial.ModelNumber))
+                If Not String.IsNullOrEmpty(aerialModelPath) AndAlso IO.File.Exists(aerialModelPath) Then
+                    cars(Active_Car).models.Aerial = New PRM(aerialModelPath)
+                    If cars(Active_Car).models.Aerial IsNot Nothing Then
+                        cars(Active_Car).models.Aerial.TextureI = 2 'FX page texture
                 '  cars(Active_Car).models.aerial.Render()
 
                 cars(Active_Car).models.Aerial.MATRIX = Matrix4.Scale(1, cars(Active_Car).Theory.Aerial.length * 3 / 2, 1)
@@ -596,28 +644,40 @@ xFail:
                 'cars(Active_Car).models.aerial.ScnNode.Scale.SetLength(cars(Active_Car).Theory.Aerial.length)
 
 
-            End If
+                    End If
+                Else
+                    Console_.W("Warning: Aerial model not found")
+                End If
+            Catch ex As Exception
+                Console_.W("Error loading aerial model: " & ex.Message)
+            End Try
         End If
 
 
-        'load aerial's top [@TO BE FIXED]
+        'load aerial's top
         If cars(Active_Car).Theory.Aerial.TopModelNumber <> -1 Then
-            Dim aerialtop As New PRM(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Aerial.TopModelNumber).Replace(Chr(34), ""))
-            If aerialtop IsNot Nothing Then
-                aerialtop.TextureI = 2 ' RVPATH & "\gfx\fxpage1.bmp"
+            Try
+                Dim aerialTopModelPath As String = SafeRVPath(cars(Active_Car).Theory.MainInfos.Model(cars(Active_Car).Theory.Aerial.TopModelNumber))
+                If Not String.IsNullOrEmpty(aerialTopModelPath) AndAlso IO.File.Exists(aerialTopModelPath) Then
+                    Dim aerialtop As New PRM(aerialTopModelPath)
+                    If aerialtop IsNot Nothing Then
+                        aerialtop.TextureI = 2 ' FX page texture
                 ' aerialtop.Render()
                 '   aerialtop.ScnNode.Scale *= 5
                 ' aerialtop.ScnNode.Position *= cars(Active_Car).Theory.Aerial.Direction.Y
                 aerialtop.MATRIX = Matrix4.Scale(1, -cars(Active_Car).Theory.Aerial.length / 3, 1)
                 aerialtop.Position = cars(Active_Car).Theory.Aerial.offset * Zoom + New Vector3(0, cars(Active_Car).Theory.Aerial.length * 3 / 2, 0) ' * cars(Active_Car).Theory.Aerial.length * 2
 
-                '  aerialtop.Scale = New Vector3d(1, -5, 1)
-                '  aerialtop.ScnNode.Position += cars(Active_Car).Theory.Aerial.Direction
-                '  aerialtop.ScnNode.Position += cars(Active_Car).Theory.Aerial.offset  * ZOOM   '+  ' ) '+' Aerial.ScnNode.BoundingBox.MaxEdge
-
-
-
-            End If
+                        '  aerialtop.Scale = New Vector3d(1, -5, 1)
+                        '  aerialtop.ScnNode.Position += cars(Active_Car).Theory.Aerial.Direction
+                        '  aerialtop.ScnNode.Position += cars(Active_Car).Theory.Aerial.offset  * ZOOM   '+  ' ) '+' Aerial.ScnNode.BoundingBox.MaxEdge
+                    End If
+                Else
+                    Console_.W("Warning: Aerial top model not found")
+                End If
+            Catch ex As Exception
+                Console_.W("Error loading aerial top model: " & ex.Message)
+            End Try
         End If
 
 

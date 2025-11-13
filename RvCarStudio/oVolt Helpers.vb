@@ -50,9 +50,27 @@ Module oVolt_helpers
             Console_.W("Warning: Failed to delete textures during cleanup - " & ex.Message)
         End Try
 
-        ' Create new textures
-        Textures(1) = TexLib.TexUtil.CreateTextureFromFile(texture)
-        Textures(2) = TexLib.TexUtil.CreateTextureFromFile(RVPATH & "\gfx\fxpage1.bmp")
+        ' Create new textures with validation
+        Try
+            Textures(1) = TexLib.TexUtil.CreateTextureFromFile(texture)
+        Catch ex As Exception
+            Console_.W("Error loading car texture: " & ex.Message)
+            Textures(1) = TexLib.TexUtil.CreateTextureFromFile("")  ' Creates default texture
+        End Try
+
+        ' Load FX page texture safely
+        Dim fxPagePath As String = SafeRVPath("gfx\fxpage1.bmp")
+        If Not String.IsNullOrEmpty(fxPagePath) Then
+            Try
+                Textures(2) = TexLib.TexUtil.CreateTextureFromFile(fxPagePath)
+            Catch ex As Exception
+                Console_.W("Error loading FX page texture: " & ex.Message)
+                Textures(2) = TexLib.TexUtil.CreateTextureFromFile("")  ' Creates default texture
+            End Try
+        Else
+            Console_.W("Cannot load FX page - RVPATH invalid")
+            Textures(2) = TexLib.TexUtil.CreateTextureFromFile("")  ' Creates default texture
+        End If
     End Sub
     'Idea from MS, code from Internet
 

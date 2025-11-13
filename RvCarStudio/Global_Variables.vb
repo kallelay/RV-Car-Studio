@@ -164,6 +164,43 @@ Public Const Type As VerType = VerType.preAlpha
             Return False
         End If
     End Function
+
+    ''' <summary>
+    ''' Safely combines RVPATH with a relative path, with validation
+    ''' </summary>
+    ''' <param name="relativePath">Relative path to combine with RVPATH</param>
+    ''' <param name="resultPath">Output: The combined path if successful</param>
+    ''' <returns>True if successful, False if RVPATH is invalid</returns>
+    Public Function SafeRVPath(ByVal relativePath As String, ByRef resultPath As String) As Boolean
+        If Not EnsureValidRVPath() Then
+            resultPath = ""
+            Return False
+        End If
+
+        Try
+            ' Clean up the relative path
+            Dim cleanPath As String = relativePath.Replace(Chr(34), "").Replace(",", ".")
+            If cleanPath.StartsWith("\") Then cleanPath = cleanPath.Substring(1)
+
+            ' Combine paths properly
+            resultPath = IO.Path.Combine(RVPATH, cleanPath)
+            Return True
+        Catch ex As Exception
+            Console_.W("Error building path: " & ex.Message)
+            resultPath = ""
+            Return False
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' Safely combines RVPATH with a relative path (simplified version)
+    ''' Returns empty string if failed
+    ''' </summary>
+    Public Function SafeRVPath(ByVal relativePath As String) As String
+        Dim result As String = ""
+        SafeRVPath(relativePath, result)
+        Return result
+    End Function
     ''' <summary>
     ''' Polygon types
     ''' </summary>
