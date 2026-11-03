@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="RvStudio.App/RvStudio.App.csproj" />
+  <Project Path="RvStudio.Core/RvStudio.Core.csproj" />
+  <Project Path="RvStudio.Tests/RvStudio.Tests.csproj" />
+</Solution>

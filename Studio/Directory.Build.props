@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup Condition="'$(RVS_OBJ)' != ''">
+    <BaseIntermediateOutputPath>$(RVS_OBJ)\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>
