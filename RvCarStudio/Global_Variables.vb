@@ -10,7 +10,7 @@ Module Global_Variables
     Public Const BuildNumber = "0"
 
     Public Const Revision ="634"
-Public Const Type As VerType = VerType.preAlpha
+Public Const Type As VerType = VerType.release
 
 
     '' Applications info
@@ -18,7 +18,7 @@ Public Const Type As VerType = VerType.preAlpha
     Public Const InnerNAME = "RVCarStudio"
     Public Const Maker = "Kallel A.Y"
     Public Const Description = APPNAME & " by " & Maker
-    Public Const ACTIVE_YEARS = "2010-2014"
+    Public Const ACTIVE_YEARS = "2010-2026"
     Public Const COPY = "Copyright © " & APPNAME & " (" & ACTIVE_YEARS & "). Based on Car Load, Shader, PRM, Re-Volt source code..."
 
     Public Const FULL_INFO = APPNAME & " (" & MajorVersion & "." & MinorVersion & ") by " & Maker & "." & vbNewLine & _
@@ -64,6 +64,12 @@ Public Const Type As VerType = VerType.preAlpha
     ''' <remarks></remarks>
     ''' RVpath
     Public RVPATH As String
+
+    ''' <summary>Numbers in files and text boxes always use a dot</summary>
+    Public Sub UseInvariantCulture()
+        Globalization.CultureInfo.DefaultThreadCurrentCulture = Globalization.CultureInfo.InvariantCulture
+        Threading.Thread.CurrentThread.CurrentCulture = Globalization.CultureInfo.InvariantCulture
+    End Sub
 
     ''' <summary>
     ''' Validates if RVPATH points to a valid Re-Volt installation directory

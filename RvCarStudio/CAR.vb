@@ -1,4 +1,4 @@
-﻿Imports OpenTK
+Imports OpenTK
 Imports OpenTK.Graphics
 
 Public Module Global_
@@ -10,10 +10,9 @@ Public Module Global_
     Function readPolys(ByVal file$) As Single
         If IO.File.Exists(file) = False Then Return Single.NaN
         Try
-            Dim x = New IO.BinaryReader(New IO.FileStream(file, IO.FileMode.Open))
-            Dim y = x.ReadInt16()
-            x.Close()
-            Return y
+            Using x = New IO.BinaryReader(New IO.FileStream(file, IO.FileMode.Open, IO.FileAccess.Read, IO.FileShare.Read))
+                Return x.ReadInt16()
+            End Using
 
         Catch ex As Exception
             Return 0
@@ -46,6 +45,7 @@ Public Class Car_theory
     Public Spinner As Spinner
     Public Aerial As Aerial
     Public carAi As AI
+    Public Camera As CamAttached
 
 
 
@@ -58,25 +58,33 @@ Public Class Car_theory
         J.Body = Body.Clone
         J.RealInfos = RealInfos.Clone
         For i = 0 To J.wheel.Count - 1 : J.wheel(i) = wheel(i).Clone : Next
-        For i = 0 To J.Spring.Count - 1 : J.Spring(i) = Spring(i).clone : Next
-        For i = 0 To J.PIN.Count - 1 : J.PIN(i) = PIN(i).clone : Next
-        For i = 0 To J.Axle.Count - 1 : J.Axle(i) = Axle(i).clone : Next
+        For i = 0 To J.Spring.Count - 1 : J.Spring(i) = Spring(i).Clone : Next
+        For i = 0 To J.PIN.Count - 1 : J.PIN(i) = PIN(i).Clone : Next
+        For i = 0 To J.Axle.Count - 1 : J.Axle(i) = Axle(i).Clone : Next
 
         J.Spinner = Spinner.Clone
         J.Aerial = Aerial.Clone
-        If J.carAi IsNot Nothing Then J.carAi = carAi.Clone
+        If carAi IsNot Nothing Then J.carAi = carAi.Clone
+        If Camera IsNot Nothing Then J.Camera = Camera.Clone
         Return J
 
     End Function
 End Class
 Public Class Main
-    Public Name As String
+    Public Name As String = ""
     Public Model(19) As String
-    Public Tpage As String
-    Public CollFile As String
+    Public Tpage As String = ""
+    Public CollFile As String = ""
     Public EnvRGB As Color4
-    Public TCarBox As String = "NONE"
-    ' Public TSHADOW As String = 
+    Public TCarBox As String = ""
+    Public TShadow As String = ""
+    Public ShadowIndex As Integer = -1
+    Public HasShadowIndex As Boolean = False
+    Public ShadowTable(4) As Double
+    Public HasShadowTable As Boolean = False
+    Public SfxEngine As String = ""
+    Public SfxHonk As String = ""
+    Public SfxServo As String = ""
 
     Public BESTTIME As Boolean
     Public CPUSELECTABLE As Boolean = True
@@ -93,41 +101,13 @@ Public Class Main
     Public Trans As Integer
     Public MaxRev As Single
 
-    Public Statistics = False
+    Public Statistics As Boolean = False
 
     Function Clone() As Main
-        Dim J As New Main()
-        With J
-            .Name = Replace(Name, ",", ".")
-
-            .Model = Model
-            .Tpage = Tpage
-            .CollFile = CollFile
-            .EnvRGB = EnvRGB
-            .TCarBox = TCarBox
-
-            .Model = Model.Clone
-
-            .BESTTIME = BESTTIME
-            .SELECTABLE = SELECTABLE
-            .CPUSELECTABLE = CPUSELECTABLE
-            .car_class = car_class
-            .obtain = obtain
-            .Rating = Rating
-
-            .TopEnd = TopEnd
-            .Acceleration = Acceleration
-            .Weight = Weight
-            .Handling = Handling
-            .Trans = Trans
-            .MaxRev = MaxRev
-
-
-        End With
-
+        Dim J = DirectCast(MemberwiseClone(), Main)
+        J.Model = DirectCast(Model.Clone, String())
+        J.ShadowTable = DirectCast(ShadowTable.Clone, Double())
         Return J
-
-
     End Function
 End Class
 
@@ -139,32 +119,22 @@ Public Class Real_Inf
     Public DownForceModifier As Double
     Public COM As Vector3
     Public WeaponGeneration As Vector3
+    Public WeaponGeneration2 As Vector3
+    Public HasWeapon2 As Boolean = False
     Public ClothFX As Boolean = False
     Public Flying As Boolean = False
     Public Flippable As Boolean = False
 
-
     Function Clone() As Real_Inf
-        Dim j As New Real_Inf
-        With j
-            .SteerRate = SteerRate
-            .SteerMode = SteerMode
-            .EngineRate = EngineRate
-            .TopSpeed = TopSpeed
-            .DownForceModifier = DownForceModifier
-            .COM = COM
-            .WeaponGeneration = WeaponGeneration
-        End With
-        Return j
+        Return DirectCast(MemberwiseClone(), Real_Inf)
     End Function
 End Class
 
 Public Class Body
-    Public modelNumber As Integer
+    Public modelNumber As Integer = -1
     Public Offset As Vector3
     Public Mass As Double
     Public Inertia(3) As Vector3
-    '  Public Gravity As Double
     Public Hardness As Double
     Public Resistance As Double
     Public AngleRes As Double
@@ -173,32 +143,15 @@ Public Class Body
     Public StaticFriction As Double
     Public KineticFriction As Double
 
-
     Function Clone() As Body
-        Dim j As New Body
-        With j
-            .modelNumber = modelNumber
-            .Mass = Mass
-            .Inertia(0) = Inertia(0)
-            .Inertia(1) = Inertia(1)
-            .Inertia(2) = Inertia(2)
-            .Hardness = Hardness
-            .Resistance = Resistance
-            .AngleRes = AngleRes
-            .ResMode = ResMode
-            .Grip = Grip
-            .StaticFriction = StaticFriction
-            .KineticFriction = KineticFriction
-        End With
-
+        Dim j = DirectCast(MemberwiseClone(), Body)
+        j.Inertia = DirectCast(Inertia.Clone, Vector3())
         Return j
-
-
     End Function
 End Class
 
 Public Class Wheel
-    Public modelNumber As Integer
+    Public modelNumber As Integer = -1
     Public Offset(2) As Vector3d
     Public IsPresent As Boolean
     Public IsPowered As Boolean
@@ -215,29 +168,11 @@ Public Class Wheel
     Public Grip As Double
     Public StaticFriction As Double
     Public KineticFriction As Double
+    Public Camber As Double
+
     Function Clone() As Wheel
-        Dim N As New Wheel
-        With N
-            .modelNumber = Me.modelNumber
-            .Offset(1) = Me.Offset(1)
-            .Offset(2) = Me.Offset(2)
-            .IsPresent = Me.IsPresent
-            .IsTurnable = Me.IsTurnable
-            .IsPowered = Me.IsPowered
-            .SteerRatio = Me.SteerRatio
-            .EngineRatio = Me.EngineRatio
-            .Radius = Me.Radius
-            .Mass = Me.Mass
-            .Gravity = Me.Gravity
-            .MaxPos = Me.MaxPos
-            .ToeInn = Me.ToeInn
-            .Grip = Me.Grip
-            .StaticFriction = Me.StaticFriction
-            .KineticFriction = Me.KineticFriction
-
-
-
-        End With
+        Dim N = DirectCast(MemberwiseClone(), Wheel)
+        N.Offset = DirectCast(Offset.Clone, Vector3d())
         Return N
     End Function
     Public ReadOnly Property m_x_g() As Vector3
@@ -248,85 +183,55 @@ Public Class Wheel
 End Class
 
 Public Class Spring
-    Public modelNumber As Integer
+    Public modelNumber As Integer = -1
     Public Offset As Vector3d
     Public Length As Double
     Public Stiffness As Double
     Public Damping As Double
     Public Restitution As Double
-    Function Clone()
-        Dim N As New Spring
-        N.modelNumber = Me.modelNumber
-        N.Offset = Me.Offset
-        N.Length = Me.Length
-        N.Stiffness = Me.Stiffness
-        N.Damping = Me.Damping
-        N.Restitution = Me.Restitution
-        Return N
+    Function Clone() As Spring
+        Return DirectCast(MemberwiseClone(), Spring)
     End Function
 End Class
 Public Class PIN
-    Public modelNumber As Integer
+    Public modelNumber As Integer = -1
     Public offSet As Vector3d
     Public Length As Double
-    Function Clone()
-        Dim N As New PIN
-        N.modelNumber = Me.modelNumber
-        N.offSet = Me.offSet
-        N.Length = Me.Length
-        Return N
+    Function Clone() As PIN
+        Return DirectCast(MemberwiseClone(), PIN)
     End Function
 End Class
 Public Class Axle
-    Public modelNumber As Integer
+    Public modelNumber As Integer = -1
     Public offSet As Vector3d
     Public Length As Double
-    Function Clone()
-        Dim N As New Axle
-        N.modelNumber = Me.modelNumber
-        N.offSet = Me.offSet
-        N.Length = Length
-        Return N
+    Function Clone() As Axle
+        Return DirectCast(MemberwiseClone(), Axle)
     End Function
 End Class
 Public Class Spinner
-    Public modelNumber As Integer
+    Public modelNumber As Integer = -1
     Public offSet As Vector3d
     Public Axis As Vector3d
     Public angVel As Double
+    Public Type As Integer = 1
+    Public Trans As Vector3d
+    Public TransVel As Double
 
     Function Clone() As Spinner
-        Dim j As New Spinner
-        With j
-            .modelNumber = modelNumber
-            .offSet = offSet
-            .Axis = Axis
-            .angVel = angVel
-        End With
-
-        Return j
+        Return DirectCast(MemberwiseClone(), Spinner)
     End Function
 End Class
 Public Class Aerial
-    Public ModelNumber As Integer
-    Public TopModelNumber As Integer
+    Public ModelNumber As Integer = -1
+    Public TopModelNumber As Integer = -1
     Public offset As Vector3
     Public Direction As Vector3
     Public length As Double
     Public stiffness As Double
     Public damping As Double
     Function Clone() As Aerial
-        Dim j As New Aerial
-        With j
-            .ModelNumber = ModelNumber
-            .TopModelNumber = TopModelNumber
-            .offset = offset
-            .Direction = Direction
-            .length = length
-            .stiffness = stiffness
-            .damping = damping
-        End With
-        Return j
+        Return DirectCast(MemberwiseClone(), Aerial)
     End Function
 End Class
 
@@ -346,32 +251,22 @@ Public Class AI
     Public OvertakeBias As Double
     Public Suspension As Double
     Public Aggression As Double
-    Public CPUSelectable As Boolean = True
     Function Clone() As AI
-        Dim j As New AI
-        With j
-            .UnderFront = UnderFront
-            .UnderMax = UnderMax
-            .UnderRange = UnderRange
-            .UnderRear = UnderRear
-            .UnderThresh = UnderThresh
-
-            .OverAccRange = OverAccRange
-            .OverAccThresh = OverAccThresh
-            .OverMax = OverMax
-            .OverRange = OverRange
-            .OvertakeBias = OvertakeBias
-            .OverThresh = OverThresh
-
-            .PickupBias = PickupBias
-            .BlockBias = BlockBias
-            .Suspension = Suspension
-            .Aggression = Aggression
-        End With
-
-        Return j
+        Return DirectCast(MemberwiseClone(), AI)
     End Function
+End Class
 
+'RVGL: hood and rear view cameras
+Public Class CamAttached
+    Public HoodOffset As Vector3d
+    Public HoodLook As Double
+    Public RearOffset As Vector3d
+    Public RearLook As Double
+    Public FixedOffset As Boolean = True
+    Public FixedLook As Boolean = True
+    Function Clone() As CamAttached
+        Return DirectCast(MemberwiseClone(), CamAttached)
+    End Function
 End Class
 
 
@@ -400,404 +295,232 @@ Public Class Car
         Path = Path_
     End Sub
     Public Sing As Singletons
-    Public Sub Treat(ByRef str$) 'treat string
-        'TODO: update this code
-        Do Until str(0) <> vbTab And str(0) <> " "
-            str = Mid(str, 2)
-        Loop
-    End Sub
+
+    'Vector of a file line. In memory Y points up, in the file it points down
+    Private Shared Function Vec(ByVal item As SingletonItem, ByVal key As String) As Vector3d
+        Dim n = item.Numbers(key, 3)
+        Return New Vector3d(n(0), -n(1), n(2))
+    End Function
+    Public Shared Function VecNoFlip(ByVal item As SingletonItem, ByVal key As String) As Vector3
+        Dim n = item.Numbers(key, 3)
+        Return New Vector3(CSng(n(0)), CSng(n(1)), CSng(n(2)))
+    End Function
+    Private Shared Function ToV3(ByVal v As Vector3d) As Vector3
+        Return New Vector3(CSng(v.X), CSng(v.Y), CSng(v.Z))
+    End Function
+    Private Function Section(ByVal header As String) As SingletonItem
+        Dim it = Sing.getSingleton(header)
+        Return If(it, SingletonItem.Empty)
+    End Function
+
     '------------------------parameters.txt--------------------
     Sub Load(Optional ByVal LoadFromCurrentSingleton = False)
         'load car's parameters.txt
-
-        On Error Resume Next 'in case error, go next
-
-
-        'THIS IS DARNED!!!! TOOK ME 6 HOURS TO LOAD THE CAR WHAT THE HACKING WORLD ??!!
-        'Kay Jan'18th... yeah this was my comment 2-3 years ago -_-...
-
-        If Not LoadFromCurrentSingleton Then 'load, simply 
+        If Not LoadFromCurrentSingleton Then 'load, simply
             Sing = New Singletons(Path & "\parameters.txt")
         End If
+        Sing.Owner = Me
 
-
-        Dim Main = Sing.getSingleton("")
+        Dim Main = Section("")
         Me.Theory = New Car_theory
         With Me.Theory.MainInfos
-
-            .Name = Replace(Main.getValue("Name", Chr(0)), Chr(34), "")
-            Treat(.Name)
+            .Name = Main.getValue("Name", "")
             Console_.W("Loading Car:" & .Name)
             For t = 0 To 18
-
-                .Model(t) = Replace(Main.getValue("MODEL " & vbTab & t), Chr(34), "")
-
-                'incompetent car makers... goes here
-                If .Model(t) = Nothing Then
-                    .Model(t) = Main.getValue(" " & t)
-
-                    'hotfix: KR car
-                    If .Model(t) = Nothing Then .Model(t) = """NONE"""
-
-
-                    Do Until .Model(t)(0) = Chr(34)
-                        .Model(t) = Mid(.Model(t), 2)
-                        If .Model(t) = "" Then .Model(t) = """NONE"""
-                    Loop
-                    .Model(t) = Replace(.Model(t), Chr(34), "")
-
-                End If
+                .Model(t) = Main.getValue("MODEL " & t, "NONE")
             Next t
 
-            .Tpage = Replace(Main.getValue("TPAGE"), Chr(34), "")
-            If .Tpage.Length > 4 Then
-                Do Until .Tpage(0) = "c" Or .Tpage(0) = "C"
-                    .Tpage = Mid(.Tpage, 2)
-                Loop
-            End If
+            .Tpage = Main.getValue("TPAGE", "")
+            .CollFile = Main.getValue("COLL", "")
+            Dim rgb = Main.Numbers("EnvRGB", 3)
+            .EnvRGB = New Color4(CSng(rgb(0) / 255), CSng(rgb(1) / 255), CSng(rgb(2) / 255), 1)
 
+            .TCarBox = Main.getValue("TCARBOX", "")
+            .TShadow = Main.getValue("TSHADOW", "")
+            .HasShadowIndex = Main.Has("SHADOWINDEX")
+            .ShadowIndex = Main.Int("SHADOWINDEX", -1)
+            .HasShadowTable = Main.Has("SHADOWTABLE")
+            .ShadowTable = Main.Numbers("SHADOWTABLE", 5)
+            .SfxEngine = Main.getValue("SFXENGINE", "")
+            .SfxHonk = Main.getValue("SFXHONK", "")
+            .SfxServo = Main.getValue("SFXSERVO", "")
 
-            .TCarBox = Replace(Main.getValue("TCARBOX"), Chr(34), "")
+            .Statistics = Main.Bool("Statistics", IsStock(Me.DirName))
+            .BESTTIME = Main.Bool("BestTime")
+            .SELECTABLE = Main.Bool("Selectable")
+            .CPUSELECTABLE = Main.Bool("CPUSelectable", True)
 
-
-            If .TCarBox = Nothing Then GoTo skipme
-            Do Until LCase(.TCarBox(0)) = "c"  ' Or .TCarBox(0) = "C"
-                .TCarBox = Mid(.TCarBox, 2)
-                If .TCarBox = Nothing Then Exit Do
-            Loop
-
-skipme:
-
-
-
-
-
-            .CollFile = Replace(Main.getValue("COLL"), Chr(34), "")
-            .EnvRGB = StrToColor(Replace(Main.getValue("EnvRGB"), Chr(34), ""))
-
-
-            If IsStock(Me.DirName) Then
-                .Statistics = True
-            Else
-                .Statistics = StrToBool(Main.getValue("Statistics", , "bool"), False)
-
-            End If
-
-            .BESTTIME = StrToBool(Main.getValue("BestTime", , "bool"))
-            .SELECTABLE = StrToBool(Main.getValue("Selectable", , "bool"), False)
-            .SELECTABLE = StrToBool(Main.getValue("CPUSelectable", , "bool"), True)
-
-
-
-            .car_class = Int(Main.getValue("Class", 2))
-
-            .obtain = Int(Main.getValue("Obtain", -1, "int"))
-
-
-            .Rating = Main.getValue("Rating", 4)
-            .TopEnd = Main.getValue("TopEnd", 0, "float")
-
-            If InStr(.Name, "Acc") > 0 Then
-                .Acceleration = Main.getValue("Acc ", 0)
-            Else
-                .Acceleration = Main.getValue("Acc", 0)
-            End If
-
-            .Weight = Main.getValue("Weight", 0)
-            .Handling = Main.getValue("Handling", 0)
-            .Trans = Main.getValue("Trans", 0, "int")
-            .MaxRev = Main.getValue("MaxRevs")
+            .car_class = Main.Int("Class", 2)
+            .obtain = Main.Int("Obtain", -1)
+            .Rating = Main.Int("Rating", 4)
+            .TopEnd = CSng(Main.Num("TopEnd"))
+            .Acceleration = CSng(Main.Num("Acc"))
+            .Weight = CSng(Main.Num("Weight"))
+            .Handling = CSng(Main.Num("Handling"))
+            .Trans = Main.Int("Trans")
+            .MaxRev = CSng(Main.Num("MaxRevs"))
         End With
 
         With Me.Theory.RealInfos
+            .ClothFX = Main.Bool("ClothFx")
+            .Flippable = Main.Bool("Flippable")
+            .Flying = Main.Bool("Flying")
 
-            .ClothFX = Main.getValue("clothFX", False, "bool")
-            .Flippable = Main.getValue("Flippable", False, "bool")
-            .Flying = Main.getValue("Flying", False, "bool")
+            .SteerRate = Main.Num("SteerRate")
+            .SteerMode = Main.Num("SteerMod")
+            .EngineRate = Main.Num("EngineRate")
+            .TopSpeed = Main.Num("TopSpeed")
+            .DownForceModifier = Main.Num("DownForceMod")
 
-            .SteerRate = Main.getValue("SteerRate")
-            .SteerMode = Main.getValue("SteerMod")
-            .EngineRate = Main.getValue("EngineRate")
-            .TopSpeed = Main.getValue("TopSpeed")
-            .DownForceModifier = Main.getValue("DownForceMod")
-
-            .COM = StrToVector(Main.getValue("CoM")) ' * New Vector3d(1, -1, 1)
-            .COM.Y *= -1
-
-            .WeaponGeneration = StrToVector(Main.getValue("Weapon"))
-
-
+            .COM = VecNoFlip(Main, "CoM")
+            .WeaponGeneration = ToV3(Vec(Main, If(Main.Has("WeaponOffset1"), "WeaponOffset1", "Weapon")))
+            .HasWeapon2 = Main.Has("WeaponOffset2")
+            .WeaponGeneration2 = ToV3(Vec(Main, "WeaponOffset2"))
         End With
 
-        Dim body As SingletonItem = Sing.getSingleton("BODY")
+        Dim body = Section("BODY")
         With Me.Theory.Body
-            .modelNumber = body.getValue("ModelNum")
-            .Offset = StrToVector(body.getValue("Offset"))
-            .Mass = body.getValue("Mass")
-
-            Dim _inertia$ = body.get3LinesValue("Inertia")
-            .Inertia(0) = StrToVector(Split(_inertia, vbNewLine)(0))
-            .Inertia(0).Y *= -1
-            .Inertia(1) = StrToVector(Split(_inertia, vbNewLine)(1))
-            .Inertia(1).Y *= -1
-            .Inertia(2) = StrToVector(Split(_inertia, vbNewLine)(2))
-            .Inertia(2).Y *= -1
-
-
-            '.Inertia(1) = StrToVector(body.getValue(" " & vbTab))
-            ' MsgBox(.Inertia(1).X)
-
-
-            '.Gravity = body.getValue("Gravity		2200"))
-            .Hardness = body.getValue("Hardness")
-            .Resistance = body.getValue("Resistance")
-            .AngleRes = body.getValue("AngRes")
-            .ResMode = body.getValue("ResMod")
-            .Grip = body.getValue("Grip")
-            .StaticFriction = body.getValue("StaticFriction")
-            .KineticFriction = body.getValue("KineticFriction")
+            .modelNumber = body.Int("ModelNum", -1)
+            .Offset = ToV3(Vec(body, "Offset"))
+            .Mass = body.Num("Mass")
+            .Inertia(0) = VecNoFlip(body, "Inertia")
+            .Inertia(1) = VecNoFlip(body, "Inertia#1")
+            .Inertia(2) = VecNoFlip(body, "Inertia#2")
+            .Hardness = body.Num("Hardness")
+            .Resistance = body.Num("Resistance")
+            .AngleRes = body.Num("AngRes")
+            .ResMode = body.Num("ResMod")
+            .Grip = body.Num("Grip")
+            .StaticFriction = body.Num("StaticFriction")
+            .KineticFriction = body.Num("KineticFriction")
         End With
 
-        Dim Wheel As SingletonItem
         For u = 0 To 3
-            Wheel = Sing.getSingleton("WHEEL " & u)
+            Dim Wheel = Section("WHEEL " & u)
             Me.Theory.wheel(u) = New Wheel
             With Me.Theory.wheel(u)
-                .modelNumber = Wheel.getValue("ModelNum")
-                .Offset(1) = StrToVector(Wheel.getValue("Offset1"))
-                .Offset(2) = StrToVector(Wheel.getValue("Offset2"))
-                .IsPresent = StrToBool(Wheel.getValue("IsPresent", , "bool"))
-                .IsPowered = StrToBool(Wheel.getValue("IsPowered", , "bool"))
-                .IsTurnable = StrToBool(Wheel.getValue("IsTurnable", , "bool"))
-                .SteerRatio = Wheel.getValue("SteerRatio")
-                .EngineRatio = Wheel.getValue("EngineRatio")
-                .Radius = Wheel.getValue("Radius")
-                .Mass = Wheel.getValue("Mass")
-                .Gravity = Wheel.getValue("Gravity")
-                .MaxPos = Wheel.getValue("MaxPos")
-                .SkidWidth = Wheel.getValue("SkidWidth")
-                .ToeInn = Wheel.getValue("ToeIn")
-                .AxleFriction = Wheel.getValue("AxleFriction")
-                .Grip = Wheel.getValue("Grip")
-                .StaticFriction = Wheel.getValue("StaticFriction")
-                .KineticFriction = Wheel.getValue("KineticFriction")
-
+                .modelNumber = Wheel.Int("ModelNum", -1)
+                .Offset(1) = Vec(Wheel, "Offset1")
+                .Offset(2) = Vec(Wheel, "Offset2")
+                .IsPresent = Wheel.Bool("IsPresent")
+                .IsPowered = Wheel.Bool("IsPowered")
+                .IsTurnable = Wheel.Bool("IsTurnable")
+                .SteerRatio = Wheel.Num("SteerRatio")
+                .EngineRatio = Wheel.Num("EngineRatio")
+                .Radius = Wheel.Num("Radius")
+                .Mass = Wheel.Num("Mass")
+                .Gravity = Wheel.Num("Gravity")
+                .MaxPos = Wheel.Num("MaxPos")
+                .SkidWidth = Wheel.Num("SkidWidth")
+                .ToeInn = Wheel.Num("ToeIn")
+                .AxleFriction = Wheel.Num("AxleFriction")
+                .Grip = Wheel.Num("Grip")
+                .StaticFriction = Wheel.Num("StaticFriction")
+                .KineticFriction = Wheel.Num("KineticFriction")
+                .Camber = Wheel.Num("Camber")
             End With
         Next
 
-        Dim Spring As SingletonItem
         For u = 0 To 3
-            Spring = Sing.getSingleton("SPRING " & u)
+            Dim Spring = Section("SPRING " & u)
             Me.Theory.Spring(u) = New Spring
             With Me.Theory.Spring(u)
-                .modelNumber = Spring.getValue("ModelNum")
-                .Offset = StrToVector(Spring.getValue("Offset"))
-                .Length = Spring.getValue("Length")
-                .Stiffness = Spring.getValue("Stiffness")
-                .Damping = Spring.getValue("Damping")
-                .Restitution = Spring.getValue("Restitution")
+                .modelNumber = Spring.Int("ModelNum", -1)
+                .Offset = Vec(Spring, "Offset")
+                .Length = Spring.Num("Length")
+                .Stiffness = Spring.Num("Stiffness")
+                .Damping = Spring.Num("Damping")
+                .Restitution = Spring.Num("Restitution")
             End With
         Next
 
-        Dim PIN As SingletonItem
         For u = 0 To 3
-            PIN = Sing.getSingleton("PIN " & u)
+            Dim PIN = Section("PIN " & u)
             Me.Theory.PIN(u) = New PIN
             With Me.Theory.PIN(u)
-                .modelNumber = PIN.getValue("ModelNum")
-                .offSet = StrToVector(PIN.getValue("Offset"))
-                .Length = PIN.getValue("Length")
+                .modelNumber = PIN.Int("ModelNum", -1)
+                .offSet = Vec(PIN, "Offset")
+                .Length = PIN.Num("Length")
             End With
         Next
 
-        Dim Axle As SingletonItem
         For u = 0 To 3
-            Axle = Sing.getSingleton("AXLE " & u)
+            Dim Axle = Section("AXLE " & u)
             Me.Theory.Axle(u) = New Axle
             With Me.Theory.Axle(u)
-                .modelNumber = Axle.getValue("ModelNum")
-                .offSet = StrToVector(Axle.getValue("Offset"))
-                .Length = Axle.getValue("Length")
+                .modelNumber = Axle.Int("ModelNum", -1)
+                .offSet = Vec(Axle, "Offset")
+                .Length = Axle.Num("Length")
             End With
         Next
 
-        Dim Spinner = Sing.getSingleton("SPINNER")
+        Dim Spinner = Section("SPINNER")
         Me.Theory.Spinner = New Spinner
         With Me.Theory.Spinner
-            .modelNumber = Spinner.getValue("ModelNum")
-            .offSet = StrToVector(Spinner.getValue("Offset"))
-            .Axis = StrToVector(Spinner.getValue("Axis"))
-            .angVel = Spinner.getValue("AngVel")
-
+            .modelNumber = Spinner.Int("ModelNum", -1)
+            .offSet = Vec(Spinner, "Offset")
+            .Axis = Vec(Spinner, "Axis")
+            .angVel = Spinner.Num("AngVel")
+            .Type = Spinner.Int("Type", 1)
+            .Trans = Vec(Spinner, "Trans")
+            .TransVel = Spinner.Num("TransVel")
         End With
 
-        Dim Aerial = Sing.getSingleton("AERIAL")
+        Dim Aerial = Section("AERIAL")
         Me.Theory.Aerial = New Aerial
         With Me.Theory.Aerial
-            .ModelNumber = Aerial.getValue("SecModelNum")
-            .TopModelNumber = Aerial.getValue("TopModelNum")
-            .offset = StrToVector(Aerial.getValue("Offset"))
-            .Direction = StrToVector(Aerial.getValue("Direction"))
-            .length = Aerial.getValue("Length")
-            .stiffness = Aerial.getValue("Stiffness")
-            .damping = Aerial.getValue("Damping")
+            .ModelNumber = Aerial.Int("SecModelNum", -1)
+            .TopModelNumber = Aerial.Int("TopModelNum", -1)
+            .offset = ToV3(Vec(Aerial, "Offset"))
+            .Direction = ToV3(Vec(Aerial, "Direction"))
+            .length = Aerial.Num("Length")
+            .stiffness = Aerial.Num("Stiffness")
+            .damping = Aerial.Num("Damping")
         End With
 
         Dim Ai = Sing.getSingleton("AI")
-        If Ai Is Nothing Then Exit Sub
-        Me.Theory.carAi = New AI
-        With Me.Theory.carAi
-            .CPUSelectable = Ai.getValue("CPUSelectable")
-            .UnderThresh = Ai.getValue("UnderThresh")
-            .UnderRange = Ai.getValue("UnderRange")
-            .UnderFront = Ai.getValue("UnderFront	")
-            .UnderRear = Ai.getValue("UnderRear")
-            .UnderMax = Ai.getValue("UnderMax")
-            .OverThresh = Ai.getValue("OverThresh")
-            .OverRange = Ai.getValue("OverRange")
-            .OverMax = Ai.getValue("OverMax")
-            .OverAccThresh = Ai.getValue("OverAccThresh")
-            .OverAccRange = Ai.getValue("OverAccRange")
-            .PickupBias = Ai.getValue("PickupBias")
-            .BlockBias = Ai.getValue("BlockBias")
-            .OvertakeBias = Ai.getValue("OvertakeBias")
-            .Suspension = Ai.getValue("Suspension")
-            .Aggression = Ai.getValue("Aggression")
-        End With
+        If Ai IsNot Nothing Then
+            Me.Theory.carAi = New AI
+            With Me.Theory.carAi
+                .UnderThresh = Ai.Num("UnderThresh")
+                .UnderRange = Ai.Num("UnderRange")
+                .UnderFront = Ai.Num("UnderFront")
+                .UnderRear = Ai.Num("UnderRear")
+                .UnderMax = Ai.Num("UnderMax")
+                .OverThresh = Ai.Num("OverThresh")
+                .OverRange = Ai.Num("OverRange")
+                .OverMax = Ai.Num("OverMax")
+                .OverAccThresh = Ai.Num("OverAccThresh")
+                .OverAccRange = Ai.Num("OverAccRange")
+                .PickupBias = Ai.Num("PickupBias")
+                .BlockBias = Ai.Num("BlockBias")
+                .OvertakeBias = Ai.Num("OvertakeBias")
+                .Suspension = Ai.Num("Suspension")
+                .Aggression = Ai.Num("Aggression")
+            End With
+        End If
 
+        Dim Cam = Sing.getSingleton("CAMATTACHED")
+        If Cam IsNot Nothing Then
+            Me.Theory.Camera = New CamAttached
+            With Me.Theory.Camera
+                .HoodOffset = Vec(Cam, "HoodOffset")
+                .HoodLook = Cam.Num("HoodLook")
+                .RearOffset = Vec(Cam, "RearOffset")
+                .RearLook = Cam.Num("RearLook")
+                .FixedOffset = Cam.Bool("FixedOffset", True)
+                .FixedLook = Cam.Bool("FixedLook", True)
+            End With
+        End If
+
+        Sing.Rebase(Me.Theory)
         OriginalTheory = Theory.Clone
-
-        'Debugger.Break()
-        'MsgBox(Me.Theory.RealInfos.TopSpeed)
     End Sub
 
-    'convert STRING to VECTOR
-    Public Function StrToVector(ByVal str As String) As Vector3d
-        'On Error Resume Next
-
-
-
-        If InStr(str, ",") > 0 And InStr(CSng(0.5), ".") > 0 Then str = str.Replace(",", "")
-
-
-
-
-        'Our vector is X Y Z
-
-        str = Replace(Replace(str, Chr(9), " ", , , CompareMethod.Text), Space(2), Space(1), , , CompareMethod.Text)
-        str = str.Replace("�", "")
-        Do Until str(0) <> " " Or Len(str) = 0
-            str = Mid(str, 2)
-        Loop
-        Dim j = 1
-        Do Until j = str.Length - 1
-            If str(j) = " " And str(j - 1) = "," Then
-                str = str.Remove(j - 1, 1)
-                j -= 1
-            End If
-            j += 1
-        Loop
-
-
-
-
-
-        'If str.Split(" ")(0).Split(".").Length > 2 Then str = Replace(str, str.Split(" ")(0), str.Split(" ")(0).Split(".")(0) & "." & str.Split(" ")(0).Split(".")(1))
-        'If str.Split(" ")(1).Split(".").Length > 2 Then str = Replace(str, str.Split(" ")(1), str.Split(" ")(1).Split(".")(0) & "." & str.Split(" ")(1).Split(".")(1))
-        'If str.Split(" ")(2).Split(".").Length > 2 Then str = Replace(str, str.Split(" ")(2), str.Split(" ")(2).Split(".")(0) & "." & str.Split(" ")(2).Split(".")(1))
-
-        Dim X As Vector3
-        Try
-
-            X.X = CDbl(toDbl(str.Split(" ")(0))) ' 
-            X.Y = -CDbl(toDbl(str.Split(" ")(1))) '
-            X.Z = CDbl(toDbl(str.Split(" ")(2))) ' 
-
-        Catch ex As Exception
-
-        End Try
-
-        Return X
-
+    'Full path of a path written in parameters.txt, Nothing if there's no such file
+    Public Shared Function GamePath(ByVal relative As String) As String
+        If String.IsNullOrEmpty(relative) OrElse relative.Trim().ToUpperInvariant() = "NONE" Then Return Nothing
+        Dim full = RVPATH & "\" & relative.Trim().Replace("/", "\")
+        Return If(IO.File.Exists(full), full, Nothing)
     End Function
-
-    'If a car has 1.2.3456 => 1.23456 
-    Function MakeOnlyOneChar(ByVal str$, ByVal chr As Char) As String
-        If InStr(str, chr) = 0 Then Return str
-
-        Dim f = False
-        For i = 0 To Len(str) - 1
-            If i > Len(str) - 1 Then Exit For
-            If str(i) = chr And f = False Then f = True : Continue For
-            If str(i) = chr Then str = str.Substring(0, i - 1) & str.Substring(i + 1)
-
-
-        Next
-        Return str
-    End Function
-    'convert STRING to double
-    Public Function toDbl(ByVal v$) As Double
-        v = MakeOnlyOneChar(v, ".")
-        Return Convert.ToDouble(v)
-    End Function
-    'convert STRING to color
-    Public Function StrToColor(ByVal str As String) As Color4
-        'On Error Resume Next
-
-
-
-        If InStr(str, ",") > 0 And InStr(CSng(0.5), ".") > 0 Then str = str.Replace(",", "")
-
-
-
-
-        'Our vector is X Y Z
-
-        str = Replace(Replace(str, Chr(9), " ", , , CompareMethod.Text), Space(2), Space(1), , , CompareMethod.Text)
-        str = str.Replace("�", "")
-        Do Until str(0) <> " " Or Len(str) = 0
-            str = Mid(str, 2)
-        Loop
-        Dim j = 1
-        Do Until j = str.Length - 1
-            If str(j) = " " And str(j - 1) = "," Then
-                str = str.Remove(j - 1, 1)
-                j -= 1
-            End If
-            j += 1
-        Loop
-
-
-
-
-
-        'If str.Split(" ")(0).Split(".").Length > 2 Then str = Replace(str, str.Split(" ")(0), str.Split(" ")(0).Split(".")(0) & "." & str.Split(" ")(0).Split(".")(1))
-        'If str.Split(" ")(1).Split(".").Length > 2 Then str = Replace(str, str.Split(" ")(1), str.Split(" ")(1).Split(".")(0) & "." & str.Split(" ")(1).Split(".")(1))
-        'If str.Split(" ")(2).Split(".").Length > 2 Then str = Replace(str, str.Split(" ")(2), str.Split(" ")(2).Split(".")(0) & "." & str.Split(" ")(2).Split(".")(1))
-
-        Dim X As Color4
-        Try
-
-            X.R = CDbl(str.Split(" ")(0)) / 255 ' 
-            X.G = CDbl(Double.Parse(str.Split(" ")(1))) / 255 '
-            X.B = CDbl(Convert.ToDouble(str.Split(" ")(2))) / 255 ' 
-            X.A = 1
-        Catch ex As Exception
-
-        End Try
-
-        Return X
-
-    End Function
-
-    'convert STRING to boolean
-    Function StrToBool(ByVal str As String, Optional ByVal defaultv As Boolean = False) As Boolean
-        If str = Nothing Then Return defaultv
-        Return CBool(Replace(Replace(str, " ", ""), vbTab, ""))
-    End Function
-    'convert STRING to String
-    Function StrToStr(ByVal str As String)
-        Return Replace(Split(str, Chr(34))(1), Chr(34), "")
-    End Function
-
 End Class

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="Current" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -12,7 +12,7 @@
     <AssemblyName>RvCarStudio</AssemblyName>
     <FileAlignment>512</FileAlignment>
     <MyType>WindowsForms</MyType>
-    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <OptionExplicit>On</OptionExplicit>
     <OptionCompare>Binary</OptionCompare>
     <OptionStrict>Off</OptionStrict>
@@ -77,60 +77,54 @@
     <PlatformTarget>x86</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="OpenTK, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4" />
-    <Reference Include="OpenTK.GLControl, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
+    <Reference Include="OpenTK, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>lib\OpenTK.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenTK.GLControl, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>lib\OpenTK.GLControl.dll</HintPath>
+    </Reference>
     <Reference Include="PresentationCore">
       <RequiredTargetFramework>3.0</RequiredTargetFramework>
-      <Private>True</Private>
     </Reference>
     <Reference Include="PresentationFramework">
       <RequiredTargetFramework>3.0</RequiredTargetFramework>
-      <Private>True</Private>
     </Reference>
     <Reference Include="QuickFont, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\..\Desktop\QuickFont_1.0.2_0\QuickFont\QuickFont\bin\Debug\QuickFont.dll</HintPath>
+      <HintPath>lib\QuickFont.dll</HintPath>
     </Reference>
     <Reference Include="System">
-      <Private>True</Private>
     </Reference>
     <Reference Include="System.Data">
-      <Private>True</Private>
     </Reference>
     <Reference Include="System.Deployment">
-      <Private>True</Private>
     </Reference>
     <Reference Include="System.DirectoryServices">
-      <Private>True</Private>
     </Reference>
     <Reference Include="System.Drawing">
-      <Private>True</Private>
     </Reference>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Windows.Forms">
-      <Private>True</Private>
     </Reference>
     <Reference Include="System.Xml">
-      <Private>True</Private>
     </Reference>
     <Reference Include="System.Core">
       <RequiredTargetFramework>3.5</RequiredTargetFramework>
-      <Private>True</Private>
     </Reference>
     <Reference Include="System.Xml.Linq">
       <RequiredTargetFramework>3.5</RequiredTargetFramework>
-      <Private>True</Private>
     </Reference>
     <Reference Include="System.Data.DataSetExtensions">
       <RequiredTargetFramework>3.5</RequiredTargetFramework>
-      <Private>True</Private>
     </Reference>
     <Reference Include="UIAutomationProvider">
       <RequiredTargetFramework>3.0</RequiredTargetFramework>
-      <Private>True</Private>
     </Reference>
     <Reference Include="WindowsBase">
       <RequiredTargetFramework>3.0</RequiredTargetFramework>
-      <Private>True</Private>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -217,6 +211,11 @@
     <Compile Include="Dialogs\pv_carbox.vb">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Editor Forms\ExtraModes.vb" />
+    <Compile Include="Editor Forms\FieldPanel.vb">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="My Project\ApplicationEvents.vb" />
     <Compile Include="Editor Forms\Handling.Designer.vb">
       <DependentUpon>Handling.vb</DependentUpon>
     </Compile>
@@ -524,59 +523,8 @@
     <None Include="art\never.png" />
     <None Include="art\BaseCarbox.jpg" />
     <None Include="art\Sprite1.png" />
-    <Content Include="data\gfx\Aerial.png">
+    <Content Include="data\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Aerial_wire.png" />
-    <Content Include="data\gfx\Axle1_wire.png" />
-    <Content Include="data\gfx\Axle2_wire.png" />
-    <Content Include="data\gfx\Body_wire.png" />
-    <Content Include="data\gfx\Pin1_wire.png" />
-    <Content Include="data\gfx\Pin2_wire.png" />
-    <Content Include="data\gfx\Spring1.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Axle1.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Axle2.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Body.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Pin1.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Pin2.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Spring1_wire.png" />
-    <Content Include="data\gfx\Spring2.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Spring2_wire.png" />
-    <Content Include="data\gfx\Wheel.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\gfx\Wheel_wire.png" />
-    <Content Include="data\lang\arabic.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\lang\English.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\lang\French.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\readme\Template1.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\readme\template2.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="data\Tips\English.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="fmodex.dll">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -584,9 +532,6 @@
     <None Include="Resources\rvcs3.jpg" />
     <None Include="Resources\RVCS2.jpg" />
     <None Include="Resources\RVCS.jpg" />
-    <None Include="data\models\splitter.prm">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Include="Resources\tex_active.png" />
     <None Include="Resources\pin2.png" />
     <None Include="Resources\pin.png" />
@@ -597,18 +542,6 @@
     <None Include="Resources\Axle1.png" />
     <None Include="Resources\Wheel.png" />
     <None Include="Resources\Axle.png" />
-    <None Include="data\models\axis.prm">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="data\models\CoM.prm">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="data\models\firework.m">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="data\models\weagen.prm">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Include="Resources\cache.png" />
     <None Include="Resources\folder_blue.png" />
     <None Include="Resources\shadow.png" />

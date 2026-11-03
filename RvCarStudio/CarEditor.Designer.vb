@@ -130,7 +130,7 @@ Partial Class CarEditor
         '
         'Autosave
         '
-        Me.Autosave.Interval = 400
+        Me.Autosave.Interval = 5000
         '
         'BackgroundWorker1
         '
@@ -650,9 +650,9 @@ Partial Class CarEditor
         '
         Me.CheckBox2.BackColor = System.Drawing.Color.Transparent
         Me.CheckBox2.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.CheckBox2.Location = New System.Drawing.Point(234, 336)
+        Me.CheckBox2.Location = New System.Drawing.Point(160, 334)
         Me.CheckBox2.Name = "CheckBox2"
-        Me.CheckBox2.Size = New System.Drawing.Size(77, 16)
+        Me.CheckBox2.Size = New System.Drawing.Size(140, 16)
         Me.CheckBox2.TabIndex = 77
         Me.CheckBox2.Text = "Auto save parameters"
         Me.CheckBox2.TextAlign = System.Drawing.ContentAlignment.BottomCenter
@@ -827,7 +827,7 @@ Partial Class CarEditor
         Me.ControlBox = False
         Me.Controls.Add(Me.Panel1)
         Me.DoubleBuffered = True
-        Me.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle
+        Me.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None
         Me.MaximizeBox = False
         Me.Name = "CarEditor"
         Me.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen

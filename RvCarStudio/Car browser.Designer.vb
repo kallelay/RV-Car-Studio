@@ -613,7 +613,7 @@ Partial Class CarBrowser
         Me.VisitRVL.Size = New System.Drawing.Size(85, 13)
         Me.VisitRVL.TabIndex = 52
         Me.VisitRVL.TabStop = True
-        Me.VisitRVL.Text = "Visit Re-Volt Live"
+        Me.VisitRVL.Text = "Visit Re-Volt World"
         Me.VisitRVL.VisitedLinkColor = System.Drawing.Color.Gray
         '
         'Auto_Rotate_car

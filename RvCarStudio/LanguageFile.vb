@@ -9,7 +9,7 @@
 
         'Prioritize English....
         'Dim AllLangs = IO.Directory.GetFiles(Application.StartupPath & "\data\lang\", "english.txt").Union(IO.Directory.GetFiles("data\lang\", "*.txt"))
-        Dim AllLangs = (IO.Directory.GetFiles(Application.StartupPath & "\data\lang\", "*.txt"))
+        Dim AllLangs = IO.Directory.GetFiles(Application.StartupPath & "\data\lang\", "*.txt").OrderBy(Function(f) If(IO.Path.GetFileName(f).Equals("English.txt", StringComparison.OrdinalIgnoreCase), 0, 1)).ToArray()
 
         For i = 0 To AllLangs.Count - 1
             AddLanguage(AllLangs(i)) 'add a new language

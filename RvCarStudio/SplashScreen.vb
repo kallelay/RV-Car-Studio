@@ -12,18 +12,13 @@
     Public SkipCarChoice = False    'Skip Car browser
     Public ForceLoadCar = False     'Load car on start
     Public CarToL$ = ""             ' Car to load on start 
+    Public RvPathOverride$ = ""     'Re-Volt folder for this run only (-rvpath)
     Private Sub SplashScreen_Load(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Load
 
-        ' On Build
-        'HACK:  Inc?
-        INCR_VER = True  ' True
+        'parameters.txt and the fields of this program always use a dot, whatever the Windows locale says
+        UseInvariantCulture()
 
-        If INCR_VER And My.Computer.Name = "KALLEL-PC" And InStr(Application.ExecutablePath, "Debug", CompareMethod.Text) > 0 Then
-            Console_.W("Computer KALLEL-PC, Mode Debug")
-            Console_.W("Starting building...")
-            OnBuild.Go()
-
-        End If
+        INCR_VER = False
 
 
 
@@ -45,14 +40,20 @@
                     "Copyright: " & My.Application.Info.Copyright
 
         Dim wait_forcarname = 0
+        Dim wait_forrvpath = False
         For Each x In My.Application.CommandLineArgs
+            If wait_forrvpath Then
+                RvPathOverride = x
+                wait_forrvpath = False
+                Continue For
+            End If
             Select Case LCase(x)
+                Case "-rvpath"
+                    wait_forrvpath = True
                 Case "-config"
                     ForceConfig = True
                 Case "-skipcarchoice"
                     SkipCarChoice = True
-                Case "-build"
-                    MakeBuild()
                 Case "-readme"
                     GenerateReadMe()
                 Case Else
@@ -105,7 +106,7 @@
 
         If ForceConfig Then GoTo Config
 
-        If InitSettings() = False Then _
+        If InitSettings() = False And RvPathOverride = "" Then _
             GoTo Config _
             Else _
             GoTo Loadsettings
@@ -128,7 +129,7 @@ Loadsettings:
 
         Progress("Loading Settings...")
         ' Load Re-Volt path from settings
-        RVPATH = Sett_get("dir", "")
+        RVPATH = If(RvPathOverride <> "", RvPathOverride, Sett_get("dir", ""))
         'RVPATH = GetSetting("Car Load", "settings", "dir", "")
 
         ' Validate RVPATH immediately after loading
@@ -152,7 +153,13 @@ Loadsettings:
 
 
         'Langauges
-        If Languages.Count = 0 Then AddLanguage(Sett_get("lang", "")) Else Languages(0) = Languages(Config.ComboBox1.SelectedIndex)
+        If Languages.Count = 0 Then
+            Dim lang$ = Sett_get("lang", "")
+            If lang = "" Or Not IO.File.Exists(lang) Then lang = Application.StartupPath & "\data\lang\English.txt"
+            AddLanguage(lang)
+        Else
+            Languages(0) = Languages(Config.ComboBox1.SelectedIndex)
+        End If
         Languages(0).LoadAll()
         Tip.LoadTips(Languages(0))
 

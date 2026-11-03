@@ -49,15 +49,12 @@ Public Class PICK_MATRIX
 
     Sub BTNFLDRCLICKED(ByVal sender As Object, ByVal e As EventArgs)
         Param = New Singletons(RVPATH & "\cars\" & sender.text & "\parameters.txt")
-        If Param Is Nothing Then Beep() : Exit Sub
-        Dim I$ = Param.getSingleton("BODY").get3LinesValue("Inertia")
+        Dim body = Param.getSingleton("BODY")
+        If body Is Nothing Then Beep() : Exit Sub
 
-        Inertia(0) = cars(Active_Car).StrToVector(Split(I, vbNewLine)(0))
-        Inertia(0).Y *= -1
-        Inertia(1) = cars(Active_Car).StrToVector(Split(I, vbNewLine)(1))
-        Inertia(1).Y *= -1
-        Inertia(2) = cars(Active_Car).StrToVector(Split(I, vbNewLine)(2))
-        Inertia(2).Y *= -1
+        Inertia(0) = Car.VecNoFlip(body, "Inertia")
+        Inertia(1) = Car.VecNoFlip(body, "Inertia#1")
+        Inertia(2) = Car.VecNoFlip(body, "Inertia#2")
 
         PrintVecToObjectsT(Inertia(0), TextBox10, TextBox2, TextBox3)
         PrintVecToObjectsT(Inertia(1), TextBox4, TextBox5, TextBox6)

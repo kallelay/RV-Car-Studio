@@ -45,6 +45,7 @@ Module oVolt_helpers
             ' Only delete valid texture IDs (non-zero)
             If Textures(0) <> 0 Then GL.DeleteTexture(Textures(0))
             If Textures(1) <> 0 Then GL.DeleteTexture(Textures(1))
+            If Textures(2) <> 0 Then GL.DeleteTexture(Textures(2))
         Catch ex As Exception
             ' Log texture deletion failure but continue initialization
             Console_.W("Warning: Failed to delete textures during cleanup - " & ex.Message)
@@ -95,6 +96,8 @@ Module oVolt_helpers
         M.M21 = 0
         M.M31 = M.M12
 
+        'straight up or down: any right vector will do
+        If Abs(M.M11) + Abs(M.M31) < 0.00001F Then M.M11 = 1
 
         V = Vector3.Normalize(M.Column0.Xyz)
 
@@ -137,6 +140,8 @@ Module oVolt_helpers
         M.M21 = 0
         M.M31 = -M.M13
 
+        'straight up or down: any right vector will do
+        If Abs(M.M11) + Abs(M.M31) < 0.00001F Then M.M11 = 1
 
         V = Vector3.Normalize(M.Column0.Xyz)
 
@@ -243,94 +248,6 @@ Module oVolt_helpers
         X.WriteLine("Generated " & Now.ToLongDateString & ", " & Now.ToLongTimeString)
         X.Flush()
         X.Close()
-
-
-    End Sub
-    '-build
-    Sub MakeBuild()
-        'And copy all to flash disks 
-
-        'Rule, only copy if mod 10 = 0
-        If Revision Mod 10 <> 0 Or SplashScreen.INCR_VER = False Then Exit Sub 'Don't build unless revision is a multiply of 10
-
-
-        Copy_to_all_devices.Show()
-        Application.DoEvents()
-
-        GoTo skipme
-        If IO.Directory.Exists("Q:\") Then
-            If IO.Directory.Exists("Q:\Car Studio") = False Then MkDir("Q:\Car Studio")
-            If IO.Directory.Exists("Q:\Car Studio\data") = False Then MkDir("Q:\Car Studio\data")
-            If IO.Directory.Exists("Q:\Car Studio\data\lang") = False Then MkDir("Q:\Car Studio\data\lang")
-            If IO.Directory.Exists("Q:\Car Studio\data\models") = False Then MkDir("Q:\Car Studio\data\models")
-            If IO.Directory.Exists("Q:\Car Studio\data\tips") = False Then MkDir("Q:\Car Studio\data\tips")
-            If IO.Directory.Exists("Q:\Car Studio\data\gfx") = False Then MkDir("Q:\Car Studio\data\gfx")
-        End If
-        If IO.Directory.Exists("N:\") Then
-            If IO.Directory.Exists("N:\Car Studio") = False Then MkDir("N:\Car Studio")
-            If IO.Directory.Exists("N:\Car Studio\data") = False Then MkDir("N:\Car Studio\data")
-            If IO.Directory.Exists("N:\Car Studio\data\lang") = False Then MkDir("N:\Car Studio\data\lang")
-            If IO.Directory.Exists("N:\Car Studio\data\models") = False Then MkDir("N:\Car Studio\data\models")
-            If IO.Directory.Exists("N:\Car Studio\data\tips") = False Then MkDir("N:\Car Studio\data\tips")
-            If IO.Directory.Exists("N:\Car Studio\data\gfx") = False Then MkDir("N:\Car Studio\data\gfx")
-        End If
-skipme:
-
-
-        If IO.Directory.Exists(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio") = False Then MkDir(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio")
-        If IO.Directory.Exists(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data") = False Then MkDir(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data")
-        If IO.Directory.Exists(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data\lang") = False Then MkDir(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data\lang")
-        If IO.Directory.Exists(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data\models") = False Then MkDir(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data\models")
-        If IO.Directory.Exists(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data\tips") = False Then MkDir(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data\tips")
-        If IO.Directory.Exists(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data\gfx") = False Then MkDir(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "Car Studio\data\gfx")
-
-
-
-
-
-        Dim All = IO.Directory.GetFiles(Application.StartupPath, "*", IO.SearchOption.AllDirectories)
-        For i = 0 To All.Count - 1
-            Copy_to_all_devices.ProgressBar1.Value = i * 100 / (All.Count - 1)
-            Copy_to_all_devices.Label3.Text = All(i)
-            Application.DoEvents()
-
-            Select Case LCase(Replace(All(i), Application.StartupPath & "\", ""))
-                Case "fmodex.dll", "data\lang\arabic.txt"
-                    Continue For
-
-                Case Else
-                    If LCase(Split(All(i), ".")(1)) = "pdb" Then Continue For
-            End Select
-
-
-            For j = 0 To My.Computer.FileSystem.Drives.Count - 1
-                Copy_to_all_devices.ProgressBar2.Value = j * 100 / (My.Computer.FileSystem.Drives.Count)
-                Copy_to_all_devices.Label2.Text = My.Computer.FileSystem.Drives(j).Name
-                Application.DoEvents()
-
-
-                If My.Computer.FileSystem.Drives(j).IsReady = False Then Continue For
-                If My.Computer.FileSystem.Drives(j).DriveType = IO.DriveType.CDRom Then Continue For
-                If My.Computer.FileSystem.Drives(j).Name = "F:\" Then Continue For
-                If IO.Directory.Exists(getDirectory(My.Computer.FileSystem.Drives(j).Name & "Car Studio" & Replace(All(i), Application.StartupPath, ""))) = False Then _
-                                    IO.Directory.CreateDirectory(getDirectory(My.Computer.FileSystem.Drives(j).Name & "Car Studio" & Replace(All(i), Application.StartupPath, "")))
-
-
-                IO.File.Copy(All(i), My.Computer.FileSystem.Drives(j).Name & "Car Studio" & Replace(All(i), Application.StartupPath, ""), True)
-
-
-            Next
-            If IO.Directory.Exists(getDirectory(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "\Car Studio" & Replace(All(i), Application.StartupPath, ""))) = False Then _
-                IO.Directory.CreateDirectory(getDirectory(My.Computer.FileSystem.SpecialDirectories.MyDocuments & "\Car Studio" & Replace(All(i), Application.StartupPath, "")))
-
-
-            IO.File.Copy(All(i), My.Computer.FileSystem.SpecialDirectories.MyDocuments & "\Car Studio" & Replace(All(i), Application.StartupPath, ""), True)
-
-
-
-
-        Next
-        Copy_to_all_devices.Hide()
 
 
     End Sub

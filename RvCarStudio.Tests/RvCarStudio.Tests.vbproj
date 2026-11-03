@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{7B3C1E52-9A44-4C0E-8F21-6D1A2B3C4D5E}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <StartupObject>RvCarStudio.Tests.Program</StartupObject>
+    <RootNamespace>RvCarStudio.Tests</RootNamespace>
+    <AssemblyName>RvCarStudio.Tests</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionStrict>Off</OptionStrict>
+    <OptionInfer>On</OptionInfer>
+    <MyType>Empty</MyType>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <DefineDebug>true</DefineDebug>
+    <DefineTrace>true</DefineTrace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="OpenTK">
+      <HintPath>..\RvCarStudio\lib\OpenTK.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenTK.GLControl">
+      <HintPath>..\RvCarStudio\lib\OpenTK.GLControl.dll</HintPath>
+    </Reference>
+    <Reference Include="QuickFont">
+      <HintPath>..\RvCarStudio\lib\QuickFont.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="Microsoft.VisualBasic" />
+  </ItemGroup>
+  <ItemGroup>
+    <Import Include="Microsoft.VisualBasic" />
+    <Import Include="System" />
+    <Import Include="System.Collections.Generic" />
+    <Import Include="System.Drawing" />
+    <Import Include="System.Linq" />
+    <Import Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.vb" />
+    <Compile Include="CoreTests.vb" />
+    <Compile Include="GuiTests.vb" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RvCarStudio\RvCarStudio.vbproj">
+      <Project>{162621D9-6366-42B7-951B-75E709F50BA0}</Project>
+      <Name>RvCarStudio</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\RVStudioComponents\RVStudioComponents.vbproj">
+      <Project>{5FA2DA7D-66BA-472C-BEAC-AD8053F15731}</Project>
+      <Name>RVStudioComponents</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
+</Project>

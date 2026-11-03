@@ -109,7 +109,7 @@ Public Class Tablepad
         Else
 
 
-            Select Case getPositionBlock(GlobalPosition, New Vector3)
+            Select Case getPositionBlock(CameraEye(), New Vector3)
                 Case 3
                     invert = False
                     incX = -0.1

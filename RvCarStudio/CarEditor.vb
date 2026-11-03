@@ -53,76 +53,20 @@ Public Class CarEditor
 
     End Sub
     Sub DoRender()
-        ' Skip rendering if paused or already rendering
-        If FORCE_DO_NOT_RENDER OrElse DO_NOT_RENDER Then Exit Sub
-
-        ' Validate GL control exists
-        If GlControl1 Is Nothing Then Exit Sub
-
-        ' Lock rendering to prevent concurrent access
-        DO_NOT_RENDER = True
+        If FORCE_DO_NOT_RENDER OrElse CarIsLoading OrElse cars.Count = 0 Then Exit Sub
+        If GlControl1 Is Nothing OrElse GlControl1.IsDisposed Then Exit Sub
 
         ' Calculate FPS and lag metrics
-        fps = Int(60 * 1000 / (Swatch.ElapsedMilliseconds))
-        lag = Strings.Format(1 - (937.5 / (Swatch.ElapsedMilliseconds)), "0.00")
-        ' ' Catch ex As Exception
-        ' DO_NOT_RENDER = False
-        '  End Try
+        fps = Int(60 * 1000 / Max(Swatch.ElapsedMilliseconds, 1))
+        lag = Strings.Format(1 - (937.5 / Max(Swatch.ElapsedMilliseconds, 1)), "0.00")
 
-        'clear
-        GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
-        '    If (Not FinishedRendering) and sinceLastFrame < 2  Then Exit Sub
-        GL.MatrixMode(MatrixMode.Modelview)
-        GL.LoadIdentity()
-
-
-        'if fps > 10 we can stop to do events
-        If fps > 10 Then Application.DoEvents()
-
-
-
-        'lights (if activated)
-        GL.Light(LightName.Light1, LightParameter.Specular, cars(Active_Car).Theory.MainInfos.EnvRGB)
-        GL.Light(LightName.Light1, LightParameter.Ambient, Color4.White)
-        GL.Light(LightName.Light1, LightParameter.Diffuse, cars(Active_Car).Theory.MainInfos.EnvRGB)
-        GL.Light(LightName.Light1, LightParameter.Position, New Vector4(-1, -1, 1, 0))
-
-        GL.Light(LightName.Light2, LightParameter.Specular, cars(Active_Car).Theory.MainInfos.EnvRGB)
-        GL.Light(LightName.Light2, LightParameter.Ambient, Color4.White)
-        GL.Light(LightName.Light2, LightParameter.Diffuse, cars(Active_Car).Theory.MainInfos.EnvRGB)
-        GL.Light(LightName.Light2, LightParameter.Position, New Vector4(1, -1, -1, 0))
-
-        'if problem, then reinit
-        If Single.IsNaN(GlobalPosition.X) Then GlobalPosition.X = -0.85
-        If Single.IsNaN(GlobalPosition.Y) Then GlobalPosition.Y = 2
-        If Single.IsNaN(GlobalPosition.Z) Then GlobalPosition.Z = 0.25
-
-
-        'camera position
-        Dim Eye = New Vector3(GlobalPosition.Length * Cos(PRM.Theta * PI / 180) * Sin(PRM.Phi * PI / 180), _
-                              -GlobalPosition.LengthFast * Sin(PRM.Theta * PI / 180) * Sin(PRM.Phi * PI / 180), _
-                              GlobalPosition.LengthFast * Cos(PRM.Phi * PI / 180))
-
-
-        'Build project matrix + load
-        GL.LoadMatrix(Matrix4.LookAt(Eye, New Vector3, New Vector3(0, 1, 0)))
-
-        'get current theta 
-        GL.Rotate(2 * PRM.Theta, New Vector3(1, 0, 0))
-
-        'qfont.Options.Colour = New OpenTK.Graphics.Color4(Rnd() / 2, Rnd() / 2, Rnd() / 2, 1)
-
-
-
-
-
+        BeginFrame(GlControl1)
+        If Not RENDER_FONT Then DrawFloor(FloorHeight(cars(Active_Car)))
 
         If Not PickingPRM Then 'if we're not picking a car body
-            For Each MODEL In PermaModels.Union(Models) 'for each models & permanent models
-
-                'Extra
+            For Each MODEL In PermaModels
                 'Fireworks
-                If (MODEL.FileName.IndexOf("firework") <> -1) And MODEL.isVisible Then
+                If MODEL.FileName IsNot Nothing AndAlso MODEL.FileName.IndexOf("firework") <> -1 AndAlso MODEL.isVisible Then
                     ang += 0.05
 
                     If ang < PI / 2 Then
@@ -130,43 +74,16 @@ Public Class CarEditor
                         MODEL.MATRIX *= Matrix4.CreateTranslation(cars(Active_Car).Theory.RealInfos.WeaponGeneration * Zoom + New Vector3(0, 0, ang * Zoom * 10))
                     Else
                         MODEL.MATRIX *= Matrix4.CreateTranslation(New Vector3(0, 0, ang * Zoom * 15))
-
-
                     End If
 
                     If ang > 3 * PI Then ang = PI / 4 : MODEL.isVisible = False
-
                 End If
-
-
-
-
-                'Render
-                MODEL.Render()
-
             Next
 
+            DrawModels(PermaModels.Union(Models))
+        ElseIf PICK_PRM.ThisPRM IsNot Nothing Then
+            DrawModels(New PRM() {PICK_PRM.ThisPRM}) 'only render prm being picked
         End If
-
-        If PickingPRM Then
-            If PICK_PRM.ThisPRM IsNot Nothing Then PICK_PRM.ThisPRM.Render() 'only render prm being picked
-        End If
-
-
-
-
-
-
-        '   GL.Rotate(-PRM.Theta, New Vector3(0, 1, 0))
-        '  GL.Rotate(-PRM.Phi, New Vector3(1, 0, 0))
-        '
-        ' GL.Translate(-GlobalPosition)
-        '
-        ' GL.Rotate(-PRM.Theta, New Vector3(1, 0, 0))
-        '   GL.Rotate(-PRM.Phi, New Vector3(0, 1, 0))
-        ' GL.Flush()
-
-
 
         'Render font (car box making)
         If RENDER_FONT Then
@@ -285,12 +202,6 @@ Public Class CarEditor
 
 
         GlControl1.SwapBuffers()
-        DO_NOT_RENDER = False
-
-
-        FinishedRendering = True
-        StartedRendering = False
-        '  Loop
     End Sub
     Dim CurSS = -1
 
@@ -300,6 +211,11 @@ Public Class CarEditor
     Private Sub CarEditor_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
 
         ComboBox1.SelectedIndex = 0
+
+        'other car
+        Dim backBtn As New Button With {.Text = "other car", .Size = Button2.Size, .FlatStyle = Button2.FlatStyle, .ForeColor = Button2.ForeColor, .BackColor = Button2.BackColor, .Font = Button2.Font}
+        AddHandler backBtn.Click, Sub() BackToBrowser()
+        FlowLayoutPanel1.Controls.Add(backBtn)
 
         'Load pics
         Body_0.BackgroundImage = Image.FromFile(Application.StartupPath & "\data\gfx\Body.png")
@@ -370,21 +286,51 @@ Public Class CarEditor
     End Sub
 
     Private Sub GlControl1_Resize(ByVal sender As Object, ByVal e As System.EventArgs) Handles GlControl1.Resize
-        'Viewport setup
-        GL.Viewport(0, 0, GlControl1.ClientSize.Width, GlControl1.ClientSize.Height)
-
+        'BeginFrame takes the new size
     End Sub
 
     Private Sub Panel7_Paint(ByVal sender As System.Object, ByVal e As System.Windows.Forms.PaintEventArgs) Handles Panel7.Paint
 
     End Sub
-    Public Saved = False
+    ''' <summary>Unsaved changes? Ask. False means stay here</summary>
+    Public Function AskToSave() As Boolean
+        If cars.Count = 0 OrElse Not cars(Active_Car).Sing.Modified Then Return True
+        Select Case MsgBox("Save the changes of " & cars(Active_Car).Theory.MainInfos.Name & "?", MsgBoxStyle.YesNoCancel Or MsgBoxStyle.Question, APPNAME)
+            Case MsgBoxResult.Yes
+                SaveCar()
+                Return True
+            Case MsgBoxResult.No
+                Return True
+        End Select
+        Return False
+    End Function
+
+    Public Sub SaveCar()
+        Try
+            cars(Active_Car).Sing.SaveToFile()
+            Console_.W("Saved " & cars(Active_Car).Path & "\parameters.txt")
+            Label1.Text = "Saved at " & Now.ToShortTimeString
+        Catch ex As Exception
+            MsgBox("Could not save: " & ex.Message, MsgBoxStyle.Critical, APPNAME)
+        End Try
+    End Sub
+
+    'Back to the list of cars
+    Public Sub BackToBrowser()
+        If Not AskToSave() Then Exit Sub
+        ComboBox1.SelectedIndex = 0
+        Timer2.Stop()
+        CheckBoxNoAutoSave()
+        Me.Hide()
+        CarBrowser.Show()
+        CarBrowser.Timer2.Start()
+    End Sub
+    Private Sub CheckBoxNoAutoSave()
+        Parameters_editor.Hide()
+    End Sub
     Private Sub PictureBox1_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles PictureBox1.Click
-        'TODO: saved?
-        YESNO.Question.Text = "This will exit " & APPNAME & "." & vbNewLine & " Proceed?"
-        If YESNO.ShowDialog = Windows.Forms.DialogResult.Yes Then
-            End
-        End If
+        If Not AskToSave() Then Exit Sub
+        End
     End Sub
 
 
@@ -444,10 +390,11 @@ Public Class CarEditor
 
     'if edit mode is set, load it!
     Sub ComboBox1_SelectedIndexChanged(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles ComboBox1.SelectedIndexChanged
+        If cars.Count = 0 Then Exit Sub
         ReturnItToItsDefaultPlace()
+        ExtraModes.HideAll(Panel3)
 
-
-
+        If ExtraModes.IsExtraMode(ComboBox1.SelectedIndex) Then ExtraModes.ShowMode(ComboBox1.SelectedIndex, Panel3)
 
         Select Case ComboBox1.SelectedIndex
             Case 0 'MAIN
@@ -551,7 +498,7 @@ As RenderState
 
     'toggle between different render mode, again what's with this weird naming? -_-...
     Sub ManageMeAll()
-        ManageMe(Body, cars(0).models.BODY, Body_0)
+        ManageMe(Body, cars(Active_Car).models.BODY, Body_0)
     End Sub
     Sub ManageMe(ByRef State As RenderState, ByRef Model As PRM, ByRef PicBox_Or_Panel As Object)
         'change rendering mode for models
@@ -608,20 +555,20 @@ As RenderState
 
     Private Sub Wheel_1_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Wheel_1.Click
         ManageMePlusOne(WheelFL, cars(Active_Car).models.Wheel(1), Wheel_1)
-        cars(Active_Car).models.Wheel(1).isVisible = cars(Active_Car).models.Wheel(1).isVisible And cars(Active_Car).Theory.wheel(1).IsPresent
+        If cars(Active_Car).models.Wheel(1) IsNot Nothing Then cars(Active_Car).models.Wheel(1).isVisible = cars(Active_Car).models.Wheel(1).isVisible And cars(Active_Car).Theory.wheel(1).IsPresent
     End Sub
     Private Sub Wheel_2_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Wheel_2.Click
         ManageMePlusOne(WheelFR, cars(Active_Car).models.Wheel(0), Wheel_2)
-        cars(Active_Car).models.Wheel(0).isVisible = cars(Active_Car).models.Wheel(0).isVisible And cars(Active_Car).Theory.wheel(0).IsPresent
+        If cars(Active_Car).models.Wheel(0) IsNot Nothing Then cars(Active_Car).models.Wheel(0).isVisible = cars(Active_Car).models.Wheel(0).isVisible And cars(Active_Car).Theory.wheel(0).IsPresent
     End Sub
 
     Private Sub Wheel_3_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Wheel_3.Click
         ManageMePlusOne(WheelBL, cars(Active_Car).models.Wheel(3), Wheel_3)
-        cars(Active_Car).models.Wheel(3).isVisible = cars(Active_Car).models.Wheel(3).isVisible And cars(Active_Car).Theory.wheel(3).IsPresent
+        If cars(Active_Car).models.Wheel(3) IsNot Nothing Then cars(Active_Car).models.Wheel(3).isVisible = cars(Active_Car).models.Wheel(3).isVisible And cars(Active_Car).Theory.wheel(3).IsPresent
     End Sub
     Private Sub Wheel_4_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Wheel_4.Click
         ManageMePlusOne(WheelBR, cars(Active_Car).models.Wheel(2), Wheel_4)
-        cars(Active_Car).models.Wheel(2).isVisible = cars(Active_Car).models.Wheel(2).isVisible And cars(Active_Car).Theory.wheel(2).IsPresent
+        If cars(Active_Car).models.Wheel(2) IsNot Nothing Then cars(Active_Car).models.Wheel(2).isVisible = cars(Active_Car).models.Wheel(2).isVisible And cars(Active_Car).Theory.wheel(2).IsPresent
     End Sub
 
 
@@ -683,7 +630,7 @@ As RenderState
 
 
     Private Sub Autosave_Tick(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Autosave.Tick
-        cars(Active_Car).Sing.SaveToFile(cars(Active_Car).Path & "\parameters.txt")
+        If cars.Count > 0 AndAlso cars(Active_Car).Sing.Modified Then SaveCar()
     End Sub
 
 
@@ -700,10 +647,11 @@ As RenderState
     End Sub
 
 
-    'poly smooth? 'TODO: Not wronking
+    'smooth or flat shading
     Private Sub MCheckbox4_CheckedChanged() Handles MCheckbox4.CheckedChanged
         If Not Initializd Then Exit Sub
-        If MCheckbox4.Checked Then GL.Enable(EnableCap.PolygonSmooth) Else GL.Disable(EnableCap.PolygonSmooth)
+        GlControl1.MakeCurrent()
+        GL.ShadeModel(If(MCheckbox4.Checked, ShadingModel.Smooth, ShadingModel.Flat))
 
     End Sub
 
@@ -721,32 +669,9 @@ As RenderState
 
     'save
     Private Sub Button2_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button2.Click
-        cars(Active_Car).Sing.SaveToFile(cars(Active_Car).Path & "\parameters.txt")
+        SaveCar()
     End Sub
 
-
-    'multithreading
-    Private Sub BackgroundWorker1_DoWork_1(ByVal sender As System.Object, ByVal e As System.ComponentModel.DoWorkEventArgs) Handles BackgroundWorker1.DoWork
-
-
-
-        If CarIsLoading = True Then Exit Sub
-        StartedRendering = True
-
-
-        DoRender()
-
-        FinishedRendering = True
-        StartedRendering = False
-
-
-    End Sub
-
-    'restart thread
-    Private Sub BackgroundWorker1_RunWorkerCompleted(ByVal sender As Object, ByVal e As System.ComponentModel.RunWorkerCompletedEventArgs) Handles BackgroundWorker1.RunWorkerCompleted
-        '   If DO_NOT_THREAD Then Exit Sub
-        BackgroundWorker1.RunWorkerAsync()
-    End Sub
 
     'toggle edit mode
     Private Sub Button3_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button3.Click
@@ -763,13 +688,5 @@ As RenderState
         PRM.TEXTURED = MCheckbox1.Checked
     End Sub
 
-
-    'oldjunk code
-    Private Sub refresh_Tick(ByVal sender As System.Object, ByVal e As System.EventArgs)
-        DO_NOT_RENDER = True
-        Application.DoEvents()
-        Timer2.Start()
-        DO_NOT_RENDER = False
-    End Sub
 
 End Class

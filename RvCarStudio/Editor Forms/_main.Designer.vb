@@ -309,7 +309,7 @@ Partial Class _main
         Me.Button5.Name = "Button5"
         Me.Button5.Size = New System.Drawing.Size(93, 24)
         Me.Button5.TabIndex = 82
-        Me.Button5.Text = "Comment!"
+        Me.Button5.Text = "Check car"
         Me.Button5.UseCompatibleTextRendering = True
         Me.Button5.UseVisualStyleBackColor = False
         '

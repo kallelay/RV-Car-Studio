@@ -35,8 +35,6 @@ Namespace TexLib
 
 
             GL.Enable(EnableCap.CullFace)
-            '  GL.Disable(EnableCap.CullFace)
-
             GL.CullFace(CullFaceMode.Back)
 
 
@@ -80,13 +78,6 @@ Namespace TexLib
         ''' 24- and 32-bit bitmaps supported.
         ''' </summary>
         Public Shared Function CreateTextureFromBitmap(ByVal bitmap As Bitmap) As Integer
-            ' Note: MakeTransparent only for non-alpha bitmaps
-            ' 32-bit images with alpha channel should not be processed
-            If bitmap.PixelFormat <> Img.PixelFormat.Format32bppArgb AndAlso _
-               bitmap.PixelFormat <> Img.PixelFormat.Format32bppPArgb Then
-                bitmap.MakeTransparent(Color.Black)
-            End If
-
             Dim data As Img.BitmapData = bitmap.LockBits(New Rectangle(0, 0, bitmap.Width, bitmap.Height), Img.ImageLockMode.[ReadOnly], Img.PixelFormat.Format32bppArgb)
             Dim tex = GiveMeATexture()
             GL.BindTexture(TextureTarget.Texture2D, tex)
@@ -110,11 +101,16 @@ Namespace TexLib
             End If
 
             Try
-                Dim bitmap As New Bitmap(Bitmap.FromFile(path))
-                Return CreateTextureFromBitmap(bitmap)
+                'keep the file free: the texture editor wants to overwrite it
+                Using src = Bitmap.FromStream(New IO.MemoryStream(IO.File.ReadAllBytes(path)))
+                    Using bitmap As New Bitmap(src)
+                        'without an alpha channel black is what the game treats as see-through
+                        If Not Image.IsAlphaPixelFormat(src.PixelFormat) Then bitmap.MakeTransparent(Color.Black)
+                        Return CreateTextureFromBitmap(bitmap)
+                    End Using
+                End Using
             Catch ex As Exception
-                ' Log error and return default texture
-                Debug.WriteLine("Failed to load texture from " & path & ": " & ex.Message)
+                Console_.W("Failed to load texture from " & path & ": " & ex.Message)
                 Return CreateTexture(1, 1, False, New Byte() {255, 255, 255})
             End Try
         End Function
@@ -144,11 +140,8 @@ Namespace TexLib
         Private Shared Sub SetParameters()
             GL.Enable(EnableCap.Texture2D)
 
-            GL.TexParameter(TextureTarget.ProxyTexture2D, TextureParameterName.GenerateMipmap, 1)
-
             GL.TexEnv(TextureEnvTarget.TextureEnv, TextureEnvParameter.TextureEnvMode, TextureEnvMode.Modulate)
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureDepth, 1.0F)
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, TextureMinFilter.Nearest)
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, TextureMinFilter.Linear)
             ' GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, TextureMinFilter.Nearest)
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, TextureMagFilter.Linear)
             ' GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, TextureWrapMode.ClampToEdge)

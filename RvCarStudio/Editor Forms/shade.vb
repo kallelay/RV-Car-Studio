@@ -12,21 +12,38 @@ Public Class shade
     Private Sub RadioButton1_CheckedChanged(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles RadioButton1.CheckedChanged, RadioButton2.CheckedChanged
         If RadioButton1.Checked Then USE = usemode.vx Else USE = usemode.ply
     End Sub
-    Dim BodyModel As PRM
+    'The colors as they are in the files, to go back to when leaving without saving
+    Dim Kept As New List(Of KeyValuePair(Of PRM, Int32()))
+    Sub KeepColors()
+        Kept.Clear()
+        For Each p In Models
+            Dim colors(p.MyModel.polynum * 4) As Int32
+            For k = 0 To p.MyModel.polynum - 1
+                For c = 0 To 3
+                    colors(k * 4 + c) = p.MyModel.polyl(k).c(c).ReturnLong()
+                Next
+            Next
+            Kept.Add(New KeyValuePair(Of PRM, Int32())(p, colors))
+        Next
+    End Sub
     Sub DoLoad()
-        BodyModel = cars(Active_Car).models.BODY.Clone
+        KeepColors()
+        SAVED = True
+        MODIFIED = False
         LOADING = False
-        NumericUpDown1_ValueChanged_1(Nothing, Nothing)
-        SAVED = False
     End Sub
     Sub Unload()
-        If Not MODIFIED Then Exit Sub 'HACK: ERROR on laod
+        LOADING = True
+        If Not MODIFIED Or SAVED Then Exit Sub
 
-        Dim p = cars(Active_Car).models.BODY.MyModel.polyl.Clone
-        cars(Active_Car).models.BODY = BodyModel
-        If SAVED Then cars(Active_Car).models.BODY.MyModel.polyl = p.Clone
-        p = Nothing
-
+        For Each kv In Kept
+            For k = 0 To kv.Key.MyModel.polynum - 1
+                For c = 0 To 3
+                    kv.Key.MyModel.polyl(k).c(c).SetLong(kv.Value(k * 4 + c))
+                Next
+            Next
+        Next
+        MODIFIED = False
     End Sub
 
     Private Sub NumericUpDown1_ValueChanged_1(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles NumericUpDown1.ValueChanged, _
@@ -237,9 +254,14 @@ Public Class shade
     End Sub
 
     Private Sub Button3_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button3.Click
+        'keep the first version of a model, once
         For Each PRM In Models
+            Dim file = PRM.Directory & PRM.FileName
+            If Not IO.File.Exists(file & ".bak") Then IO.File.Copy(file, file & ".bak")
             PRM.Export()
         Next
+        SAVED = True
+        KeepColors()
 
     End Sub
 

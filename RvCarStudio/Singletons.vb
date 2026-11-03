@@ -1,789 +1,615 @@
-﻿Public Class Singletons
+﻿Imports System.Globalization
+Imports System.Text
+Imports System.Text.RegularExpressions
 
-    'SINGLETONS (of parameterstxt)
+'parameters.txt reader and writer.
+'
+'The file is kept as text, line by line. Saving only touches the lines whose value was changed
+'in the editor, so comments, ;) RVGL extensions, sections we don't know about and the checksum
+'at the end of stock files all stay exactly as they were.
+Public Class Singletons
 
-    Private Shared newStr As String
-    Dim path$
-    ReadOnly Property RETURN_STRING() 'return all string
+    'Latin-1 maps every byte to one char, so car names and stock checksums survive a round trip
+    Public Shared ReadOnly FileEncoding As Encoding = Encoding.GetEncoding(28591)
+
+    Private Lines As New List(Of String)
+    Private Eols As New List(Of String)
+    Private MainItem As SingletonItem
+    Private Blocks As New Dictionary(Of String, SingletonItem)(StringComparer.OrdinalIgnoreCase)
+    Private MainCloseLine As Integer = -1
+
+    'The car this file belongs to, and its values as they are in Lines
+    Public Owner As Car
+    Private BaseEntries As List(Of ParamEntry)
+
+    Sub New(ByVal FilePath As String)
+        Dim txt = ""
+        If IO.File.Exists(FilePath) Then
+            txt = IO.File.ReadAllText(FilePath, FileEncoding)
+        Else
+            Console_.W("Error:" & FilePath & " couldn't be found")
+        End If
+        SetText(txt)
+    End Sub
+    Sub New(ByVal Str As String, ByVal FLAG_OF_STREAM As Boolean)
+        SetText(Str)
+    End Sub
+
+    '------------------------parse--------------------
+    Private Sub SetText(ByVal txt As String)
+        Lines.Clear()
+        Eols.Clear()
+        Dim st = 0
+        For i = 0 To txt.Length - 1
+            If txt(i) = vbLf Then
+                Dim hasCr = i > st AndAlso txt(i - 1) = vbCr
+                Lines.Add(txt.Substring(st, i - st - If(hasCr, 1, 0)))
+                Eols.Add(If(hasCr, vbCrLf, vbLf))
+                st = i + 1
+            End If
+        Next
+        If st < txt.Length Then
+            Lines.Add(txt.Substring(st))
+            Eols.Add("")
+        End If
+        Parse()
+    End Sub
+
+    Private Shared ReadOnly ModelLine As New Regex("^(?:MODEL\s*)?(\d+)\s*(""[^""]*""?.*)$", RegexOptions.IgnoreCase)
+    Private Shared ReadOnly KeyLine As New Regex("^([A-Za-z_][A-Za-z0-9_]*)\s*(.*)$")
+
+    Private Sub Parse()
+        MainItem = New SingletonItem("")
+        Blocks.Clear()
+        MainCloseLine = -1
+
+        Dim depth = 0
+        Dim cur = MainItem
+        Dim last As ParamLine = Nothing
+        Dim cont = 0
+
+        For i = 0 To Lines.Count - 1
+            Dim ext = False
+            Dim codeStart = 0
+            Dim code = CodeOf(Lines(i), ext, codeStart)
+            Dim trimmed = code.Trim()
+            If trimmed = "" Then Continue For
+
+            Dim brace = trimmed.IndexOf("{"c)
+            If brace >= 0 AndAlso trimmed(0) <> """"c Then
+                Dim hdr = Regex.Replace(trimmed.Substring(0, brace).Trim(), "\s+", " ")
+                If hdr = "" AndAlso depth = 0 Then
+                    depth = 1
+                    Continue For
+                End If
+                'header on the line before the brace
+                If hdr = "" AndAlso last IsNot Nothing AndAlso last.Value = "" Then
+                    hdr = last.Key
+                    cur.Items.Remove(last)
+                End If
+                If depth = 0 Then depth = 1
+                cur = New SingletonItem(hdr)
+                cur.OpenLine = i
+                Blocks(hdr) = cur
+                depth = 2
+                last = Nothing
+                Continue For
+            End If
+
+            If trimmed(0) = "}"c Then
+                depth -= 1
+                If depth = 1 Then cur.CloseLine = i
+                cur = MainItem
+                last = Nothing
+                If depth <= 0 Then
+                    MainCloseLine = i
+                    Exit For
+                End If
+                Continue For
+            End If
+
+            If depth = 0 Then depth = 1
+
+            Dim item As New ParamLine With {.Line = i, .Ext = ext}
+            Dim mm = If(cur Is MainItem, ModelLine.Match(trimmed), Match.Empty)
+            If mm.Success Then
+                item.Key = "MODEL " & Integer.Parse(mm.Groups(1).Value)
+                SetValueRange(item, Lines(i), codeStart, code, mm.Groups(2).Value)
+            ElseIf IsNumberStart(trimmed) AndAlso last IsNot Nothing Then
+                'continuation of the value above (Inertia takes 3 lines)
+                cont += 1
+                item.Key = BaseKey(last.Key) & "#" & cont
+                SetValueRange(item, Lines(i), codeStart, code, trimmed)
+                cur.Items.Add(item)
+                last = item
+                Continue For
+            Else
+                Dim km = KeyLine.Match(trimmed)
+                If Not km.Success Then Continue For
+                item.Key = km.Groups(1).Value
+                SetValueRange(item, Lines(i), codeStart, code, km.Groups(2).Value)
+            End If
+            cont = 0
+            cur.Items.Add(item)
+            last = item
+        Next
+
+        MainItem.OpenLine = -1
+    End Sub
+
+    Private Shared Function BaseKey(ByVal k As String) As String
+        Dim p = k.IndexOf("#"c)
+        Return If(p < 0, k, k.Substring(0, p))
+    End Function
+
+    Private Shared Function IsNumberStart(ByVal s As String) As Boolean
+        Return Char.IsDigit(s(0)) OrElse ((s(0) = "-"c OrElse s(0) = "."c OrElse s(0) = "+"c) AndAlso s.Length > 1 AndAlso (Char.IsDigit(s(1)) OrElse s(1) = "."c))
+    End Function
+
+    Private Shared Sub SetValueRange(ByVal item As ParamLine, ByVal line As String, ByVal codeStart As Integer, ByVal code As String, ByVal value As String)
+        value = value.Trim()
+        item.Value = value
+        Dim codeEnd = codeStart + code.TrimEnd().Length
+        item.ValueEnd = codeEnd
+        item.ValueStart = codeEnd - value.Length
+    End Sub
+
+    'The part of a line that isn't a comment. ";)" at the start is RVGL's marker for lines old versions skip
+    Private Shared Function CodeOf(ByVal line As String, ByRef ext As Boolean, ByRef codeStart As Integer) As String
+        Dim i = 0
+        Do While i < line.Length AndAlso (line(i) = " "c OrElse line(i) = vbTab)
+            i += 1
+        Loop
+        codeStart = 0
+        If i + 1 < line.Length AndAlso line(i) = ";"c AndAlso line(i + 1) = ")"c Then
+            ext = True
+            codeStart = i + 2
+        End If
+        Dim inQuote = False
+        For j = codeStart To line.Length - 1
+            If line(j) = """"c Then inQuote = Not inQuote
+            If line(j) = ";"c AndAlso Not inQuote Then Return line.Substring(codeStart, j - codeStart)
+        Next
+        Return line.Substring(codeStart)
+    End Function
+
+    '------------------------read--------------------
+    ''' <summary>The section with this header ("" = top level), or Nothing if the file doesn't have it</summary>
+    Public Function getSingleton(ByVal header As String) As SingletonItem
+        If header Is Nothing OrElse header.Trim() = "" Then Return MainItem
+        Dim b As SingletonItem = Nothing
+        If Blocks.TryGetValue(header.Trim(), b) Then Return b
+        Return Nothing
+    End Function
+
+    Public Function getAllSingletons() As String()
+        Return Blocks.Keys.ToArray()
+    End Function
+
+    '------------------------write--------------------
+    ''' <summary>Tell the file its text now matches this car</summary>
+    Public Sub Rebase(ByVal theory As Car_theory)
+        BaseEntries = ParamEntry.Emit(theory)
+    End Sub
+
+    Public ReadOnly Property Text() As String
         Get
-            Return newStr
+            Dim sb As New StringBuilder
+            For i = 0 To Lines.Count - 1
+                sb.Append(Lines(i)).Append(Eols(i))
+            Next
+            Return sb.ToString()
         End Get
     End Property
 
-    Sub New(ByVal FilePath As String)
-        If Not IO.File.Exists(FilePath) Then
-            Console_.W("Error:" & FilePath & " couldn't be found")
-            Beep()
-            Exit Sub
-        End If
-        newStr = IO.File.ReadAllText(FilePath)
-
-        Clean()
-    End Sub
-    Sub New(ByVal Str As String, ByVal FLAG_OF_STREAM As Boolean)
-
-        newStr = Str
-
-        Clean()
-    End Sub
-
-    'TODO: clean this Clean code
-    Sub Clean()
-        Dim temp = Split(newStr, vbNewLine)
-        Dim CleanStr As String = ""
-        For i = 0 To UBound(temp)
-            If InStr(temp(i), ";") > 0 Then
-                If temp(i).Length > 1 Then
-                    If temp(i)(1) = ")" Then
-                        CleanStr &= temp(i) & vbNewLine
-                        Continue For
-                    End If
-                End If
-
-
-                CleanStr &= Split(temp(i), ";")(0) & vbNewLine
-            Else
-
-                CleanStr &= temp(i) & vbNewLine
-            End If
-        Next
-
-        Do Until InStr(CleanStr, vbNewLine & vbNewLine) < 1
-            CleanStr = Replace(CleanStr, vbNewLine & vbNewLine, vbNewLine)
-        Loop
-
-        newStr = CleanStr
-    End Sub
-    Public Function getAllSingletons() As String()
-        Dim temp() = newStr.Split(vbNewLine)
-        Dim header As String = ""
-        For i = LBound(temp) To UBound(temp)
-            If InStr(temp(i), "{") > 0 Then
-                header &= Replace(Replace(Split(temp(i), "{")(0), " " & vbTab, ""), vbTab, "") & ","
-            End If
-        Next
-
-        Return header.Split(",")
-    End Function
-    Sub writeHeader(ByRef w As IO.StreamWriter, ByVal Name$)
-        w.WriteLine()
-        w.WriteLine(";====================")
-        w.WriteLine("; {0}", Name)
-        w.WriteLine(";====================")
-        w.WriteLine()
-    End Sub
-    Public Sub SaveToFile()
-        SaveToFile(cars(Active_Car).Path & "\parameters.txt")
-    End Sub
-    Public Sub SaveToFile(ByVal path As String)
-
-        'FileCopy(path, path & "x")
-
-        Dim w As New IO.StreamWriter(New IO.FileStream(Replace(path, "\\", "\", , , CompareMethod.Text), IO.FileMode.Create))
-
-        With cars(Active_Car).Theory.MainInfos
-            w.WriteLine("{")
-            w.WriteLine()
-            w.WriteLine(";============================================================")
-            w.WriteLine(";============================================================")
-            w.WriteLine("; " & .Name)
-            w.WriteLine(";============================================================")
-            w.WriteLine(";============================================================")
-            Dim x$ = .Name
-            Do Until x(0) <> " "
-                x = Mid(x, 2)
-            Loop
-            w.WriteLine("Name      	""{0}""", x)
-            w.WriteLine()
-
-            writeHeader(w, "Model Filepaths")
-
-            For i = 0 To 18
-                w.WriteLine("MODEL 	{0} 	""{1}""", i, .Model(i))
+    ''' <summary>Is the car different from the file?</summary>
+    Public ReadOnly Property Modified() As Boolean
+        Get
+            If Owner Is Nothing OrElse BaseEntries Is Nothing Then Return False
+            Dim now = ParamEntry.Emit(Owner.Theory)
+            If now.Count <> BaseEntries.Count Then Return True
+            For i = 0 To now.Count - 1
+                If now(i).Value <> BaseEntries(i).Value Then Return True
             Next
+            Return False
+        End Get
+    End Property
 
-            w.WriteLine("TPAGE 	""{0}""", .Tpage)
-            w.WriteLine("COLL 	""{0}""", .CollFile)
-            w.WriteLine(";)TCARBOX 	""{0}""", .TCarBox)
-            w.WriteLine("EnvRGB 	{0} {1} {2}", .EnvRGB.R * 255, .EnvRGB.G * 255, .EnvRGB.B * 255)
+    Private Function Find(ByVal block As String, ByVal key As String) As ParamLine
+        Dim it = getSingleton(block)
+        Return If(it Is Nothing, Nothing, it.Find(key))
+    End Function
 
+    'Write the car's changes into the text
+    Private Sub ApplyChanges()
+        If Owner Is Nothing OrElse BaseEntries Is Nothing OrElse Not Modified Then Exit Sub
+        Dim now = ParamEntry.Emit(Owner.Theory)
+        Dim was As New Dictionary(Of String, String)
 
-
-            writeHeader(w, "Stuff mainly for frontend display and car selectability")
-
-
-
-            w.WriteLine("BestTime   	{0}", UCase(.BESTTIME.ToString))
-            w.WriteLine("Selectable   	{0}", UCase(.SELECTABLE.ToString))
-
-            w.WriteLine("Statistics    	{0} 			; Can be included in statistics", UCase(.Statistics.ToString))
-            w.WriteLine("Class      	{0} 			; Engine type (0=Elec, 1=Glow, 2=Other)", .car_class)
-            w.WriteLine("Obtain     	{0} 			; Obtain method", .obtain)
-            w.WriteLine("Rating     	{0} 			; Skill level (rookie, amateur, ...)", .Rating)
-            w.WriteLine("TopEnd     	{0} 			; Actual top speed (mph) for frontend bars", .TopEnd)
-            w.WriteLine("Acc        	{0} 			; Acceleration rating (empirical)", Strings.Format(.Acceleration, "0.000000"))
-            w.WriteLine("Weight     	{0} 			; Scaled weight (for frontend bars)", Strings.Format(.Weight, "0.000000"))
-            w.WriteLine("Handling   	{0} 			; Handling ability (empirical and totally subjective)", Strings.Format(.Handling, "0.000000"))
-            w.WriteLine("Trans      	{0} 			; Transmission type (calculate in game anyway...)", Strings.Format(.Trans, "0.000000"))
-            w.WriteLine("MaxRevs    	{0} 			; Max Revs (for rev counter)", Strings.Format(.MaxRev, "0.000000"))
-
-        End With
-
-        With cars(Active_Car).Theory.RealInfos
-            writeHeader(w, "Handling related stuff")
-            w.WriteLine("SteerRate  	{0} 			; Rate at which steer angle approaches value from input", Strings.Format(.SteerRate, "0.000000"))
-            w.WriteLine("SteerMod   	{0} 			; ", Strings.Format(.SteerMode, "0.000000"))
-            w.WriteLine("EngineRate 	{0} 			; Rate at which Engine voltage approaches set value", Strings.Format(.EngineRate, "0.000000"))
-            w.WriteLine("TopSpeed   	{0} 			; Car's theoretical top speed (not including friction...)", Strings.Format(.TopSpeed, "0.000000"))
-            w.WriteLine("DownForceMod	{0} 			; Down force modifier when car on floor", Strings.Format(.DownForceModifier, "0.000000"))
-            w.WriteLine("CoM        	{0} {1} {2} 		; Centre of mass relative to model centre", Strings.Format(.COM.X * 1.0, "0.000000"), Strings.Format(.COM.Y * 1.0, "0.000000"), Strings.Format(.COM.Z * 1.0, "0.000000"))
-            w.WriteLine("Weapon     	{0} {1} {2} 		; Weapon genration offset", Strings.Format(.WeaponGeneration.X * 1.0, "0.000000"), Strings.Format(.WeaponGeneration.Y * -1.0, "0.000000"), Strings.Format(.WeaponGeneration.Z * 1.0, "0.000000"))
-            w.WriteLine(";)Flippable    {0}   ; Rotor car effect", UCase(.Flippable.ToString))
-            w.WriteLine(";)Flying       {0}   ; Flying like the UFO car", UCase(.Flying.ToString))
-            w.WriteLine(";)ClothFx      {0}   ; Mystery car cloth effect", UCase(.ClothFX.ToString))
-
-
-        End With
-
-        With cars(Active_Car).Theory.Body
-            writeHeader(w, "Car Body details")
-            w.WriteLine("BODY {		; Start Body")
-            w.WriteLine("ModelNum   	{0} 			; Model Number in above list", .modelNumber)
-            w.WriteLine("Offset     	{0}, {1}, {2} 		; Calculated in game", Strings.Format(.Offset.X * 1, "0.000000"), Strings.Format(.Offset.Y * -1, "0.000000"), Strings.Format(.Offset.Z * 1, "0.000000"))
-            w.WriteLine("Mass       	{0}", .Mass)
-            w.WriteLine("Inertia    	{0} {1} {2}", Strings.Format(.Inertia(0).X * 1, "0.000000"), Strings.Format(.Inertia(0).Y * 1, "0.000000"), Strings.Format(.Inertia(0).Z * 1, "0.000000"))
-            w.WriteLine("           	{0} {1} {2}", Strings.Format(.Inertia(1).X * 1, "0.000000"), Strings.Format(.Inertia(1).Y * 1, "0.000000"), Strings.Format(.Inertia(1).Z * 1, "0.000000"))
-            w.WriteLine("           	{0} {1} {2}", Strings.Format(.Inertia(2).X * 1, "0.000000"), Strings.Format(.Inertia(2).Y * 1, "0.000000"), Strings.Format(.Inertia(2).Z * 1, "0.000000"))
-            w.WriteLine("Gravity		2200 			; No longer used")
-            w.WriteLine("Hardness   	{0}", .Hardness)
-            w.WriteLine("Resistance 	{0} 			; Linear air esistance", Strings.Format(.Resistance, "0.000000"))
-            w.WriteLine("AngRes     	{0} 			; Angular air resistance", Strings.Format(.AngleRes, "0.000000"))
-            w.WriteLine("ResMod     	{0} 			; Ang air resistnce scale when in air", Strings.Format(.ResMode, "0.000000"))
-            w.WriteLine("Grip       	{0} 			; Converts downforce to friction value", Strings.Format(.Grip, "0.000000"))
-            w.WriteLine("StaticFriction	{0}", Strings.Format(.StaticFriction, "0.000000"))
-            w.WriteLine("KineticFriction {0}", Strings.Format(.KineticFriction, "0.000000"))
-            w.WriteLine("}     		; End Body")
-
-        End With
-
-        writeHeader(w, "Car Wheel details")
-
-        For i = 0 To 3
-
-            With cars(Active_Car).Theory.wheel(i)
-                w.WriteLine("WHEEL " & i & " { 	; Start Wheel")
-                w.WriteLine("ModelNum 	    " & .modelNumber)
-                w.WriteLine("Offset1  	    {0} {1} {2}", .Offset(1).X * 1, .Offset(1).Y * -1, .Offset(1).Z * 1)
-                w.WriteLine("Offset2  	    {0} {1} {2}", .Offset(2).X * 1, .Offset(2).Y * -1, .Offset(2).Z * 1)
-                w.WriteLine("IsPresent   	{0}", UCase(.IsPresent.ToString))
-                w.WriteLine("IsPowered   	{0}", UCase(.IsPowered.ToString))
-                w.WriteLine("IsTurnable   	{0}", UCase(.IsTurnable.ToString))
-                w.WriteLine("SteerRatio  	{0}", .SteerRatio)
-                w.WriteLine("EngineRatio 	{0}", .EngineRatio)
-                w.WriteLine("Radius      	{0}", .Radius)
-                w.WriteLine("Mass        	{0}", .Mass)
-                w.WriteLine("Gravity     	2200")
-                w.WriteLine("MaxPos      	{0}", .MaxPos)
-                w.WriteLine("SkidWidth   	{0}", .SkidWidth)
-                w.WriteLine("ToeIn       	{0}", .ToeInn)
-                w.WriteLine("AxleFriction    	{0}", .AxleFriction)
-                w.WriteLine("Grip            	{0}", .Grip)
-                w.WriteLine("StaticFriction  	{0}", .StaticFriction)
-                w.WriteLine("KineticFriction 	{0}", .KineticFriction)
-                w.WriteLine("}          	; End Wheel")
-                w.WriteLine()
-            End With
-
-        Next
-
-        writeHeader(w, "Car Spring details")
-
-        For i = 0 To 3
-
-            With cars(Active_Car).Theory.Spring(i)
-                w.WriteLine("SPRING " & i & " { 	; Start Spring")
-                w.WriteLine("ModelNum    	{0}", .modelNumber)
-                w.WriteLine("Offset  	    {0} {1} {2}", .Offset.X * 1, .Offset.Y * -1, .Offset.Z * 1)
-                w.WriteLine("Length      	{0}", .Length)
-                w.WriteLine("Stiffness   	{0}", .Stiffness)
-                w.WriteLine("Damping     	{0}", .Damping)
-                w.WriteLine("Restitution 	{0}", .Restitution)
-
-                w.WriteLine("}          	; End Spring")
-                w.WriteLine()
-            End With
-
-        Next
-
-        writeHeader(w, "Car Pin details")
-
-
-        For i = 0 To 3
-
-            With cars(Active_Car).Theory.PIN(i)
-                w.WriteLine("PIN " & i & " { 	    ; Start Pin")
-                w.WriteLine("ModelNum    	{0}", .modelNumber)
-                w.WriteLine("Offset  	    {0} {1} {2}", .offSet.X * 1, .offSet.Y * -1, .offSet.Z * 1)
-                w.WriteLine("Length      	{0}", .Length)
-                w.WriteLine("}          	; End Pin")
-                w.WriteLine()
-            End With
-
-        Next
-
-
-        writeHeader(w, "Car axle details")
-
-
-        For i = 0 To 3
-
-            With cars(Active_Car).Theory.Axle(i)
-                w.WriteLine("AXLE " & i & " { 	; Start Axle")
-                w.WriteLine("ModelNum    	{0}", .modelNumber)
-                w.WriteLine("Offset  	{0} {1} {2}", .offSet.X * 1, .offSet.Y * -1, .offSet.Z * 1)
-                w.WriteLine("Length      	{0}", .Length)
-                w.WriteLine("}          	; End Axle")
-                w.WriteLine()
-            End With
-
-        Next
-
-        writeHeader(w, "Car Spinner details")
-
-
-
-        With cars(Active_Car).Theory.Spinner
-            w.WriteLine("SPINNER { 	    ; Start spinner")
-            w.WriteLine("ModelNum    	{0}", .modelNumber)
-            w.WriteLine("Offset      	{0} {1} {2}", .offSet.X * 1, .offSet.Y * -1, .offSet.Z * 1)
-            w.WriteLine("Axis        	{0} {1} {2}", .Axis.X * 1, .Axis.Y * -1, .Axis.Z * 1)
-            w.WriteLine("AngVel      	{0}", .angVel)
-            w.WriteLine("}          	; End Spinner")
-            w.WriteLine()
-        End With
-
-        writeHeader(w, "Car Aerial details")
-
-
-
-        With cars(Active_Car).Theory.Aerial
-            w.WriteLine("AERIAL { 	; Start Aerial")
-            w.WriteLine("SecModelNum 	{0}", .ModelNumber)
-            w.WriteLine("TopModelNum 	{0}", .TopModelNumber)
-            w.WriteLine("Offset      	{0} {1} {2}", .offset.X * 1, .offset.Y * -1, .offset.Z * 1)
-            w.WriteLine("Direction   	{0} {1} {2}", .Direction.X * 1, .Direction.Y * -1, .Direction.Z * 1)
-            w.WriteLine("Length      	{0}", .length)
-            w.WriteLine("Stiffness   	{0}", .stiffness)
-            w.WriteLine("Damping     	{0}", .damping)
-
-            w.WriteLine("}          	; End Aerial")
-            w.WriteLine()
-        End With
-        Try
-
-
-            If cars(Active_Car).Theory.carAi IsNot Nothing Then
-
-                With cars(Active_Car).Theory.carAi
-
-                    writeHeader(w, "Car AI details")
-                    w.WriteLine("AI { 	; Start AI")
-                    w.WriteLine("UnderThresh 	{0}", .UnderThresh)
-                    w.WriteLine("UnderRange  	{0}", .UnderRange)
-                    w.WriteLine("UnderFront	 	{0}", .UnderFront)
-                    w.WriteLine("UnderRear   	{0}", .UnderRear)
-                    w.WriteLine("UnderMax    	{0}", .UnderMax)
-                    w.WriteLine("OverThresh  	{0}", .OverThresh)
-                    w.WriteLine("OverRange   	{0}", .OverRange)
-                    w.WriteLine("OverMax     	{0}", .OverMax)
-                    w.WriteLine("OverAccThresh  	{0}", .OverAccThresh)
-                    w.WriteLine("OverAccRange   	{0}", .OverAccRange)
-                    w.WriteLine("PickupBias     	{0}", .PickupBias)
-                    w.WriteLine("BlockBias      	{0}", .BlockBias)
-                    w.WriteLine("OvertakeBias   	{0}", .OvertakeBias)
-                    w.WriteLine("Suspension     	{0}", .Suspension)
-                    w.WriteLine("Aggression     	{0}", .Aggression)
-                    w.WriteLine("}          	; End AI")
-                    w.WriteLine()
-                End With
-
-            End If
-        Catch
-
-        End Try
-        w.WriteLine("}")
-        w.Flush()
-        w.Close()
-
-        'patching file
-        If InStr(Str(CSng(0.2)), ",", CompareMethod.Text) > 0 Then
-            Dim mystr = IO.File.ReadAllText(path)
-            mystr = Replace(mystr, ",", ".")
-            IO.File.WriteAllText(path, mystr)
+        'an empty file gets everything, otherwise only what changed
+        If Lines.Count = 0 Then
+            Lines.Add("{") : Eols.Add(vbCrLf)
+            Lines.Add("}") : Eols.Add(vbCrLf)
+            Parse()
+        Else
+            For Each e In BaseEntries
+                was(e.Block & "|" & e.Key) = e.Value
+            Next
         End If
 
+        For Each e In now
+            Dim old As String = Nothing
+            If was.TryGetValue(e.Block & "|" & e.Key, old) AndAlso old = e.Value Then Continue For
+            'a new optional value that was never set: nothing to write
+            If old Is Nothing AndAlso e.Value = "" Then Continue For
 
-
+            Dim p = Find(e.Block, e.Key)
+            If p Is Nothing AndAlso e.Key = "Weapon" Then p = Find(e.Block, "WeaponOffset1")
+            If p IsNot Nothing Then
+                Dim l = Lines(p.Line)
+                Dim value = e.Value
+                If p.ValueEnd = p.ValueStart AndAlso p.ValueEnd > 0 AndAlso l(p.ValueEnd - 1) <> " "c AndAlso l(p.ValueEnd - 1) <> vbTab Then value = vbTab & value
+                Lines(p.Line) = l.Substring(0, p.ValueStart) & value & l.Substring(p.ValueEnd)
+            Else
+                InsertEntry(e)
+            End If
+            Parse()
+        Next
     End Sub
+
+    Private Sub InsertEntry(ByVal e As ParamEntry)
+        Dim it = getSingleton(e.Block)
+        Dim at As Integer
+        If it Is Nothing Then
+            'new section, before the closing brace of the file
+            at = If(MainCloseLine >= 0, MainCloseLine, Lines.Count)
+            Lines.Insert(at, e.Block & " {") : Eols.Insert(at, vbCrLf)
+            Lines.Insert(at + 1, "}") : Eols.Insert(at + 1, vbCrLf)
+            Parse()
+            it = getSingleton(e.Block)
+        End If
+        If it.Items.Count > 0 Then
+            at = it.Items.Last.Line + 1
+        ElseIf it.CloseLine >= 0 Then
+            at = it.CloseLine
+        ElseIf MainCloseLine >= 0 Then
+            at = MainCloseLine
+        Else
+            at = Lines.Count
+        End If
+        'make sure the line above ends
+        If at > 0 AndAlso at <= Eols.Count AndAlso Eols(at - 1) = "" Then Eols(at - 1) = vbCrLf
+        Dim key = e.Key
+        If key.StartsWith("MODEL ") Then key = "MODEL " & vbTab & key.Substring(6)
+        If key.Contains("#") Then key = ""
+        Lines.Insert(at, If(e.Ext, ";)", "") & key & vbTab & e.Value)
+        Eols.Insert(at, vbCrLf)
+    End Sub
+
     Public Function SaveToStr() As String
-
-        'FileCopy(path, path & "x")
-        Dim P As New IO.MemoryStream()
-        Dim w As New IO.StreamWriter(P)
-
-        With cars(Active_Car).Theory.MainInfos
-            w.WriteLine("{")
-            w.WriteLine()
-            w.WriteLine(";============================================================")
-            w.WriteLine(";============================================================")
-            w.WriteLine("; " & .Name)
-            w.WriteLine(";============================================================")
-            w.WriteLine(";============================================================")
-            Dim x$ = .Name
-            Do Until x(0) <> " "
-                x = Mid(x, 2)
-            Loop
-            w.WriteLine("Name      	""{0}""", x)
-            w.WriteLine()
-
-            writeHeader(w, "Model Filepaths")
-
-            For i = 0 To 18
-                w.WriteLine("MODEL 	{0} 	""{1}""", i, .Model(i))
-            Next
-
-            w.WriteLine("TPAGE 	""{0}""", .Tpage)
-            w.WriteLine("COLL 	""{0}""", .CollFile)
-            w.WriteLine(";)TCARBOX 	""{0}""", .TCarBox)
-            w.WriteLine("EnvRGB 	{0} {1} {2}", .EnvRGB.R * 255, .EnvRGB.G * 255, .EnvRGB.B * 255)
-
-
-
-            writeHeader(w, "Stuff mainly for frontend display and car selectability")
-
-
-
-            w.WriteLine("BestTime   	{0}", UCase(.BESTTIME.ToString))
-            w.WriteLine("Selectable   	{0}", UCase(.SELECTABLE.ToString))
-
-            w.WriteLine("Statistics    	{0} 			; Can be included in statistics", UCase(.Statistics.ToString))
-            w.WriteLine("Class      	{0} 			; Engine type (0=Elec, 1=Glow, 2=Other)", .car_class)
-            w.WriteLine("Obtain     	{0} 			; Obtain method", .obtain)
-            w.WriteLine("Rating     	{0} 			; Skill level (rookie, amateur, ...)", .Rating)
-            w.WriteLine("TopEnd     	{0} 			; Actual top speed (mph) for frontend bars", .TopEnd)
-            w.WriteLine("Acc        	{0} 			; Acceleration rating (empirical)", Strings.Format(.Acceleration, "0.000000"))
-            w.WriteLine("Weight     	{0} 			; Scaled weight (for frontend bars)", Strings.Format(.Weight, "0.000000"))
-            w.WriteLine("Handling   	{0} 			; Handling ability (empirical and totally subjective)", Strings.Format(.Handling, "0.000000"))
-            w.WriteLine("Trans      	{0} 			; Transmission type (calculate in game anyway...)", Strings.Format(.Trans, "0.000000"))
-            w.WriteLine("MaxRevs    	{0} 			; Max Revs (for rev counter)", Strings.Format(.MaxRev, "0.000000"))
-
-        End With
-
-        With cars(Active_Car).Theory.RealInfos
-            writeHeader(w, "Handling related stuff")
-            w.WriteLine("SteerRate  	{0} 			; Rate at which steer angle approaches value from input", Strings.Format(.SteerRate, "0.000000"))
-            w.WriteLine("SteerMod   	{0} 			; ", Strings.Format(.SteerMode, "0.000000"))
-            w.WriteLine("EngineRate 	{0} 			; Rate at which Engine voltage approaches set value", Strings.Format(.EngineRate, "0.000000"))
-            w.WriteLine("TopSpeed   	{0} 			; Car's theoretical top speed (not including friction...)", Strings.Format(.TopSpeed, "0.000000"))
-            w.WriteLine("DownForceMod	{0} 			; Down force modifier when car on floor", Strings.Format(.DownForceModifier, "0.000000"))
-            w.WriteLine("CoM        	{0} {1} {2} 		; Centre of mass relative to model centre", Strings.Format(.COM.X * 1.0, "0.000000"), Strings.Format(.COM.Y * 1.0, "0.000000"), Strings.Format(.COM.Z * 1.0, "0.000000"))
-            w.WriteLine("Weapon     	{0} {1} {2} 		; Weapon genration offset", Strings.Format(.WeaponGeneration.X * 1.0, "0.000000"), Strings.Format(.WeaponGeneration.Y * -1.0, "0.000000"), Strings.Format(.WeaponGeneration.Z * 1.0, "0.000000"))
-            w.WriteLine(";)Flippable    {0}   ; Rotor car effect", UCase(.Flippable.ToString))
-            w.WriteLine(";)Flying       {0}   ; Flying like the UFO car", UCase(.Flying.ToString))
-            w.WriteLine(";)ClothFx      {0}   ; Mystery car cloth effect", UCase(.ClothFX.ToString))
-
-
-        End With
-
-        With cars(Active_Car).Theory.Body
-            writeHeader(w, "Car Body details")
-            w.WriteLine("BODY {		; Start Body")
-            w.WriteLine("ModelNum   	{0} 			; Model Number in above list", .modelNumber)
-            w.WriteLine("Offset     	{0}, {1}, {2} 		; Calculated in game", Strings.Format(.Offset.X * 1, "0.000000"), Strings.Format(.Offset.Y * -1, "0.000000"), Strings.Format(.Offset.Z * 1, "0.000000"))
-            w.WriteLine("Mass       	{0}", .Mass)
-            w.WriteLine("Inertia    	{0} {1} {2}", Strings.Format(.Inertia(0).X * 1, "0.000000"), Strings.Format(.Inertia(0).Y * 1, "0.000000"), Strings.Format(.Inertia(0).Z * 1, "0.000000"))
-            w.WriteLine("           	{0} {1} {2}", Strings.Format(.Inertia(1).X * 1, "0.000000"), Strings.Format(.Inertia(1).Y * 1, "0.000000"), Strings.Format(.Inertia(1).Z * 1, "0.000000"))
-            w.WriteLine("           	{0} {1} {2}", Strings.Format(.Inertia(2).X * 1, "0.000000"), Strings.Format(.Inertia(2).Y * 1, "0.000000"), Strings.Format(.Inertia(2).Z * 1, "0.000000"))
-            w.WriteLine("Gravity		2200 			; No longer used")
-            w.WriteLine("Hardness   	{0}", .Hardness)
-            w.WriteLine("Resistance 	{0} 			; Linear air esistance", Strings.Format(.Resistance, "0.000000"))
-            w.WriteLine("AngRes     	{0} 			; Angular air resistance", Strings.Format(.AngleRes, "0.000000"))
-            w.WriteLine("ResMod     	{0} 			; Ang air resistnce scale when in air", Strings.Format(.ResMode, "0.000000"))
-            w.WriteLine("Grip       	{0} 			; Converts downforce to friction value", Strings.Format(.Grip, "0.000000"))
-            w.WriteLine("StaticFriction	{0}", Strings.Format(.StaticFriction, "0.000000"))
-            w.WriteLine("KineticFriction {0}", Strings.Format(.KineticFriction, "0.000000"))
-            w.WriteLine("}     		; End Body")
-
-        End With
-
-        writeHeader(w, "Car Wheel details")
-
-        For i = 0 To 3
-
-            With cars(Active_Car).Theory.wheel(i)
-                w.WriteLine("WHEEL " & i & " { 	; Start Wheel")
-                w.WriteLine("ModelNum 	    " & .modelNumber)
-                w.WriteLine("Offset1  	    {0} {1} {2}", .Offset(1).X * 1, .Offset(1).Y * -1, .Offset(1).Z * 1)
-                w.WriteLine("Offset2  	    {0} {1} {2}", .Offset(2).X * 1, .Offset(2).Y * -1, .Offset(2).Z * 1)
-                w.WriteLine("IsPresent   	{0}", UCase(.IsPresent.ToString))
-                w.WriteLine("IsPowered   	{0}", UCase(.IsPowered.ToString))
-                w.WriteLine("IsTurnable   	{0}", UCase(.IsTurnable.ToString))
-                w.WriteLine("SteerRatio  	{0}", .SteerRatio)
-                w.WriteLine("EngineRatio 	{0}", .EngineRatio)
-                w.WriteLine("Radius      	{0}", .Radius)
-                w.WriteLine("Mass        	{0}", .Mass)
-                w.WriteLine("Gravity     	2200")
-                w.WriteLine("MaxPos      	{0}", .MaxPos)
-                w.WriteLine("SkidWidth   	{0}", .SkidWidth)
-                w.WriteLine("ToeIn       	{0}", .ToeInn)
-                w.WriteLine("AxleFriction    	{0}", .AxleFriction)
-                w.WriteLine("Grip            	{0}", .Grip)
-                w.WriteLine("StaticFriction  	{0}", .StaticFriction)
-                w.WriteLine("KineticFriction 	{0}", .KineticFriction)
-                w.WriteLine("}          	; End Wheel")
-                w.WriteLine()
-            End With
-
-        Next
-
-        writeHeader(w, "Car Spring details")
-
-        For i = 0 To 3
-
-            With cars(Active_Car).Theory.Spring(i)
-                w.WriteLine("SPRING " & i & " { 	; Start Spring")
-                w.WriteLine("ModelNum    	{0}", .modelNumber)
-                w.WriteLine("Offset  	    {0} {1} {2}", .Offset.X * 1, .Offset.Y * -1, .Offset.Z * 1)
-                w.WriteLine("Length      	{0}", .Length)
-                w.WriteLine("Stiffness   	{0}", .Stiffness)
-                w.WriteLine("Damping     	{0}", .Damping)
-                w.WriteLine("Restitution 	{0}", .Restitution)
-
-                w.WriteLine("}          	; End Spring")
-                w.WriteLine()
-            End With
-
-        Next
-
-        writeHeader(w, "Car Pin details")
-
-
-        For i = 0 To 3
-
-            With cars(Active_Car).Theory.PIN(i)
-                w.WriteLine("PIN " & i & " { 	    ; Start Pin")
-                w.WriteLine("ModelNum    	{0}", .modelNumber)
-                w.WriteLine("Offset  	    {0} {1} {2}", .offSet.X * 1, .offSet.Y * -1, .offSet.Z * 1)
-                w.WriteLine("Length      	{0}", .Length)
-                w.WriteLine("}          	; End Pin")
-                w.WriteLine()
-            End With
-
-        Next
-
-
-        writeHeader(w, "Car axle details")
-
-
-        For i = 0 To 3
-
-            With cars(Active_Car).Theory.Axle(i)
-                w.WriteLine("AXLE " & i & " { 	; Start Axle")
-                w.WriteLine("ModelNum    	{0}", .modelNumber)
-                w.WriteLine("Offset  	{0} {1} {2}", .offSet.X * 1, .offSet.Y * -1, .offSet.Z * 1)
-                w.WriteLine("Length      	{0}", .Length)
-                w.WriteLine("}          	; End Axle")
-                w.WriteLine()
-            End With
-
-        Next
-
-        writeHeader(w, "Car Spinner details")
-
-
-
-        With cars(Active_Car).Theory.Spinner
-            w.WriteLine("SPINNER { 	    ; Start spinner")
-            w.WriteLine("ModelNum    	{0}", .modelNumber)
-            w.WriteLine("Offset      	{0} {1} {2}", .offSet.X * 1, .offSet.Y * -1, .offSet.Z * 1)
-            w.WriteLine("Axis        	{0} {1} {2}", .Axis.X * 1, .Axis.Y * -1, .Axis.Z * 1)
-            w.WriteLine("AngVel      	{0}", .angVel)
-            w.WriteLine("}          	; End Spinner")
-            w.WriteLine()
-        End With
-
-        writeHeader(w, "Car Aerial details")
-
-
-
-        With cars(Active_Car).Theory.Aerial
-            w.WriteLine("AERIAL { 	; Start Aerial")
-            w.WriteLine("SecModelNum 	{0}", .ModelNumber)
-            w.WriteLine("TopModelNum 	{0}", .TopModelNumber)
-            w.WriteLine("Offset      	{0} {1} {2}", .offset.X * 1, .offset.Y * -1, .offset.Z * 1)
-            w.WriteLine("Direction   	{0} {1} {2}", .Direction.X * 1, .Direction.Y * -1, .Direction.Z * 1)
-            w.WriteLine("Length      	{0}", .length)
-            w.WriteLine("Stiffness   	{0}", .stiffness)
-            w.WriteLine("Damping     	{0}", .damping)
-
-            w.WriteLine("}          	; End Aerial")
-            w.WriteLine()
-        End With
-        Try
-
-
-            If cars(Active_Car).Theory.carAi IsNot Nothing Then
-
-                With cars(Active_Car).Theory.carAi
-
-                    writeHeader(w, "Car AI details")
-                    w.WriteLine("AI { 	; Start AI")
-                    w.WriteLine("UnderThresh 	{0}", .UnderThresh)
-                    w.WriteLine("UnderRange  	{0}", .UnderRange)
-                    w.WriteLine("UnderFront	 	{0}", .UnderFront)
-                    w.WriteLine("UnderRear   	{0}", .UnderRear)
-                    w.WriteLine("UnderMax    	{0}", .UnderMax)
-                    w.WriteLine("OverThresh  	{0}", .OverThresh)
-                    w.WriteLine("OverRange   	{0}", .OverRange)
-                    w.WriteLine("OverMax     	{0}", .OverMax)
-                    w.WriteLine("OverAccThresh  	{0}", .OverAccThresh)
-                    w.WriteLine("OverAccRange   	{0}", .OverAccRange)
-                    w.WriteLine("PickupBias     	{0}", .PickupBias)
-                    w.WriteLine("BlockBias      	{0}", .BlockBias)
-                    w.WriteLine("OvertakeBias   	{0}", .OvertakeBias)
-                    w.WriteLine("Suspension     	{0}", .Suspension)
-                    w.WriteLine("Aggression     	{0}", .Aggression)
-                    w.WriteLine("}          	; End AI")
-                    w.WriteLine()
-                End With
-
-            End If
-        Catch
-
-        End Try
-        w.WriteLine("}")
-        w.Flush()
-        'w.Close()
-        P.Position = 0
-        Dim pstr As New IO.StreamReader(P)
-        Dim str = pstr.ReadToEnd()
-        pstr.Close()
-        pstr = Nothing : w = Nothing
-        Return str
-
-
-
+        ApplyChanges()
+        If Owner IsNot Nothing Then Rebase(Owner.Theory)
+        Return Text
     End Function
 
-    Public Function getSingleton(ByVal header) As SingletonItem
-
-        'TODO: Jigebren's 4x4 car
-        If InStr(newStr, header) < 1 Then
-            Return SingletonItem.Null
-        End If
-
-
-        Dim temp As String = ""
-        If header = "" Or header = " " Then
-            temp = Split(newStr, "{")(1)
-
-        Else
-            temp = Split(Split(newStr, header)(1), "{")(1)
-        End If
-
-        If InStr(Split(temp, "}")(0), "{") < 1 Then
-            'lucky us!
-            Dim l = Split(temp, "}")(0)
-            Dim torep = Split(l, vbNewLine).Last
-
-            Return SingletonItem.ToSingletonItem(Replace(l, torep, ""))
-
-
-        Else
-            'how unlucky...
-            Dim tmp As String = temp
-            Do Until InStr(tmp, "{") = 0
-                Dim splt = Split(Split(Split(tmp, "{")(0), vbNewLine)(1), "}")(0)
-                tmp = Replace(tmp, splt, "")
-            Loop
-            Return SingletonItem.ToSingletonItem(tmp)
-        End If
-        Return SingletonItem.Null
-    End Function
-
-End Class
-Public Class SingletonItem
-    Private Shared items() As String
-    Public Shared Null = Nothing
-
-    Public Shared Function ToSingletonItem(ByVal str As String) As SingletonItem
-        Dim nSing As New SingletonItem
-        Dim splitted() = Split(str, vbNewLine)
-        ReDim items(splitted.Length)
-        SingletonItem.items = splitted
-        SingletonItem.items = splitted
-        Return nSing
-    End Function
-
-    Public Function getValue(ByVal key As Object, Optional ByVal defaultValue As Object = Nothing, Optional ByVal expected As String = "obj")
-
-
-        For i = LBound(items) To UBound(items)
-
-            If InStr(items(i), key, CompareMethod.Text) > 0 Then
-                Dim tmp = Replace(Split(items(i), key, , CompareMethod.Text)(1), " " & vbTab, "") ', ".", ",")
-
-
-                If IO.File.Exists(RVPATH & "\" & Replace(tmp, """", "")) Then Return Replace(tmp, """", "")
-
-                If InStr(CSng(2.15), ",") <> 0 Then
-                    Dim cnt As Integer, sp As Integer
-                    For j = 0 To tmp.Length - 1
-                        If CChar(tmp(j)) >= "0" And CChar(tmp(j)) <= "9" Then cnt += 1
-                        If CChar(tmp(j)) = " " Or CChar(tmp(j)) = vbTab Then sp += 1
-                    Next
-
-                    If cnt / (tmp.Length - sp) * 100 > 40 Then
-                        tmp = Replace(tmp, ".", ",")
-                    End If
-
-                    If expected = "int" And IsNumeric(tmp) = False Then tmp = defaultValue
-                    If expected = "float" And IsNumeric(tmp) = False Then tmp = defaultValue
-                    If expected = "bool" Then tmp = Replace(Replace(tmp, " ", ""), "    ", "")
-
-                    
-                    If InStr(tmp, ";") > 0 Then tmp = Split(tmp, ";")(0)
-                    tmp = LTrim(RTrim(tmp))
-                    If tmp Is Nothing Then Return defaultValue
-
-                    Return tmp
-
-
-
-                End If
-
-                If tmp Is Nothing Then Return defaultValue
-                If expected = "int" And IsNumeric(tmp) = False Then tmp = defaultValue
-                If expected = "float" And IsNumeric(tmp) = False Then tmp = defaultValue
-                If expected = "bool" Then tmp = Replace(Replace(tmp, " ", ""), "    ", "")
-
-
-                If InStr(tmp, ";") > 0 Then tmp = Split(tmp, ";")(0)
-                tmp = LTrim(RTrim(tmp))
-                Return tmp
-
-            End If
-        Next
-        Return Nothing
-    End Function
-    'replace RTrim
-    Function RTrim(ByVal str$)
-        Dim foundChar = False
-        Dim i = 0
-        For i = str.Length - 1 To 0 Step -1
-            If Not (str(i) = " " Or str(i) = vbTab Or str(i) = Chr(13)) Then Exit For
-            'If str(i) >= "a" And str(i) <= "z" Or str(i) >= "A" And str(i) <= "Z" Or IsNumeric(str(i)) Or str(i) = "!" Or str(i) = "?" Or str(i) = "é" Or str(i) = "è" Or _
-            'str(i) = "$" Or str(i) = "£" Or str(i) = "¤" Or str(i) = "%" Or str(i) = "," Or str(i) = "." Or str(i) = ";" Or str(i) = "#" Or str(i) = "~" Or str(i) = ")" Or str(i) = "(" Or _
-            'str(i) = "|" Or str(i) = "+" Or str(i) = "-" Or str(i) = "@" Or str(i) = "à" Or str(i) = "î" Or str(i) = "ï" Or str(i) = "ü" Or str(i) = "û" Or str(i) = "ù" Or str(i) = "'" Then
-            'Exit For
-
-        Next
-        Return Mid(str, 1, i + 1)
-    End Function
-    'replace LTrim
-    Function LTrim(ByVal str$)
-        Dim foundChar = False
-        Dim i = 0
-        For i = 0 To str.Length - 1
-            If Not (str(i) = " " Or str(i) = vbTab Or str(i) = Chr(13)) Then Exit For
-            'If str(i) >= "a" And str(i) <= "z" Or str(i) >= "A" And str(i) <= "Z" Or IsNumeric(str(i)) Or str(i) = "!" Or str(i) = "?" Or str(i) = "é" Or str(i) = "è" Or _
-            'str(i) = "$" Or str(i) = "£" Or str(i) = "¤" Or str(i) = "%" Or str(i) = "," Or str(i) = "." Or str(i) = ";" Or str(i) = "#" Or str(i) = "~" Or str(i) = ")" Or str(i) = "(" Or _
-            'str(i) = "|" Or str(i) = "+" Or str(i) = "-" Or str(i) = "@" Or str(i) = "à" Or str(i) = "î" Or str(i) = "ï" Or str(i) = "ü" Or str(i) = "û" Or str(i) = "ù" Or str(i) = "'" Then
-            'Exit For
-
-        Next
-        Return Mid(str, i + 1, str.Length - i)
-    End Function
-    Public Function get3LinesValue(ByVal key)
-
-        For i = LBound(items) To UBound(items)
-
-            If InStr(items(i), key) > 0 Then
-                Dim tmp = Replace(Split(items(i), key)(1), " " & vbTab, "") & vbNewLine  ', ".", ",")
-
-                tmp &= Replace(items(i + 1), " " & vbTab, "") & vbNewLine  ', ".", ",")
-                tmp &= Replace(items(i + 2), " " & vbTab, "") ', ".", ",")
-
-                If InStr(CSng(2.15), ",") <> 0 Then
-                    tmp = Replace(tmp, ".", ",")
-                End If
-
-                Return tmp
-
-            End If
-        Next
-        Return Nothing
-    End Function
-    Public Function get2LinesValue(ByVal key)
-
-        For i = LBound(items) To UBound(items)
-
-            If InStr(items(i), key) > 0 Then
-                Dim tmp = Replace(Split(items(i), key)(1), " " & vbTab, "") & vbNewLine  ', ".", ",") & 
-
-                tmp &= Replace(items(i + 1), " " & vbTab, "") ', ".", ",")
-
-                If InStr(CSng(2.15), ",") <> 0 Then
-                    tmp = Replace(tmp, ".", ",")
-                End If
-
-                Return tmp
-
-            End If
-        Next
-        Return Nothing
-    End Function
-    Public Function getAllKeys()
-        Dim allVal(items.Length) As String
-        For i = LBound(items) To UBound(items)
-            If InStr(items(i), " " & vbTab) > 0 Then
-                allVal(i) = Split(items(i), " " & vbTab)(0)
-            Else
-                allVal(i) = Split(items(i), vbTab)(0)
-            End If
-
-
-
-        Next
-        Return allVal
-    End Function
-    Public Sub setValue(ByVal key As String, ByVal value As String)
-        For i = LBound(items) To UBound(items)
-
-            If InStr(items(i), key) > 0 Then
-
-                items(i) = Replace(items(i), Split(items(i), key)(1), value)
-
-                Exit Sub
-            End If
-        Next
-        Dim nItems(items.Length + 1)
-
-        For i = LBound(items) To UBound(items)
-            nItems(i) = items(i)
-        Next
-
-        ReDim items(items.Length + 1)
-
-        For i = LBound(items) To UBound(items) - 1
-            items(i) = nItems(i)
-        Next
-        items(UBound(items)) = key & " " & vbTab & value
-
+    Public Sub SaveToFile()
+        SaveToFile(Owner.Path & "\parameters.txt")
     End Sub
-    Public Function GetEverything() As String()
-        Return items
+
+    Public Sub SaveToFile(ByVal path As String)
+        Dim content = SaveToStr()
+        path = Replace(path, "\\", "\")
+
+        'keep the first version of a car, once
+        If IO.File.Exists(path) AndAlso Not IO.File.Exists(path & ".bak") Then IO.File.Copy(path, path & ".bak")
+
+        'a crash in the middle of a save must not cost the car its parameters
+        Dim tmp = path & ".tmp"
+        IO.File.WriteAllText(tmp, content, FileEncoding)
+        If IO.File.Exists(path) Then IO.File.Delete(path)
+        IO.File.Move(tmp, path)
+    End Sub
+End Class
+
+'One "Key  value" line
+Public Class ParamLine
+    Public Key As String
+    Public Value As String = ""
+    Public Line As Integer
+    Public ValueStart As Integer
+    Public ValueEnd As Integer
+    Public Ext As Boolean
+End Class
+
+'One section of the file
+Public Class SingletonItem
+    Public Header As String
+    Public Items As New List(Of ParamLine)
+    Public OpenLine As Integer = -1
+    Public CloseLine As Integer = -1
+
+    Sub New(ByVal hdr As String)
+        Header = hdr
+    End Sub
+
+    'An item that holds nothing: everything falls back to its default
+    Public Shared ReadOnly Empty As New SingletonItem("")
+
+    'The game reads top to bottom, so when a key is there twice the last one counts
+    Public Function Find(ByVal key As String) As ParamLine
+        For i = Items.Count - 1 To 0 Step -1
+            If String.Equals(Items(i).Key, key, StringComparison.OrdinalIgnoreCase) Then Return Items(i)
+        Next
+        Return Nothing
     End Function
 
+    Public Function Has(ByVal key As String) As Boolean
+        Return Find(key) IsNot Nothing
+    End Function
 
+    'Text value, without quotes
+    Public Function getValue(ByVal key As String, Optional ByVal defaultValue As String = Nothing) As String
+        Dim p = Find(key)
+        If p Is Nothing Then Return defaultValue
+        Dim v = p.Value
+        If v.StartsWith("""") Then
+            Dim e = v.IndexOf(""""c, 1)
+            v = If(e > 0, v.Substring(1, e - 1), v.Substring(1))
+        End If
+        Return v
+    End Function
+
+    Public Function Num(ByVal key As String, Optional ByVal defaultValue As Double = 0) As Double
+        Dim p = Find(key)
+        If p Is Nothing Then Return defaultValue
+        Return ToNumber(p.Value, defaultValue)
+    End Function
+
+    Public Function Int(ByVal key As String, Optional ByVal defaultValue As Integer = 0) As Integer
+        Dim p = Find(key)
+        If p Is Nothing Then Return defaultValue
+        Return CInt(Math.Truncate(Math.Max(Math.Min(ToNumber(p.Value, defaultValue), Integer.MaxValue), Integer.MinValue)))
+    End Function
+
+    Public Function Bool(ByVal key As String, Optional ByVal defaultValue As Boolean = False) As Boolean
+        Dim p = Find(key)
+        If p Is Nothing Then Return defaultValue
+        Select Case p.Value.Trim().ToUpperInvariant()
+            Case "TRUE", "1", "ON", "YES" : Return True
+            Case "FALSE", "0", "OFF", "NO" : Return False
+        End Select
+        Return defaultValue
+    End Function
+
+    'Numbers of a vector line, separated by spaces, tabs or commas
+    Public Function Numbers(ByVal key As String, ByVal count As Integer) As Double()
+        Dim r(count - 1) As Double
+        Dim p = Find(key)
+        If p Is Nothing Then Return r
+        Dim parts = Regex.Split(p.Value.Trim(), "[\s,]+")
+        For i = 0 To Math.Min(count, parts.Length) - 1
+            r(i) = ToNumber(parts(i), 0)
+        Next
+        Return r
+    End Function
+
+    'Car makers write 1.2.3456, 1.0f and worse
+    Public Shared Function ToNumber(ByVal s As String, ByVal defaultValue As Double) As Double
+        Dim sb As New StringBuilder
+        Dim dot = False
+        For Each c In s.Trim()
+            If Char.IsDigit(c) OrElse c = "-"c OrElse c = "+"c OrElse c = "e"c OrElse c = "E"c Then
+                sb.Append(c)
+            ElseIf c = "."c AndAlso Not dot Then
+                sb.Append(c)
+                dot = True
+            ElseIf c = " "c OrElse c = vbTab Then
+                If sb.Length > 0 Then Exit For
+            End If
+        Next
+        Dim d As Double
+        If Double.TryParse(sb.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, d) Then Return d
+        Return defaultValue
+    End Function
+End Class
+
+'One value of the car as it goes into the file
+Public Class ParamEntry
+    Public Block As String
+    Public Key As String
+    Public Value As String
+    Public Ext As Boolean
+
+    Sub New(ByVal b As String, ByVal k As String, ByVal v As String, Optional ByVal extension As Boolean = False)
+        Block = b : Key = k : Value = v : Ext = extension
+    End Sub
+
+    Private Shared Function F(ByVal d As Double) As String
+        Return d.ToString("0.000000", CultureInfo.InvariantCulture)
+    End Function
+    Private Shared Function V3(ByVal x As Double, ByVal y As Double, ByVal z As Double) As String
+        Return F(x) & " " & F(y) & " " & F(z)
+    End Function
+    Private Shared Function B(ByVal v As Boolean) As String
+        Return If(v, "TRUE", "FALSE")
+    End Function
+    Private Shared Function Q(ByVal s As String) As String
+        Return """" & s & """"
+    End Function
+
+    'Every value of the car. Y is flipped in memory, except for CoM and Inertia
+    Public Shared Function Emit(ByVal t As Car_theory) As List(Of ParamEntry)
+        Dim r As New List(Of ParamEntry)
+        Dim add = Sub(blk As String, k As String, v As String) r.Add(New ParamEntry(blk, k, v))
+        Dim ext = Sub(blk As String, k As String, v As String) r.Add(New ParamEntry(blk, k, v, True))
+
+        With t.MainInfos
+            add("", "Name", Q(.Name))
+            For i = 0 To 18
+                add("", "MODEL " & i, Q(.Model(i)))
+            Next
+            add("", "TPAGE", Q(.Tpage))
+            add("", "COLL", Q(.CollFile))
+            add("", "EnvRGB", CInt(.EnvRGB.R * 255) & " " & CInt(.EnvRGB.G * 255) & " " & CInt(.EnvRGB.B * 255))
+            ext("", "TCARBOX", If(.TCarBox = "", "", Q(.TCarBox)))
+            ext("", "TSHADOW", If(.TShadow = "", "", Q(.TShadow)))
+            ext("", "SHADOWINDEX", If(.HasShadowIndex, CStr(.ShadowIndex), ""))
+            ext("", "SHADOWTABLE", If(.HasShadowTable, String.Join(" ", .ShadowTable.Select(Function(d) d.ToString("0.000", CultureInfo.InvariantCulture)).ToArray()), ""))
+            ext("", "SFXENGINE", If(.SfxEngine = "", "", Q(.SfxEngine)))
+            ext("", "SFXHONK", If(.SfxHonk = "", "", Q(.SfxHonk)))
+            ext("", "SFXSERVO", If(.SfxServo = "", "", Q(.SfxServo)))
+            add("", "BestTime", B(.BESTTIME))
+            add("", "Selectable", B(.SELECTABLE))
+            ext("", "CPUSelectable", B(.CPUSELECTABLE))
+            ext("", "Statistics", B(.Statistics))
+            add("", "Class", CStr(.car_class))
+            add("", "Obtain", CStr(.obtain))
+            add("", "Rating", CStr(.Rating))
+            add("", "TopEnd", F(.TopEnd))
+            add("", "Acc", F(.Acceleration))
+            add("", "Weight", F(.Weight))
+            add("", "Handling", F(.Handling))
+            add("", "Trans", CStr(.Trans))
+            add("", "MaxRevs", F(.MaxRev))
+        End With
+
+        With t.RealInfos
+            add("", "SteerRate", F(.SteerRate))
+            add("", "SteerMod", F(.SteerMode))
+            add("", "EngineRate", F(.EngineRate))
+            add("", "TopSpeed", F(.TopSpeed))
+            add("", "DownForceMod", F(.DownForceModifier))
+            add("", "CoM", V3(.COM.X, .COM.Y, .COM.Z))
+            add("", "Weapon", V3(.WeaponGeneration.X, -.WeaponGeneration.Y, .WeaponGeneration.Z))
+            ext("", "WeaponOffset2", If(.HasWeapon2, V3(.WeaponGeneration2.X, -.WeaponGeneration2.Y, .WeaponGeneration2.Z), ""))
+            ext("", "Flippable", B(.Flippable))
+            ext("", "Flying", B(.Flying))
+            ext("", "ClothFx", B(.ClothFX))
+        End With
+
+        With t.Body
+            add("BODY", "ModelNum", CStr(.modelNumber))
+            add("BODY", "Offset", V3(.Offset.X, -.Offset.Y, .Offset.Z))
+            add("BODY", "Mass", F(.Mass))
+            add("BODY", "Inertia", V3(.Inertia(0).X, .Inertia(0).Y, .Inertia(0).Z))
+            add("BODY", "Inertia#1", V3(.Inertia(1).X, .Inertia(1).Y, .Inertia(1).Z))
+            add("BODY", "Inertia#2", V3(.Inertia(2).X, .Inertia(2).Y, .Inertia(2).Z))
+            add("BODY", "Gravity", "2200")
+            add("BODY", "Hardness", F(.Hardness))
+            add("BODY", "Resistance", F(.Resistance))
+            add("BODY", "AngRes", F(.AngleRes))
+            add("BODY", "ResMod", F(.ResMode))
+            add("BODY", "Grip", F(.Grip))
+            add("BODY", "StaticFriction", F(.StaticFriction))
+            add("BODY", "KineticFriction", F(.KineticFriction))
+        End With
+
+        For i = 0 To 3
+            Dim s = "WHEEL " & i
+            With t.wheel(i)
+                add(s, "ModelNum", CStr(.modelNumber))
+                add(s, "Offset1", V3(.Offset(1).X, -.Offset(1).Y, .Offset(1).Z))
+                add(s, "Offset2", V3(.Offset(2).X, -.Offset(2).Y, .Offset(2).Z))
+                add(s, "IsPresent", B(.IsPresent))
+                add(s, "IsPowered", B(.IsPowered))
+                add(s, "IsTurnable", B(.IsTurnable))
+                add(s, "SteerRatio", F(.SteerRatio))
+                add(s, "EngineRatio", F(.EngineRatio))
+                add(s, "Radius", F(.Radius))
+                add(s, "Mass", F(.Mass))
+                add(s, "Gravity", "2200")
+                add(s, "MaxPos", F(.MaxPos))
+                add(s, "SkidWidth", F(.SkidWidth))
+                add(s, "ToeIn", F(.ToeInn))
+                add(s, "AxleFriction", F(.AxleFriction))
+                add(s, "Grip", F(.Grip))
+                add(s, "StaticFriction", F(.StaticFriction))
+                add(s, "KineticFriction", F(.KineticFriction))
+                ext(s, "Camber", F(.Camber))
+            End With
+        Next
+
+        For i = 0 To 3
+            Dim s = "SPRING " & i
+            With t.Spring(i)
+                add(s, "ModelNum", CStr(.modelNumber))
+                add(s, "Offset", V3(.Offset.X, -.Offset.Y, .Offset.Z))
+                add(s, "Length", F(.Length))
+                add(s, "Stiffness", F(.Stiffness))
+                add(s, "Damping", F(.Damping))
+                add(s, "Restitution", F(.Restitution))
+            End With
+        Next
+
+        For i = 0 To 3
+            Dim s = "PIN " & i
+            With t.PIN(i)
+                add(s, "ModelNum", CStr(.modelNumber))
+                add(s, "Offset", V3(.offSet.X, -.offSet.Y, .offSet.Z))
+                add(s, "Length", F(.Length))
+            End With
+        Next
+
+        For i = 0 To 3
+            Dim s = "AXLE " & i
+            With t.Axle(i)
+                add(s, "ModelNum", CStr(.modelNumber))
+                add(s, "Offset", V3(.offSet.X, -.offSet.Y, .offSet.Z))
+                add(s, "Length", F(.Length))
+            End With
+        Next
+
+        With t.Spinner
+            add("SPINNER", "ModelNum", CStr(.modelNumber))
+            add("SPINNER", "Offset", V3(.offSet.X, -.offSet.Y, .offSet.Z))
+            add("SPINNER", "Axis", V3(.Axis.X, -.Axis.Y, .Axis.Z))
+            add("SPINNER", "AngVel", F(.angVel))
+            ext("SPINNER", "Type", CStr(.Type))
+            ext("SPINNER", "Trans", V3(.Trans.X, -.Trans.Y, .Trans.Z))
+            ext("SPINNER", "TransVel", F(.TransVel))
+        End With
+
+        With t.Aerial
+            add("AERIAL", "SecModelNum", CStr(.ModelNumber))
+            add("AERIAL", "TopModelNum", CStr(.TopModelNumber))
+            add("AERIAL", "Offset", V3(.offset.X, -.offset.Y, .offset.Z))
+            add("AERIAL", "Direction", V3(.Direction.X, -.Direction.Y, .Direction.Z))
+            add("AERIAL", "Length", F(.length))
+            add("AERIAL", "Stiffness", F(.stiffness))
+            add("AERIAL", "Damping", F(.damping))
+        End With
+
+        If t.carAi IsNot Nothing Then
+            With t.carAi
+                add("AI", "UnderThresh", F(.UnderThresh))
+                add("AI", "UnderRange", F(.UnderRange))
+                add("AI", "UnderFront", F(.UnderFront))
+                add("AI", "UnderRear", F(.UnderRear))
+                add("AI", "UnderMax", F(.UnderMax))
+                add("AI", "OverThresh", F(.OverThresh))
+                add("AI", "OverRange", F(.OverRange))
+                add("AI", "OverMax", F(.OverMax))
+                add("AI", "OverAccThresh", F(.OverAccThresh))
+                add("AI", "OverAccRange", F(.OverAccRange))
+                add("AI", "PickupBias", F(.PickupBias))
+                add("AI", "BlockBias", F(.BlockBias))
+                add("AI", "OvertakeBias", F(.OvertakeBias))
+                add("AI", "Suspension", F(.Suspension))
+                add("AI", "Aggression", F(.Aggression))
+            End With
+        End If
+
+        If t.Camera IsNot Nothing Then
+            With t.Camera
+                add("CAMATTACHED", "HoodOffset", V3(.HoodOffset.X, -.HoodOffset.Y, .HoodOffset.Z))
+                add("CAMATTACHED", "HoodLook", F(.HoodLook))
+                add("CAMATTACHED", "RearOffset", V3(.RearOffset.X, -.RearOffset.Y, .RearOffset.Z))
+                add("CAMATTACHED", "RearLook", F(.RearLook))
+                add("CAMATTACHED", "FixedOffset", If(.FixedOffset, "true", "false"))
+                add("CAMATTACHED", "FixedLook", If(.FixedLook, "true", "false"))
+            End With
+        End If
+
+        Return r
+    End Function
 End Class

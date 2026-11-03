@@ -3,16 +3,20 @@ Imports OpenTK.Graphics
 
 Public Class _main
 
+    Dim LoadingMain As Boolean = False
     Public Sub DoLoad()
 
 
 
         If Not Initializd Then Exit Sub
         TextBox1.Text = cars(Active_Car).Theory.MainInfos.Name
+        LoadingMain = True
         TextBox2.Text = cars(Active_Car).DirName
+        lastfine = TextBox2.Text
         CheckBox1.Checked = cars(Active_Car).Theory.RealInfos.ClothFX
-        CheckBox2.Checked = cars(Active_Car).Theory.RealInfos.Flying
-        CheckBox3.Checked = cars(Active_Car).Theory.RealInfos.Flippable
+        CheckBox5.Checked = cars(Active_Car).Theory.RealInfos.Flying
+        CheckBox6.Checked = cars(Active_Car).Theory.RealInfos.Flippable
+        LoadingMain = False
         Panel10.BackColor = Color.FromArgb(cars(Active_Car).Theory.MainInfos.EnvRGB.R * 255, cars(Active_Car).Theory.MainInfos.EnvRGB.G * 255, cars(Active_Car).Theory.MainInfos.EnvRGB.B * 255)
 
         Label1.Text = "(" & Panel10.BackColor.R & ", " & Panel10.BackColor.G & ", " & Panel10.BackColor.B & ")"
@@ -23,6 +27,7 @@ Public Class _main
     End Sub
 
     Private Sub TextBox1_TextChanged(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles TextBox1.TextChanged
+        If cars.Count = 0 Then Exit Sub
         cars(Active_Car).Theory.MainInfos.Name = TextBox1.Text
 
     End Sub
@@ -30,7 +35,8 @@ Public Class _main
     Private Sub Button3_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button3.Click
         YESNO.Fill("Warning", "If you reload the car, the changes will be discarded, continue?")
         If YESNO.ShowDialog = Windows.Forms.DialogResult.No Then Exit Sub
-        CarBrowser.ReLoadOneCar(, True)
+        CarBrowser.ReLoadOneCar(False, True)
+        CarEditor.ComboBox1_SelectedIndexChanged(sender, e)
 
     End Sub
 
@@ -39,12 +45,12 @@ Public Class _main
     End Sub
 
     Private Sub Button1_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button1.Click
-        If cars(Active_Car).Theory.MainInfos.Tpage = "" Then Beep() : Exit Sub
+        Dim file = Car.GamePath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If file Is Nothing Then Beep() : Exit Sub
         Dim X As New Form
-        X.Size = New Size(256, 256)
+        X.BackgroundImage = Image.FromStream(New IO.MemoryStream(IO.File.ReadAllBytes(file)))
+        X.ClientSize = X.BackgroundImage.Size
         X.StartPosition = FormStartPosition.CenterScreen
-
-        X.BackgroundImage = Image.FromFile(RVPATH & "\" & Replace(Replace(Replace(cars(Active_Car).Theory.MainInfos.Tpage, "'", ""), ",", "."), Chr(9), ""))
         X.BackgroundImageLayout = ImageLayout.Stretch
         X.Text = "Preview Bitmap"
         X.TopMost = True
@@ -97,17 +103,7 @@ Public Class _main
         CheckBox6.Text = "Flippable"
     End Sub
     Private Sub CheckBox3_CheckedChanged() Handles CheckBox3.CheckedChanged
-        If CheckBox3.Checked Then
-            GL.Enable(EnableCap.Lighting)
-            GL.Enable(EnableCap.Light1)
-            GL.Enable(EnableCap.Light2)
-        Else
-            GL.Disable(EnableCap.Lighting)
-            GL.Disable(EnableCap.Light1)
-            GL.Enable(EnableCap.Light2)
-        End If
-
-
+        LIGHTS_ON = CheckBox3.Checked
     End Sub
 
     Private Sub Timer1_Tick(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Timer1.Tick
@@ -127,7 +123,7 @@ Public Class _main
     End Sub
 
     Private Sub Checkbox_CheckedChanged() Handles CheckBox1.CheckedChanged, CheckBox5.CheckedChanged, CheckBox6.CheckedChanged
-        If Not Initializd Then Exit Sub
+        If Not Initializd Or LoadingMain Or cars.Count = 0 Then Exit Sub
         cars(Active_Car).Theory.RealInfos.ClothFX = CheckBox1.Checked
         cars(Active_Car).Theory.RealInfos.Flying = CheckBox5.Checked
         cars(Active_Car).Theory.RealInfos.Flippable = CheckBox6.Checked
@@ -146,84 +142,94 @@ Public Class _main
 
     End Sub
 
+    'Run the game
     Private Sub Button2_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button2.Click
-        Dim p = CurDir()
-        ChDir(RVPATH)
-        If MCheckbox1.Checked Then
-
-            Shell("revolt -window -sli -nointro -sload -useallcpu -dev", AppWinStyle.NormalFocus)
-        Else
-
-            Shell("revolt -window -sli -nointro -sload -useallcpu ", AppWinStyle.NormalFocus)
+        Dim exe = ""
+        For Each candidate In New String() {"rvgl.exe", "revolt.exe"}
+            If IO.File.Exists(RVPATH & "\" & candidate) Then exe = RVPATH & "\" & candidate : Exit For
+        Next
+        If exe = "" Then
+            MsgBox("No rvgl.exe or revolt.exe in " & RVPATH, MsgBoxStyle.Exclamation, APPNAME)
+            Exit Sub
         End If
-        ChDir(p)
-
-
-
+        CarEditor.SaveCar()
+        Dim info As New ProcessStartInfo(exe, "-window -nointro -sload" & If(MCheckbox1.Checked, " -dev", ""))
+        info.WorkingDirectory = RVPATH
+        Process.Start(info)
     End Sub
+
+    '------------------------ Folder of the car ----------------------------'
     Dim lastfine$ = ""
-    Dim CycledOnce = False
+
+    Public Shared Function ValidFolderName(ByVal name As String) As Boolean
+        If name.Trim() = "" Then Return False
+        Return name.IndexOfAny(IO.Path.GetInvalidFileNameChars()) < 0 AndAlso name.IndexOf(";"c) < 0
+    End Function
+
+    'Only colours here: the folder is renamed when you leave the box
+    Private Sub TextBox2_TextChanged(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles TextBox2.TextChanged
+        If LoadingMain Then Exit Sub
+        Dim same = TextBox2.Text.Equals(lastfine, StringComparison.OrdinalIgnoreCase)
+        Dim fine = same OrElse (ValidFolderName(TextBox2.Text) AndAlso Not IO.Directory.Exists(RVPATH & "\cars\" & TextBox2.Text))
+        Label5.ForeColor = If(fine, Color.Gray, Color.DarkRed)
+        TextBox2.ForeColor = If(fine, Color.White, Color.Red)
+    End Sub
+
+    Private Sub TextBox2_KeyDown(ByVal sender As Object, ByVal e As System.Windows.Forms.KeyEventArgs) Handles TextBox2.KeyDown
+        If e.KeyCode = Keys.Enter Then RenameFolder()
+    End Sub
 
     Private Sub TextBox2_LostFocus(ByVal sender As Object, ByVal e As System.EventArgs) Handles TextBox2.LostFocus
-        TextBox2.Text = lastfine
-        Label5.ForeColor = Color.Gray
-        TextBox2.ForeColor = Color.White
-
+        RenameFolder()
     End Sub
-    Private Sub TextBox2_TextChanged(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles TextBox2.TextChanged
-        Label5.ForeColor = Color.DarkRed
-        TextBox2.ForeColor = Color.Red
 
-        If Not CycledOnce Then
-            Label5.ForeColor = Color.Gray
-            TextBox2.ForeColor = Color.White
-            CycledOnce = True
-
-        End If
-
-        If TextBox2.Text = "" Then Exit Sub
-        If cars(Active_Car).DirName = TextBox2.Text Then Exit Sub
-        If InStr(TextBox2.Text, "*") + InStr(TextBox2.Text, "/") + InStr(TextBox2.Text, "\") + InStr(TextBox2.Text, ":") + _
-         InStr(TextBox2.Text, "?") + InStr(TextBox2.Text, """") + InStr(TextBox2.Text, "<") + InStr(TextBox2.Text, ">") + _
-          InStr(TextBox2.Text, "|") + InStr(TextBox2.Text, ";") > 0 Then Exit Sub
-
-        Label5.ForeColor = Color.Gray
-        TextBox2.ForeColor = Color.Black
-
-
-
-        If IO.Directory.Exists(RVPATH & "\cars\" & TextBox2.Text) Then
-            Label5.ForeColor = Color.DarkRed
-            TextBox2.ForeColor = Color.Red
-            Exit Sub
-        Else
-            Label5.ForeColor = Color.Gray
-            TextBox2.ForeColor = Color.Black
-        End If
-
+    Sub RenameFolder()
+        If LoadingMain Or cars.Count = 0 Then Exit Sub
+        If lastfine = "" Or TextBox2.Text = lastfine Then Exit Sub
         Try
-            My.Computer.FileSystem.RenameDirectory( _
-            RVPATH & "\cars\" & cars(Active_Car).DirName, _
-           TextBox2.Text)
-
-
-            For i = 0 To 19
-
-                cars(Active_Car).Theory.MainInfos.Model(i) = Replace(cars(Active_Car).Theory.MainInfos.Model(i), _
-                                                                     "cars\" & cars(Active_Car).DirName, "cars\" & TextBox2.Text, , , CompareMethod.Text)
-
-            Next
-            cars(Active_Car).DirName = TextBox2.Text
-            cars(Active_Car).Path = RVPATH & "\cars\" & TextBox2.Text
-
-            cars(Active_Car).Sing.SaveToFile()
-
+            If Not ValidFolderName(TextBox2.Text) OrElse IO.Directory.Exists(RVPATH & "\cars\" & TextBox2.Text) Then Throw New IO.IOException("bad or used name")
+            RenameCarFolder(cars(Active_Car), TextBox2.Text)
+            CarBrowser.LoadAllCarsIntoList()
             lastfine = TextBox2.Text
         Catch ex As Exception
-            Console_.W("Error renaming! " & cars(Active_Car).OriginalTheory.MainInfos.Name)
-            Label5.ForeColor = Color.DarkRed
-            TextBox2.ForeColor = Color.Red
+            Console_.W("Error renaming " & cars(Active_Car).DirName & ": " & ex.Message)
+            MsgBox("Can't rename the folder: " & ex.Message, MsgBoxStyle.Exclamation, APPNAME)
+            LoadingMain = True
+            TextBox2.Text = lastfine
+            LoadingMain = False
         End Try
+        Label5.ForeColor = Color.Gray
+        TextBox2.ForeColor = Color.White
+    End Sub
+
+    ''' <summary>Rename the folder of a car and the paths in its parameters</summary>
+    Public Shared Sub RenameCarFolder(ByVal c As Car, ByVal newName As String)
+        Dim oldPath = c.Path
+        Dim newPath = RVPATH & "\cars\" & newName
+        If c.Sing.Modified Then c.Sing.SaveToFile()
+        IO.Directory.Move(oldPath, newPath)
+        RepointCar(c, newName)
+        c.Path = newPath
+        c.Sing.SaveToFile()
+    End Sub
+
+    ''' <summary>Paths in the parameters: from the old folder of the car to the new one</summary>
+    Public Shared Sub RepointCar(ByVal c As Car, ByVal newName As String)
+        Dim oldPrefix = "cars\" & c.DirName & "\"
+        Dim fix = Function(p As String) If(p IsNot Nothing AndAlso p.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase), "cars\" & newName & "\" & p.Substring(oldPrefix.Length), p)
+        With c.Theory.MainInfos
+            For i = 0 To .Model.Length - 1
+                .Model(i) = fix(.Model(i))
+            Next
+            .Tpage = fix(.Tpage)
+            .CollFile = fix(.CollFile)
+            .TCarBox = fix(.TCarBox)
+            .TShadow = fix(.TShadow)
+            .SfxEngine = fix(.SfxEngine)
+            .SfxHonk = fix(.SfxHonk)
+            .SfxServo = fix(.SfxServo)
+        End With
+        c.DirName = newName
     End Sub
 
     Private Sub Button5_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button5.Click

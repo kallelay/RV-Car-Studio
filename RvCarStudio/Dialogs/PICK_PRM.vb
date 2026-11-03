@@ -140,7 +140,6 @@ analogPVM:
 
 finish_this:
         '   If CarEditor.GlControl1.Context.IsCurrent Then CarEditor.GlControl1.Context.MakeCurrent(Nothing)
-        DO_NOT_RENDER = False
 
 
 

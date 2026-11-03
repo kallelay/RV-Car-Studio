@@ -1,11 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36429.23 d17.14
+# Visual Studio Version 18
+VisualStudioVersion = 18.1.11304.174 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "RvCarStudio", "RvCarStudio\RvCarStudio.vbproj", "{162621D9-6366-42B7-951B-75E709F50BA0}"
 EndProject
 Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "RVStudioComponents", "RVStudioComponents\RVStudioComponents.vbproj", "{5FA2DA7D-66BA-472C-BEAC-AD8053F15731}"
+EndProject
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "RvCarStudio.Tests", "RvCarStudio.Tests\RvCarStudio.Tests.vbproj", "{7B3C1E52-9A44-4C0E-8F21-6D1A2B3C4D5E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -29,6 +31,12 @@ Global
 		{5FA2DA7D-66BA-472C-BEAC-AD8053F15731}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5FA2DA7D-66BA-472C-BEAC-AD8053F15731}.Release|Any CPU.Build.0 = Release|Any CPU
 		{5FA2DA7D-66BA-472C-BEAC-AD8053F15731}.Release|x86.ActiveCfg = Release|Any CPU
+		{7B3C1E52-9A44-4C0E-8F21-6D1A2B3C4D5E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7B3C1E52-9A44-4C0E-8F21-6D1A2B3C4D5E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7B3C1E52-9A44-4C0E-8F21-6D1A2B3C4D5E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7B3C1E52-9A44-4C0E-8F21-6D1A2B3C4D5E}.Release|x86.ActiveCfg = Release|Any CPU
+		{7B3C1E52-9A44-4C0E-8F21-6D1A2B3C4D5E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7B3C1E52-9A44-4C0E-8F21-6D1A2B3C4D5E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

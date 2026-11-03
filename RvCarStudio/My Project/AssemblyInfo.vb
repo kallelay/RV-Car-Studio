@@ -16,6 +16,7 @@ Imports System.Runtime.InteropServices
 <Assembly: AssemblyTrademark("")> 
 
 <Assembly: ComVisible(False)>
+<Assembly: Runtime.CompilerServices.InternalsVisibleTo("RvCarStudio.Tests")>
 
 'The following GUID is for the ID of the typelib if this project is exposed to COM
 <Assembly: Guid("b0f58261-429a-441b-a9bb-ec065c745a06")> 

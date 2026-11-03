@@ -31,6 +31,7 @@ Public Class PRM
     Public Persistent As Boolean = False 'do never remove
 
     Public MyModel As New MODEL
+    Public OtherLODs As Byte() = Nothing 'the rest of the file, after the first model
     Public TextureI As Integer = 0 'Texture Index
 
     Public RenderType As OpenGL.BeginMode = BeginMode.Triangles
@@ -63,6 +64,7 @@ Public Class PRM
         Clone.Persistent = Persistent
         Clone.MyModel.polynum = MyModel.polynum
         Clone.MyModel.vertnum = MyModel.vertnum
+        Clone.OtherLODs = OtherLODs
 
         ReDim Clone.MyModel.polyl(MyModel.polynum)
         ReDim Clone.MyModel.vexl(MyModel.vertnum)
@@ -383,88 +385,67 @@ Public Class PRM
 
         Try
             ' Open PRM file for reading
-            Dim J As New BinaryReader(New FileStream(Replace(filepath, Chr(34), ""), FileMode.Open, FileAccess.Read))
+            Using J As New BinaryReader(New FileStream(Replace(filepath, Chr(34), ""), FileMode.Open, FileAccess.Read, FileShare.Read))
 
-        'Vert/Poly count
-        MyModel.polynum = J.ReadInt16()
-        CarBrowser.PolyCount += MyModel.polynum
-        MyModel.vertnum = J.ReadInt16()
+                'Vert/Poly count
+                MyModel.polynum = J.ReadInt16()
+                CarBrowser.PolyCount += MyModel.polynum
+                MyModel.vertnum = J.ReadInt16()
 
-        '<=> mymodels.polyl = (int*) malloc(sizeof(int) * polynum)
-        ReDim MyModel.polyl(MyModel.polynum)
-        For i = 0 To MyModel.polynum - 1
+                ReDim MyModel.polyl(MyModel.polynum)
+                For i = 0 To MyModel.polynum - 1
+                    MyModel.polyl(i).type = J.ReadInt16
+                    MyModel.polyl(i).Tpage = J.ReadInt16
 
+                    MyModel.polyl(i).vi0 = J.ReadInt16
+                    MyModel.polyl(i).vi1 = J.ReadInt16
+                    MyModel.polyl(i).vi2 = J.ReadInt16
+                    MyModel.polyl(i).vi3 = J.ReadInt16
 
+                    ReDim MyModel.polyl(i).c(3)
+                    For k = 0 To 3
+                        MyModel.polyl(i).c(k) = New BakedColor(J.ReadInt32, MyModel.polyl(i).type And PolyType.SEMI_TRANS)
+                    Next
 
+                    MyModel.polyl(i).u0 = J.ReadSingle
+                    MyModel.polyl(i).v0 = J.ReadSingle
+                    MyModel.polyl(i).u1 = J.ReadSingle
+                    MyModel.polyl(i).v1 = J.ReadSingle
+                    MyModel.polyl(i).u2 = J.ReadSingle
+                    MyModel.polyl(i).v2 = J.ReadSingle
+                    MyModel.polyl(i).u3 = J.ReadSingle
+                    MyModel.polyl(i).v3 = J.ReadSingle
+                Next
 
-            'aaah... C would save time just by fread() ...
+                ReDim MyModel.vexl(MyModel.vertnum)
+                For a = 0 To MyModel.vertnum - 1
+                    Dim x, y, z As Single
+                    x = J.ReadSingle
+                    y = J.ReadSingle
+                    z = J.ReadSingle
+                    MyModel.vexl(a).Position = New Vector3(x, y, z)
 
-            MyModel.polyl(i).type = J.ReadInt16
-            MyModel.polyl(i).Tpage = J.ReadInt16
+                    x = J.ReadSingle
+                    y = J.ReadSingle
+                    z = J.ReadSingle
+                    MyModel.vexl(a).normal = New Vector3(x, y, z)
+                Next
+                If MyModel.vertnum > 0 Then BoundingBox.FromMODEL_VERTEX_MORPH(MyModel.vexl)
 
+                'Files can hold more LODs after the first one. We only show the first, but must not lose the others
+                Dim restLen = J.BaseStream.Length - J.BaseStream.Position
+                If restLen > 0 Then OtherLODs = J.ReadBytes(CInt(restLen))
+            End Using
 
-            MyModel.polyl(i).vi0 = J.ReadInt16
-            MyModel.polyl(i).vi1 = J.ReadInt16
-            MyModel.polyl(i).vi2 = J.ReadInt16
-            MyModel.polyl(i).vi3 = J.ReadInt16
-
-            ReDim MyModel.polyl(i).c(3)
-
-
-            MyModel.polyl(i).c(0) = New BakedColor(J.ReadInt32, MyModel.polyl(i).type And PolyType.SEMI_TRANS)
-            MyModel.polyl(i).c(1) = New BakedColor(J.ReadInt32, MyModel.polyl(i).type And PolyType.SEMI_TRANS)
-            MyModel.polyl(i).c(2) = New BakedColor(J.ReadInt32, MyModel.polyl(i).type And PolyType.SEMI_TRANS)
-            MyModel.polyl(i).c(3) = New BakedColor(J.ReadInt32, MyModel.polyl(i).type And PolyType.SEMI_TRANS)
-
-
-            MyModel.polyl(i).u0 = J.ReadSingle
-            MyModel.polyl(i).v0 = J.ReadSingle
-            MyModel.polyl(i).u1 = J.ReadSingle
-            MyModel.polyl(i).v1 = J.ReadSingle
-            MyModel.polyl(i).u2 = J.ReadSingle
-            MyModel.polyl(i).v2 = J.ReadSingle
-            MyModel.polyl(i).u3 = J.ReadSingle
-            MyModel.polyl(i).v3 = J.ReadSingle
-        Next
-
-        ReDim MyModel.vexl(MyModel.vertnum)
-
-        For a = 0 To MyModel.vertnum - 1
-
-
-            Dim x, y, z As Single
-
-            x = J.ReadSingle
-            y = J.ReadSingle
-            z = J.ReadSingle
-
-
-            MyModel.vexl(a).Position = New Vector3(x, y, z)
-
-            x = J.ReadSingle '* Zoom
-            y = J.ReadSingle ' -1 * Zoom
-            z = J.ReadSingle '* Zoom
-
-            MyModel.vexl(a).normal = New Vector3(x, y, z)
-
-
-        Next
-        BoundingBox.FromMODEL_VERTEX_MORPH(MyModel.vexl)
-
-
-        'let's set Directory and also Filename
-
-        Me.FileName = filepath.Split("\")(UBound(filepath.Split("\")))
-        Me.Directory = Replace(filepath, Me.FileName, "", , , CompareMethod.Text)
-        Me.DirectoryName = filepath.Split("\")(UBound(filepath.Split("\")) - 1)
-        If Persistent Then
-            PermaModels.Add(Me)
-        Else
-            If Not DoNotAdd Then Models.Add(Me)
-        End If
-
-
-            J.Close()
+            'let's set Directory and also Filename
+            Me.FileName = filepath.Split("\")(UBound(filepath.Split("\")))
+            Me.Directory = filepath.Substring(0, filepath.Length - Me.FileName.Length)
+            Me.DirectoryName = filepath.Split("\")(UBound(filepath.Split("\")) - 1)
+            If Persistent Then
+                PermaModels.Add(Me)
+            Else
+                If Not DoNotAdd Then Models.Add(Me)
+            End If
         Catch ex As Exception
             Console_.W("Error loading PRM file (" & filepath & "): " & ex.Message)
             Throw
@@ -473,22 +454,13 @@ Public Class PRM
     'export (save prm)
     Sub Export()
 
-        Export(Directory & "\" & FileName)
+        Export(Directory & FileName)
     End Sub
 
     'export(save prm)
     Sub Export(ByVal filepath As String)
 
-        filepath = Replace(filepath, ",", ".")
-
-
-
-
-
-
-
-        Dim J As New BinaryWriter(New FileStream(Replace(filepath, ",", "."), FileMode.OpenOrCreate))
-        If J Is Nothing Then Beep() : Exit Sub
+        Dim J As New BinaryWriter(New FileStream(filepath, FileMode.Create))
 
 
         'Vert/Poly count
@@ -545,184 +517,90 @@ Public Class PRM
 
         Next
 
+        If OtherLODs IsNot Nothing Then J.Write(OtherLODs)
         J.Close()
 
     End Sub
 
-    ''' <summary>
-    ''' Renders the PRM model to the current OpenGL context
-    ''' Uses immediate mode rendering (deprecated but functional)
-    ''' Future optimization: Implement VBO (Vertex Buffer Objects) for better performance
-    ''' </summary>
+    ''' <summary>Draw everything at once. For a scene with several models use Render.DrawModels</summary>
     Sub Render()
-        ' Skip rendering if model is not visible or rendering is disabled
-        If Not isVisible Then Exit Sub
-        If DO_NOT_RENDER OrElse FORCE_DO_NOT_RENDER Then Exit Sub
-
-
-
-
-
-        ' 
-        '   GL.Rotate(ownGamma, New Vector3(0, 0, 1))
-        ' GL.Rotate(ownPhi, New Vector3(0, 1, 0))
-
-        '  Matrix *= Matrix4.Rotate(New Vector3(0, 1, 0), ownPhi)
-
-        ' GL.MultMatrix(Matrix)
-
-        '  GL.MultMatrix(RotationMATRIX)
-
-
-        GL.Scale(-1, 1, 1)
-
-        If RenderBBOX Then BoundingBox.Render(MATRIX, Zoom)
-
-        ' Optimize texture binding - only bind when texture changes
-        Dim currentBoundTexture As Integer = -2 ' Invalid initial value to force first bind
-
-        For i = 0 To Me.MyModel.polynum - 1
-            ' Determine which texture to use for this polygon
-            Dim targetTexture As Integer
-            If textured Then
-                If MyModel.polyl(i).Tpage <> -1 Then
-                    targetTexture = Textures(TextureI)
-                Else
-                    targetTexture = Textures(0)
-                End If
-            Else
-                targetTexture = -1
-            End If
-
-            ' Only bind if texture has changed
-            If targetTexture <> currentBoundTexture Then
-                GL.BindTexture(TextureTarget.Texture2D, targetTexture)
-                currentBoundTexture = targetTexture
-            End If
-
-            GL.PushMatrix()
-
-
-
-            GL.MultMatrix(MATRIX)
-            GL.Scale(Zoom, Zoom, Zoom)
-
-            GL.Begin(RenderType)
-            If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(0).ReturnBaked(GlobalAlpha))
-            GL.TexCoord2(MyModel.polyl(i).u0, MyModel.polyl(i).v0)
-            GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi0).normal.X, MyModel.vexl(MyModel.polyl(i).vi0).normal.Y, MyModel.vexl(MyModel.polyl(i).vi0).normal.Z)
-            GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi0).Position.X, -MyModel.vexl(MyModel.polyl(i).vi0).Position.Y, MyModel.vexl(MyModel.polyl(i).vi0).Position.Z)
-
-
-
-
-            If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(2).ReturnBaked(GlobalAlpha))
-            GL.TexCoord2(New Vector2d(MyModel.polyl(i).u2, MyModel.polyl(i).v2))
-            GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi2).normal.X, MyModel.vexl(MyModel.polyl(i).vi2).normal.Y, MyModel.vexl(MyModel.polyl(i).vi2).normal.Z)
-            GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi2).Position.X, -MyModel.vexl(MyModel.polyl(i).vi2).Position.Y, MyModel.vexl(MyModel.polyl(i).vi2).Position.Z)
-
-
-
-            If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(1).ReturnBaked(GlobalAlpha))
-            GL.TexCoord2(New Vector2d(MyModel.polyl(i).u1, MyModel.polyl(i).v1))
-            GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi1).normal.X, MyModel.vexl(MyModel.polyl(i).vi1).normal.Y, MyModel.vexl(MyModel.polyl(i).vi1).normal.Z)
-            GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi1).Position.X, -MyModel.vexl(MyModel.polyl(i).vi1).Position.Y, MyModel.vexl(MyModel.polyl(i).vi1).Position.Z)
-
-
-            '   GoTo SkipDBLSD
-            If (MyModel.polyl(i).type And PolyType.DOUBLE_SIDED) Then
-
-
-                If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(0).ReturnBaked(GlobalAlpha))
-                GL.TexCoord2(MyModel.polyl(i).u0, MyModel.polyl(i).v0)
-                GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi0).normal.X, MyModel.vexl(MyModel.polyl(i).vi0).normal.Y, MyModel.vexl(MyModel.polyl(i).vi0).normal.Z)
-                GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi0).Position.X, -MyModel.vexl(MyModel.polyl(i).vi0).Position.Y, MyModel.vexl(MyModel.polyl(i).vi0).Position.Z)
-
-
-                If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(1).ReturnBaked(GlobalAlpha))
-                GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi1).normal.X, MyModel.vexl(MyModel.polyl(i).vi1).normal.Y, MyModel.vexl(MyModel.polyl(i).vi1).normal.Z)
-                GL.TexCoord2(New Vector2d(MyModel.polyl(i).u1, MyModel.polyl(i).v1))
-                GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi1).Position.X, -MyModel.vexl(MyModel.polyl(i).vi1).Position.Y, MyModel.vexl(MyModel.polyl(i).vi1).Position.Z)
-
-
-                If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(2).ReturnBaked(GlobalAlpha))
-                GL.TexCoord2(New Vector2d(MyModel.polyl(i).u2, MyModel.polyl(i).v2))
-                GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi2).normal.X, MyModel.vexl(MyModel.polyl(i).vi2).normal.Y, MyModel.vexl(MyModel.polyl(i).vi2).normal.Z)
-                GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi2).Position.X, -MyModel.vexl(MyModel.polyl(i).vi2).Position.Y, MyModel.vexl(MyModel.polyl(i).vi2).Position.Z)
-
-
-
-            End If
-
-SkipDBLSD:
-
-            If (MyModel.polyl(i).type And PolyType.QUAD) Then
-
-
-                If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(0).ReturnBaked(GlobalAlpha))
-                GL.TexCoord2(MyModel.polyl(i).u0, MyModel.polyl(i).v0)
-                GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi0).normal.X, MyModel.vexl(MyModel.polyl(i).vi0).normal.Y, MyModel.vexl(MyModel.polyl(i).vi0).normal.Z)
-                GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi0).Position.X, -MyModel.vexl(MyModel.polyl(i).vi0).Position.Y, MyModel.vexl(MyModel.polyl(i).vi0).Position.Z)
-
-
-
-
-                If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(3).ReturnBaked(GlobalAlpha))
-                GL.TexCoord2(MyModel.polyl(i).u3, MyModel.polyl(i).v3)
-                GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi3).normal.X, MyModel.vexl(MyModel.polyl(i).vi3).normal.Y, MyModel.vexl(MyModel.polyl(i).vi3).normal.Z)
-                GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi3).Position.X, -MyModel.vexl(MyModel.polyl(i).vi3).Position.Y, MyModel.vexl(MyModel.polyl(i).vi3).Position.Z)
-
-
-                If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(2).ReturnBaked(GlobalAlpha))
-                GL.TexCoord2(MyModel.polyl(i).u2, MyModel.polyl(i).v2)
-                GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi2).normal.X, MyModel.vexl(MyModel.polyl(i).vi2).normal.Y, MyModel.vexl(MyModel.polyl(i).vi2).normal.Z)
-                GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi2).Position.X, -MyModel.vexl(MyModel.polyl(i).vi2).Position.Y, MyModel.vexl(MyModel.polyl(i).vi2).Position.Z)
-
-
-
-
-                '  GoTo SkipDBLSD_Q
-                If MyModel.polyl(i).type And PolyType.DOUBLE_SIDED Then
-
-                    If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(0).ReturnBaked(GlobalAlpha))
-                    GL.TexCoord2(MyModel.polyl(i).u0, MyModel.polyl(i).v0)
-                    GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi0).normal.X, MyModel.vexl(MyModel.polyl(i).vi0).normal.Y, MyModel.vexl(MyModel.polyl(i).vi0).normal.Z)
-                    GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi0).Position.X, -MyModel.vexl(MyModel.polyl(i).vi0).Position.Y, MyModel.vexl(MyModel.polyl(i).vi0).Position.Z)
-
-
-
-
-
-                    If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(2).ReturnBaked(GlobalAlpha))
-                    GL.TexCoord2(MyModel.polyl(i).u2, MyModel.polyl(i).v2)
-                    GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi2).normal.X, MyModel.vexl(MyModel.polyl(i).vi2).normal.Y, MyModel.vexl(MyModel.polyl(i).vi2).normal.Z)
-                    GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi2).Position.X, -MyModel.vexl(MyModel.polyl(i).vi2).Position.Y, MyModel.vexl(MyModel.polyl(i).vi2).Position.Z)
-
-
-                    If RENDER_SHADE Then GL.Color4(MyModel.polyl(i).c(3).ReturnBaked(GlobalAlpha))
-                    GL.TexCoord2(MyModel.polyl(i).u3, MyModel.polyl(i).v3)
-                    GL.Normal3(MyModel.vexl(MyModel.polyl(i).vi3).normal.X, MyModel.vexl(MyModel.polyl(i).vi3).normal.Y, MyModel.vexl(MyModel.polyl(i).vi3).normal.Z)
-                    GL.Vertex3(MyModel.vexl(MyModel.polyl(i).vi3).Position.X, -MyModel.vexl(MyModel.polyl(i).vi3).Position.Y, MyModel.vexl(MyModel.polyl(i).vi3).Position.Z)
-
-
-                End If
-SkipDBLSD_Q:
-            End If
-
-
-            GL.End()
-            GL.PopMatrix()
+        For pass = 0 To 2
+            Render(pass)
         Next
+    End Sub
 
+    'Which pass a polygon belongs to: 0 opaque, 1 alpha blended, 2 additive
+    Private Function PassOf(ByVal type As Short) As Integer
+        If type And PolyType.ADDITIVE_TRANS Then Return 2
+        If (type And PolyType.SEMI_TRANS) OrElse GlobalAlpha < 1.0F Then Return 1
+        Return 0
+    End Function
+
+    ''' <summary>Draw this model's polygons of one pass. The pass' blending is set up by Render.DrawModels</summary>
+    Sub Render(ByVal pass As Integer)
+        If Not isVisible OrElse MyModel.polyl Is Nothing OrElse MyModel.vexl Is Nothing Then Exit Sub
+
+        GL.PushMatrix()
         GL.Scale(-1, 1, 1)
+        GL.MultMatrix(M)
+        GL.Scale(Zoom, Zoom, Zoom)
 
+        Dim mode = PolygonMode.Fill
+        If RenderType = BeginMode.LineStrip OrElse RenderType = BeginMode.Lines Then mode = PolygonMode.Line
+        If RenderType = BeginMode.Points Then mode = PolygonMode.Point
+        GL.PolygonMode(MaterialFace.FrontAndBack, mode)
 
-        Exit Sub
-        '  GL.Rotate(-ownGamma, New Vector3(0, 0, 1))
-        GL.Rotate(-Theta - ownTheta, New Vector3(0, 1, 0))
-        GL.Rotate(-ownPhi, New Vector3(1, 0, 0))
+        Dim bound = -1
+        Dim drawing = False
+        For i = 0 To MyModel.polynum - 1
+            Dim poly = MyModel.polyl(i)
+            If PassOf(poly.type) <> pass Then Continue For
 
-        '    GL.Translate(-Pos) ' - GlobalPosition)
+            Dim tex = If(TEXTURED AndAlso poly.Tpage <> -1, Textures(TextureI), 0)
+            If tex <> bound Then
+                If drawing Then GL.End() : drawing = False
+                GL.BindTexture(TextureTarget.Texture2D, tex)
+                bound = tex
+            End If
+            If Not drawing Then GL.Begin(BeginMode.Triangles) : drawing = True
+
+            'Re-Volt polygons are clockwise seen from the front
+            Dim quad = (poly.type And PolyType.QUAD) <> 0
+            Vert(poly, 0) : Vert(poly, 2) : Vert(poly, 1)
+            If quad Then Vert(poly, 0) : Vert(poly, 3) : Vert(poly, 2)
+            If poly.type And PolyType.DOUBLE_SIDED Then
+                Vert(poly, 0) : Vert(poly, 1) : Vert(poly, 2)
+                If quad Then Vert(poly, 0) : Vert(poly, 2) : Vert(poly, 3)
+            End If
+        Next
+        If drawing Then GL.End()
+
+        GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill)
+        GL.PopMatrix()
+    End Sub
+
+    'One corner of a polygon
+    Private Sub Vert(ByRef p As POLY, ByVal corner As Integer)
+        Dim vi As Integer, u, v As Single
+        Select Case corner
+            Case 0 : vi = p.vi0 : u = p.u0 : v = p.v0
+            Case 1 : vi = p.vi1 : u = p.u1 : v = p.v1
+            Case 2 : vi = p.vi2 : u = p.u2 : v = p.v2
+            Case Else : vi = p.vi3 : u = p.u3 : v = p.v3
+        End Select
+        If vi < 0 OrElse vi >= MyModel.vertnum Then Exit Sub 'broken model
+
+        If RENDER_SHADE Then
+            GL.Color4(p.c(corner).ReturnBaked(GlobalAlpha))
+        Else
+            GL.Color4(1.0F, 1.0F, 1.0F, GlobalAlpha)
+        End If
+        GL.TexCoord2(u, v)
+        'file: Y down. The whole model is turned around X in Render, which keeps it from being mirrored
+        Dim n = MyModel.vexl(vi).normal
+        GL.Normal3(n.X, -n.Y, n.Z)
+        Dim pos = MyModel.vexl(vi).Position
+        GL.Vertex3(pos.X, -pos.Y, pos.Z)
     End Sub
 
 
@@ -764,6 +642,12 @@ Public Structure POLY
             Return LongColor
         End Function
 
+        'Put a colour from the file back, as if it was never touched
+        Sub SetLong(ByVal lColor As Int32)
+            LongColor = lColor
+            BakedColor = UintToColor(lColor, AlphaEnabled)
+        End Sub
+
         Function Clone() As BakedColor
             Clone = New BakedColor(LongColor, AlphaEnabled)
         End Function
@@ -771,7 +655,9 @@ Public Structure POLY
         '----------------- RIKO IMPORTED----------------
         Property Gray()
             Set(ByVal value)
-                BakedColor = New Color4(value * BaseColor.R, value * BaseColor.G, value * BaseColor.B, 1)
+                Dim g = Math.Max(0.0F, Math.Min(1.0F, CSng(value)))
+                BakedColor = New Color4(g * BaseColor.R, g * BaseColor.G, g * BaseColor.B, BakedColor.A)
+                LongColor = (CInt(BakedColor.A * 255) << 24) Or (CInt(BakedColor.R * 255) << 16) Or (CInt(BakedColor.G * 255) << 8) Or CInt(BakedColor.B * 255)
             End Set
             Get
                 Return Nothing

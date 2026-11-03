@@ -1,4 +1,4 @@
-﻿Public Class Parameters_editor
+Public Class Parameters_editor
 
     Dim CurPos As Point = MousePosition
     Private Sub Label4_MouseMove(ByVal sender As Object, ByVal e As System.Windows.Forms.MouseEventArgs) Handles Title.MouseMove
@@ -11,7 +11,19 @@
     End Sub
     Dim WasActive = False
     Dim tptr = 0
-    Dim DontReflect = False 'Bug, assign => refresh => assign
+    Dim Filling = False 'we are the ones changing the text, it's not an edit
+
+    Private Sub FillFromCar()
+        'something typed that didn't reach the car yet goes first
+        If Timer2.Enabled Then Timer2_Tick(Nothing, EventArgs.Empty)
+        Filling = True
+        TextBox1.Text = cars(Active_Car).Sing.SaveToStr()
+        Filling = False
+    End Sub
+
+    Private Sub Parameters_editor_VisibleChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.VisibleChanged
+        If Visible AndAlso cars.Count > 0 Then FillFromCar()
+    End Sub
 
     Private Sub Timer1_Tick(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Timer1.Tick
         'update from GUI
@@ -19,8 +31,7 @@
             tptr = If(TextBox1.SelectionStart > 1, TextBox1.SelectionStart, tptr)
 
             If Not WasActive Then
-                DontReflect = True
-                TextBox1.Text = cars(Active_Car).Sing.SaveToStr()
+                FillFromCar()
 
 
 
@@ -44,21 +55,21 @@
 
 
     Private Sub TextBox1_TextChanged(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles TextBox1.TextChanged
+        If Filling Then Exit Sub
+        Timer2.Stop()
         Timer2.Start()
 
     End Sub
 
     Private Sub Timer2_Tick(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Timer2.Tick
         'update to GUI
-        If DontReflect Then DontReflect = False : Exit Sub
+        Timer2.Stop()
         ' MsgBox("here?")
         cars(Active_Car).Sing = New Singletons(TextBox1.Text, True)
         cars(Active_Car).Load(True)
         CarBrowser.ReLoadOneCar()
 
         CarEditor.ComboBox1_SelectedIndexChanged(sender, e)
-
-        Timer2.Stop()
     End Sub
 
 

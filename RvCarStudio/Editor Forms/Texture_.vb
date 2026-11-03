@@ -26,22 +26,24 @@ Public Class Texture_
 
         If Not skipFilling Then Button1.Text = cars(Active_Car).Theory.MainInfos.Tpage
 
-        If cars(Active_Car).Theory.MainInfos.Tpage = "NONE" Then Exit Sub
-
-        If Not IO.File.Exists(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage) Then
-            Console_.W("File " & RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage & " not found")
+        cBMP = Nothing
+        Dim file = Car.GamePath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If file Is Nothing Then
+            Console_.W("File " & cars(Active_Car).Theory.MainInfos.Tpage & " not found")
+            loading = False
             Exit Sub
         End If
 
-
-        bmpstr = New IO.FileStream(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, IO.FileMode.Open, IO.FileAccess.Read)
-        cBMP = Bitmap.FromStream(bmpstr)
-        bmpstr.Close()
+        Using ms As New IO.MemoryStream(IO.File.ReadAllBytes(file))
+            Using img = Bitmap.FromStream(ms)
+                cBMP = New Bitmap(img)
+            End Using
+        End Using
 
         'init
         DMatrix = Nothing : AvgMatrix = Nothing : CTable = Nothing
         TrackBar1.Value = 0 : TrackBar2.Value = 0 : TrackBar3.Value = 0 : TrackBar4.Value = 0
-        TrackBar5.Value = 0 : TrackBar6.Value = 0 : TrackBar7.Value = 0
+        TrackBar5.Value = 0 : TrackBar6.Value = 0 : TrackBar7.Value = 0 : TrackBar8.Value = 0
 
         ReDim DMatrix(cBMP.Width, cBMP.Height)
         ReDim AvgMatrix(cBMP.Width, cBMP.Height)
@@ -59,6 +61,19 @@ Public Class Texture_
 
     End Sub
     Sub Unload()
+        CarEditor.Label11.Hide()
+        'a preview that wasn't saved goes away with the page
+        If cBMP IsNot Nothing AndAlso (TrackBar1.Value <> 0 Or TrackBar2.Value <> 0 Or TrackBar3.Value <> 0 Or TrackBar4.Value <> 0 Or TrackBar5.Value <> 0 Or TrackBar6.Value <> 0 Or TrackBar7.Value <> 0 Or TrackBar8.Value <> 0) Then
+            Timer1.Stop()
+            Timer1.Interval = 500
+            BackgroundWorker1.CancelAsync()
+            loading = True
+            TrackBar1.Value = 0 : TrackBar2.Value = 0 : TrackBar3.Value = 0 : TrackBar4.Value = 0
+            TrackBar5.Value = 0 : TrackBar6.Value = 0 : TrackBar7.Value = 0 : TrackBar8.Value = 0
+            loading = False
+            TexLib.TexUtil.RemoveTexture(Textures(1))
+            Textures(1) = TexLib.TexUtil.CreateTextureFromFile(Car.GamePath(cars(Active_Car).Theory.MainInfos.Tpage))
+        End If
         CarEditor.Prv.Hide()
         Preview_texture.Controls.Add(Preview_texture.pbmp)
     End Sub
@@ -69,9 +84,8 @@ Public Class Texture_
 
 
         CarEditor.Prv.Controls.Add(Preview_texture.pbmp)
-        bmpstr = New IO.FileStream(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, IO.FileMode.Open)
-        Preview_texture.PictureBox1.Image = Image.FromStream(bmpstr)
-        bmpstr.Close()
+        Dim file = Car.GamePath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If file IsNot Nothing Then Preview_texture.PictureBox1.Image = Image.FromStream(New IO.MemoryStream(IO.File.ReadAllBytes(file)))
 
     End Sub
     Private Sub Button1_TextChanged(ByVal sender As Object, ByVal e As System.EventArgs) Handles Button1.TextChanged
@@ -108,12 +122,10 @@ Public Class Texture_
 
     Private Sub TrackBar1_scroll() Handles TrackBar1.ValueChanged, TrackBar2.ValueChanged, TrackBar4.ValueChanged, TrackBar3.ValueChanged, TrackBar5.ValueChanged, TrackBar8.ValueChanged, TrackBar7.ValueChanged, TrackBar6.ValueChanged
 
+        If loading OrElse cBMP Is Nothing Then Exit Sub
         CarEditor.Label11.Show()
 
         CarEditor.Label1.Text = "Please wait..."
-        CarEditor.Timer2.Stop()
-        'Application.DoEvents()
-        If cars(Active_Car).Theory.MainInfos.Tpage = "NONE" Then CarEditor.Label1.Text = "Main Window" : Exit Sub
 
         'Share to thread
         TrackBar1value = TrackBar1.Value
@@ -126,9 +138,8 @@ Public Class Texture_
         TrackBar8value = TrackBar8.Value
 
         'start thread
+        Timer1.Interval = 500
         Timer1.Start()
-
-        CarEditor.Timer2.Start()
 
     End Sub
 
@@ -173,11 +184,9 @@ Public Class Texture_
         ' CarEditor.GlControl1.MakeCurrent()
 
         TexLib.TexUtil.RemoveTexture(Textures(1))
-        TexLib.TexUtil.InitTexturing()
         Textures(1) = TexLib.TexUtil.CreateRGBATexture(cBMP.Width, cBMP.Height, CTable)
 
         '  If CarEditor.GlControl1.Context.IsCurrent Then CarEditor.GlControl1.Context.MakeCurrent(Nothing)
-        DO_NOT_RENDER = False
     End Sub
 
 
@@ -189,20 +198,30 @@ Public Class Texture_
 
     End Sub
 
+    'write the changed texture
     Private Sub Button3_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button3.Click
         CarEditor.Label11.Hide()
-        If cars(Active_Car).Theory.MainInfos.Tpage = "NONE" Then Exit Sub
+        If cBMP Is Nothing OrElse BackgroundWorker1.IsBusy Then Beep() : Exit Sub
+        Dim file = Car.GamePath(cars(Active_Car).Theory.MainInfos.Tpage)
+        If file Is Nothing Then Exit Sub
 
-        IO.File.Copy(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage & Environment.TickCount & ".bmp")
-        For j = 0 To cBMP.Height - 1
-            For i = 0 To cBMP.Width - 1
-                cBMP.SetPixel(i, j, Color.FromArgb(CTable(j * cBMP.Height * 4 + i * 4), CTable(j * cBMP.Height * 4 + i * 4 + 1), CTable(j * cBMP.Height * 4 + i * 4 + 2)))
+        ComputeTable()
+
+        'keep the first version, once. Not as a .bmp: the game takes car*.bmp for a skin
+        If Not IO.File.Exists(file & ".bak") Then IO.File.Copy(file, file & ".bak")
+        Using out As New Bitmap(cBMP.Width, cBMP.Height, Drawing.Imaging.PixelFormat.Format24bppRgb)
+            For j = 0 To cBMP.Height - 1
+                For i = 0 To cBMP.Width - 1
+                    Dim at = (j * cBMP.Width + i) * 4
+                    out.SetPixel(i, j, Color.FromArgb(CTable(at), CTable(at + 1), CTable(at + 2)))
+                Next
             Next
-        Next
-        cBMP.Save(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage, Drawing.Imaging.ImageFormat.Bmp)
-        TrackBar1.Value = 0 : TrackBar2.Value = 0 : TrackBar3.Value = 0 : TrackBar4.Value = 0
-        TrackBar5.Value = 0 : TrackBar6.Value = 0 : TrackBar7.Value = 0
-        Textures(1) = TexLib.TexUtil.CreateTextureFromFile(RVPATH & "\" & cars(Active_Car).Theory.MainInfos.Tpage)
+            out.Save(file, Drawing.Imaging.ImageFormat.Bmp)
+        End Using
+
+        loading = True
+        TexLib.TexUtil.RemoveTexture(Textures(1))
+        Textures(1) = TexLib.TexUtil.CreateTextureFromFile(file)
         DOLOAD()
     End Sub
 
@@ -210,58 +229,52 @@ Public Class Texture_
     Dim TrackBar1value, TrackBar2value, TrackBar3value, TrackBar4value, TrackBar5value, TrackBar6value, TrackBar7value, TrackBar8value As Integer
     Dim Progress = 0.0F
     Private Sub BackgroundWorker1_DoWork(ByVal sender As System.Object, ByVal e As System.ComponentModel.DoWorkEventArgs) Handles BackgroundWorker1.DoWork
+        ComputeTable()
+    End Sub
+
+    'The texture with the sliders applied. Pure black stays black: the game shows it as see-through
+    Private Sub ComputeTable()
+        Dim w = cBMP.Width
         For j = 0 To cBMP.Height - 1
-            For i = 0 To cBMP.Width - 1
+            For i = 0 To w - 1
                 If BackgroundWorker1.CancellationPending Then Exit Sub
 
-
-
-                If (DMatrix(i, j).R ^ 2 + DMatrix(i, j).G ^ 2 + DMatrix(i, j).B ^ 2) < 1 Then
-                    'CTable(j * cBMP.Height * 3 + i * 3) = 0
-                    ' CTable(j * cBMP.Height * 3 + i * 3 + 1) = 0
-                    ' CTable(j * cBMP.Height * 3 + i * 3 + 2) = 0
+                Dim at = (j * w + i) * 4
+                Dim d = DMatrix(i, j)
+                If d.R = 0 And d.G = 0 And d.B = 0 Then
+                    CTable(at) = 0 : CTable(at + 1) = 0 : CTable(at + 2) = 0 : CTable(at + 3) = 0
                     Continue For
                 End If
 
-                ' CTable(j * cBMP.Height * 3 + i * 3 + 0) = Max(Min(DMatrix(i, j).R + TrackBar1value + TrackBar2value - (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar5value / 255 - (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar6value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar7value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar8value / 255, 255), 1)
-                ' CTable(j * cBMP.Height * 3 + i * 3 + 1) = Max(Min(DMatrix(i, j).G + TrackBar1value + TrackBar3value - (AvgMatrix(i, j) - DMatrix(i, j).G) * TrackBar5value / 255 - (AvgMatrix(i, j) - DMatrix(i, j).G) * TrackBar7value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar6value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar8value / 255, 255), 1)
-                ' CTable(j * cBMP.Height * 3 + i * 3 + 2) = Max(Min(DMatrix(i, j).B + TrackBar1value + TrackBar4value - (AvgMatrix(i, j) - DMatrix(i, j).B) * TrackBar5value / 255 - (AvgMatrix(i, j) - DMatrix(i, j).G) * TrackBar8value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar6value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar7value / 255, 255), 1)
-
-                CTable(j * cBMP.Height * 4 + i * 4 + 0) = Max(Min(DMatrix(i, j).R + TrackBar1value + TrackBar2value - (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar5value / 255 - (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar6value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar7value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar8value / 255, 255), 1)
-                CTable(j * cBMP.Height * 4 + i * 4 + 1) = Max(Min(DMatrix(i, j).G + TrackBar1value + TrackBar3value - (AvgMatrix(i, j) - DMatrix(i, j).G) * TrackBar5value / 255 - (AvgMatrix(i, j) - DMatrix(i, j).G) * TrackBar7value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar6value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar8value / 255, 255), 1)
-                CTable(j * cBMP.Height * 4 + i * 4 + 2) = Max(Min(DMatrix(i, j).B + TrackBar1value + TrackBar4value - (AvgMatrix(i, j) - DMatrix(i, j).B) * TrackBar5value / 255 - (AvgMatrix(i, j) - DMatrix(i, j).G) * TrackBar8value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar6value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar7value / 255, 255), 1)
-
-                CTable(j * cBMP.Height * 4 + i * 4 + 3) = 255 ' Max(Min(DMatrix(i, j).R + TrackBar1value + TrackBar2value - (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar5value / 255 - (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar6value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar7value / 255 + (AvgMatrix(i, j) - DMatrix(i, j).R) * TrackBar8value / 255, 255), 1)
-
-
-                If (j * cBMP.Height + i) Mod 1000 = 0 Then
-                    Progress = Int((i + j * cBMP.Height) / (cBMP.Width * cBMP.Height) * 10000) / 100 ' & "%" : Application.DoEvents()
-                End If
-
+                Dim av = AvgMatrix(i, j)
+                CTable(at + 0) = Max(Min(d.R + TrackBar1value + TrackBar2value - (av - d.R) * TrackBar5value / 255 - (av - d.R) * TrackBar6value / 255 + (av - d.R) * TrackBar7value / 255 + (av - d.R) * TrackBar8value / 255, 255), 1)
+                CTable(at + 1) = Max(Min(d.G + TrackBar1value + TrackBar3value - (av - d.G) * TrackBar5value / 255 - (av - d.G) * TrackBar7value / 255 + (av - d.G) * TrackBar6value / 255 + (av - d.G) * TrackBar8value / 255, 255), 1)
+                CTable(at + 2) = Max(Min(d.B + TrackBar1value + TrackBar4value - (av - d.B) * TrackBar5value / 255 - (av - d.B) * TrackBar8value / 255 + (av - d.B) * TrackBar6value / 255 + (av - d.B) * TrackBar7value / 255, 255), 1)
+                CTable(at + 3) = 255
             Next
+            Progress = Int(j / cBMP.Height * 10000) / 100
         Next
         Progress = 100 'force
     End Sub
 
     Private Sub Timer1_Tick(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Timer1.Tick
-        If fps < 30 Then CarEditor.Timer2.Stop()
-
         If Timer1.Interval = 500 Then
+            'wait for an older run to end before starting the next one
             If BackgroundWorker1.IsBusy Then
                 BackgroundWorker1.CancelAsync()
+                Exit Sub
             End If
 
+            Progress = 0.0F
             BackgroundWorker1.RunWorkerAsync()
-
-            Timer1.Interval = 1 : Exit Sub
-
+            Timer1.Interval = 50
+            Exit Sub
         End If
 
-        If Progress < 100 Then
-            CarEditor.Label1.Text = Strings.Format("Please wait...{0}%", Progress) ' : Application.DoEvents()
+        If BackgroundWorker1.IsBusy Then
+            CarEditor.Label1.Text = "Please wait..." & Progress & "%"
         Else
-            UpdateBMP()
-            CarEditor.Timer2.Start()
+            If Progress >= 100 Then UpdateBMP()
             CarEditor.Label1.Text = "Main Window"
             Timer1.Stop()
             Timer1.Interval = 500

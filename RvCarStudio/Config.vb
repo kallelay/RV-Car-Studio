@@ -7,7 +7,14 @@
         Panel2.Left = 35
         Title.Text = APPNAME
         '  Label1.Text = "Hello and welcome to " & APPNAME & ". Please choose your language"
-        ComboBox1.SelectedIndex = 0
+
+
+        Try
+            If ComboBox1.Items.Count <> 0 Then ComboBox1.SelectedIndex = 0
+        Catch
+
+        End Try
+
 
 
         Dim drv = IO.Directory.GetLogicalDrives()
@@ -51,7 +58,7 @@
 
     Dim CurPos As Point
     Private Sub Label1_MouseMove(ByVal sender As Object, ByVal e As System.Windows.Forms.MouseEventArgs) Handles Title.MouseMove
-        If e.Button = Windows.Forms.MouseButtons.Left Then
+        If e.Button = System.Windows.Forms.MouseButtons.Left Then
             Me.Location += MousePosition - CurPos
             CurPos = MousePosition
         Else
@@ -68,9 +75,10 @@
             '   SaveSetting("Car Load", "seLanguages(ComboBox1.SelectedIndex).LPathttings", "dir", RVPATH)
             '  SaveSetting("Car Load", "settings", "lang", Languages(ComboBox1.SelectedIndex).LPath)
 
-            Me.DialogResult = Windows.Forms.DialogResult.OK
             HideForm(Me)
+            Me.DialogResult = System.Windows.Forms.DialogResult.OK
             Me.Hide()
+            Exit Sub
         End If
 
 
@@ -146,7 +154,11 @@
         If Not (GetSetting("Car Load", "settings", "dir", "") = "" Or Not IO.File.Exists(GetSetting("Car Load", "settings", "dir", ""))) Then
             ChDir(GetSetting("Car Load", "settings", "dir", ""))
         Else
-            ChDir(Sett_get("dir", Environ("programfiles") & "\..\"))
+            Try
+                If IO.Directory.Exists(Sett_get("dir", Environ("programfiles") & "\..\")) Then _
+                ChDir(Sett_get("dir", Environ("programfiles") & "\..\"))
+            Catch
+            End Try
         End If
 
         TextBox7.Text = CurDir()

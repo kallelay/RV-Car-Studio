@@ -311,6 +311,7 @@ finished:
 
     Private Sub Button4_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button4.Click
         Dim v = ModSpring(0)
+        If cars(Active_Car).models.Spring(v) Is Nothing Then Beep() : Exit Sub
         Dim ml = cars(Active_Car).models.Spring(v).BoundingBox.maxY - cars(Active_Car).models.Spring(v).BoundingBox.MinY
 
         Dim tl = (cars(Active_Car).Theory.Spring(v).Offset - cars(Active_Car).Theory.wheel(v).Offset(1)).Length ' * Zoom

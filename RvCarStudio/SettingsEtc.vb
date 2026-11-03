@@ -24,6 +24,7 @@
         'get all lines
         Dim lines() As String = IO.File.ReadAllLines(Set_Loc)
         For i = 0 To lines.Count - 1
+            If InStr(lines(i), ":") = 0 Then Continue For
             If D.ContainsKey(Split(lines(i), ":")(0)) = False Then _
                 D.Add(Split(lines(i), ":")(0), Mid(lines(i), InStr(lines(i), ":") + 2)) Else _
                 D(Split(lines(i), ":")(0)) = Mid(lines(i), InStr(lines(i), ":") + 2)
@@ -51,25 +52,8 @@
 
 
     End Sub
-    Dim INPUT As IO.FileStream
-    Function Binarize(ByVal str$) As Byte()
-        Dim B(Len(str)) As Byte
-        For i = 0 To B.Count - 2
-            B(i) = Asc(str(i))
-        Next
-        Return B
-    End Function
     Sub Save()
-        INPUT = IO.File.OpenWrite(Set_Loc)
-        Dim Pos As ULong = 0, l As Long = 0
-
-        For i = 0 To D.Count - 1
-            l = Len(D.Keys(i)) + Len(D(D.Keys(i))) + 3
-            INPUT.Write(Binarize(D.Keys(i) & ": " & D(D.Keys(i)) & vbNewLine), Pos, l)
-            l += Pos
-        Next
-        INPUT.Flush()
-        INPUT.Close()
-
+        If IO.Directory.Exists(Set_Path) = False Then MkDir(Set_Path)
+        IO.File.WriteAllLines(Set_Loc, D.Select(Function(kv) kv.Key & ": " & kv.Value).ToArray())
     End Sub
 End Module
