@@ -15,6 +15,23 @@ public static class Images
         catch { return null; }
     }
 
+    /// <summary>32 bit BMP keeps see-through parts, for RVGL</summary>
+    public static void SaveBmp32(SKBitmap b, string path)
+    {
+        int w = b.Width, h = b.Height;
+        using var o = new BinaryWriter(File.Create(path));
+        o.Write((byte)'B'); o.Write((byte)'M');
+        o.Write(54 + w * h * 4); o.Write(0); o.Write(54);
+        o.Write(40); o.Write(w); o.Write(h); o.Write((short)1); o.Write((short)32);
+        o.Write(0); o.Write(w * h * 4); o.Write(2835); o.Write(2835); o.Write(0); o.Write(0);
+        for (int y = h - 1; y >= 0; y--)
+            for (int x = 0; x < w; x++)
+            {
+                var c = b.GetPixel(x, y);
+                o.Write(c.Blue); o.Write(c.Green); o.Write(c.Red); o.Write(c.Alpha);
+            }
+    }
+
     /// <summary>24 bit BMP, what the game has always read</summary>
     public static void SaveBmp24(SKBitmap b, string path)
     {
@@ -384,6 +401,12 @@ public static class CarTools
     /// </summary>
     public static void AutoShade(Prm m, ShadeOptions? options = null)
     {
+        ShadeOne(m, options);
+        m.ForOtherLods(l => ShadeOne(l, options));
+    }
+
+    static void ShadeOne(Prm m, ShadeOptions? options)
+    {
         var o = options ?? new ShadeOptions();
         var sun = Vector3.Normalize(o.SunDir ?? new Vector3(0.35f, -1f, 0.25f));
         var dirs = new Vector3[o.Rays];
@@ -609,7 +632,7 @@ public static class CarTools
     // ---------------------------- Texture ----------------------------
 
     /// <summary>Brightness (-1..1), saturation (0..2), hue shift (degrees). Pure black stays black, the game shows it as see-through</summary>
-    public static SKBitmap AdjustTexture(SKBitmap src, float brightness, float saturation, float hue)
+    public static SKBitmap AdjustTexture(SKBitmap src, float brightness, float saturation, float hue, ICollection<int>? onlyColours = null)
     {
         var o = new SKBitmap(src.Width, src.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
         for (int y = 0; y < src.Height; y++)
@@ -618,12 +641,114 @@ public static class CarTools
                 var c = src.GetPixel(x, y);
                 if (c.Red == 0 && c.Green == 0 && c.Blue == 0) { o.SetPixel(x, y, c); continue; }
                 c.ToHsv(out var h, out var s, out var v);
+                if (onlyColours != null && onlyColours.Count > 0 && (s < GreySaturation || !onlyColours.Contains(ColourBucket(h))))
+                {
+                    o.SetPixel(x, y, c);
+                    continue;
+                }
                 h = (h + hue + 360) % 360;
                 s = Math.Clamp(s * saturation, 0, 100);
                 v = Math.Clamp(v * (1 + brightness), 1, 100);
                 o.SetPixel(x, y, SKColor.FromHsv(h, s, v, c.Alpha));
             }
         return o;
+    }
+
+    const float GreySaturation = 18;
+    public const int ColourBuckets = 12;
+    static int ColourBucket(float hue) => (int)((hue + 15) % 360 / (360f / ColourBuckets));
+
+    /// <summary>The main colours of a texture, biggest first: which group, how much of it, and an average to show</summary>
+    public static List<(int Bucket, int Count, SKColor Sample)> MainColours(SKBitmap src)
+    {
+        var counts = new int[ColourBuckets];
+        var r = new long[ColourBuckets]; var g = new long[ColourBuckets]; var b = new long[ColourBuckets];
+        for (int y = 0; y < src.Height; y += 2)
+            for (int x = 0; x < src.Width; x += 2)
+            {
+                var c = src.GetPixel(x, y);
+                c.ToHsv(out var h, out var s, out var v);
+                if (s < GreySaturation || v < 12) continue;
+                int i = ColourBucket(h);
+                counts[i]++; r[i] += c.Red; g[i] += c.Green; b[i] += c.Blue;
+            }
+        return Enumerable.Range(0, ColourBuckets).Where(i => counts[i] > 40).OrderByDescending(i => counts[i])
+            .Select(i => (i, counts[i], new SKColor((byte)(r[i] / counts[i]), (byte)(g[i] / counts[i]), (byte)(b[i] / counts[i])))).ToList();
+    }
+
+    public static void SaveTexture(SKBitmap b, string path, bool keepAlpha)
+    {
+        if (keepAlpha) Images.SaveBmp32(b, path); else Images.SaveBmp24(b, path);
+    }
+
+    /// <summary>
+    /// A new car around your own model: its body, one wheel for all four (the right side mirrored) and its texture.
+    /// Suspension of the base car wouldn't fit, so it goes. Places the wheels and fills what can be worked out.
+    /// </summary>
+    public static void SetupOriginal(Car c, string bodyFile, string? wheelFile, string? textureFile)
+    {
+        var d = c.Data;
+        var body = Prm.Load(bodyFile);
+        if (!body.IsValid() || body.Faces.Length == 0) throw new InvalidDataException("That body model is damaged");
+        string Rel(string name) => "cars\\" + c.Folder + "\\" + name;
+
+        body.Save(Path.Combine(c.Dir, "body.prm"));
+        int bodySlot = d.BodyModel >= 0 ? d.BodyModel : 0;
+        d.Models[bodySlot] = Rel("body.prm");
+        d.BodyModel = bodySlot;
+        d.BodyOffset = Vector3.Zero;
+
+        for (int i = 0; i < 4; i++)
+        {
+            d.Springs[i].Model = -1; d.Springs[i].Offset = Vector3.Zero;
+            d.Axles[i].Model = -1; d.Axles[i].Offset = Vector3.Zero;
+            d.Pins[i].Model = -1;
+        }
+        d.Spinner.Model = -1;
+
+        if (wheelFile != null)
+        {
+            var names = new[] { "wheelfl.prm", "wheelfr.prm", "wheelbl.prm", "wheelbr.prm" };
+            for (int i = 0; i < 4; i++)
+            {
+                var w = Prm.Load(wheelFile);
+                if (i % 2 == 1) w.MirrorX();
+                w.Save(Path.Combine(c.Dir, names[i]));
+                int slot = i + 1 == bodySlot ? 5 + i : i + 1;
+                d.Models[slot] = Rel(names[i]);
+                d.Wheels[i].Model = slot;
+                d.Wheels[i].Present = true;
+            }
+        }
+        if (textureFile != null)
+        {
+            File.Copy(textureFile, Path.Combine(c.Dir, "car.bmp"), true);
+            d.TPage = Rel("car.bmp");
+        }
+
+        // Slots nothing uses any more
+        var used = new HashSet<int> { d.BodyModel, d.Aerial.SecModel, d.Aerial.TopModel };
+        foreach (var w in d.Wheels) used.Add(w.Model);
+        for (int i = 0; i < 19; i++) if (!used.Contains(i)) d.Models[i] = "NONE";
+
+        FitToModels(c);
+        PlaceWheels(c);
+        ComputeInertia(c);
+        if (LoadModel(c, bodySlot) is { } b)
+        {
+            var dir = d.Aerial.Direction.LengthSquared() < 1e-6f ? -Vector3.UnitY : d.Aerial.Direction;
+            d.Aerial.Direction = dir;
+            d.Aerial.Offset = new Vector3(b.Max.X * 0.7f, b.Min.Y * 0.6f, b.Min.Z * 0.75f);
+            if (MakeHull(b, Vector3.Zero) is { } h)
+            {
+                h.Save(Path.Combine(c.Dir, "hull.hul"));
+                d.Coll = Rel("hull.hul");
+            }
+        }
+        d.TShadow = "";
+        d.HasShadowIndex = false;
+        FitShadowTable(c);
+        d.TCarBox = "";
     }
 
     public static string SameBodyAsStock(Car c)

@@ -21,9 +21,9 @@ public sealed class CarDynamics
 /// <summary>How the game assembles a car from its parameters</summary>
 public static class CarPose
 {
-    // aerial.h: 5 sections are drawn, between points interpolated over the 3 of the physics.
-    // Each physics section is Length long, so the 4 lower ones span 2 x Length and the top comes after them
-    public const int AerialDrawn = 5;
+    // aerial.h has 5 points along the aerial, 1/4 apart. In the game (compared with RVGL itself) Length is the
+    // whole aerial from base to tip: 3 sections, then the top model as the last quarter
+    public const int AerialPoints = 5;
 
     // Y goes where yAxis says, X stays as sideways as it can
     static Matrix4x4 Basis(Vector3 yAxis, Vector3 origin, float scaleY = 1)
@@ -117,33 +117,34 @@ public static class CarPose
         if (a.SecModel >= 0 || a.TopModel >= 0)
         {
             var dir = a.Direction.LengthSquared() < 1e-6f ? -Vector3.UnitY : Vector3.Normalize(a.Direction);
-            float part = (float)a.Length * 2f / (AerialDrawn - 1);
+            float part = (float)a.Length / (AerialPoints - 1);
             var bend = dyn?.AerialBend ?? Vector3.Zero;
             Vector3 Node(int n)
             {
-                float t = n / (float)(AerialDrawn - 1);
+                float t = n / (float)(AerialPoints - 1);
                 return a.Offset + dir * (part * n) + bend * (t * t);
             }
-            // Models are 1 unit long, from their origin towards -Y
-            for (int n = 0; n < AerialDrawn; n++)
+            // Models are 1 unit long: y = 0 is their far end, y = -1 the end nearer the base.
+            // On the top model that puts the red box at the very tip, as in the game
+            for (int n = 0; n < AerialPoints - 1; n++)
             {
-                bool top = n == AerialDrawn - 1;
+                bool top = n == AerialPoints - 2;
                 var from = Node(n);
-                var to = top ? from + (Node(n) - Node(n - 1)) : Node(n + 1);
-                var along = from - to;
+                var to = Node(n + 1);
+                var along = to - from;
                 Add(top ? PartKind.AerialTop : PartKind.AerialSection, n, top ? a.TopModel : a.SecModel,
-                    Basis(along, from, along.Length()), 1);
+                    Basis(along, to, along.Length()), 1);
             }
         }
         return r;
     }
 
-    /// <summary>Tip of the aerial's section chain, where the top model starts</summary>
+    /// <summary>Tip of the aerial</summary>
     public static Vector3 AerialTip(CarData d)
     {
         var a = d.Aerial;
         var dir = a.Direction.LengthSquared() < 1e-6f ? -Vector3.UnitY : Vector3.Normalize(a.Direction);
-        return a.Offset + dir * ((float)a.Length * 2f);
+        return a.Offset + dir * (float)a.Length;
     }
 
     /// <summary>Where the wheels meet the floor (Y goes down)</summary>

@@ -60,6 +60,13 @@ void ReadPass()
             var tmp = Path.GetTempFileName();
             p.Save(tmp);
             Check(File.ReadAllBytes(tmp).SequenceEqual(bytes), f + ": model round trip");
+            if (p.OtherLods != null)
+            {
+                var lods = p.OtherLods;
+                int seen = 0;
+                p.ForOtherLods(_ => seen++);
+                Check(seen > 0 && p.OtherLods.SequenceEqual(lods), f + ": LODs read and written back the same");
+            }
             File.Delete(tmp);
         }
         else if (x == ".hul")

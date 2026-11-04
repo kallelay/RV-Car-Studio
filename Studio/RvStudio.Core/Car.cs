@@ -154,9 +154,13 @@ public sealed class Car
         if (!Directory.Exists(from)) throw new DirectoryNotFoundException(from);
         if (Directory.Exists(dest)) throw new IOException("There already is a folder " + newFolder);
         Directory.CreateDirectory(dest);
-        foreach (var f in Directory.GetFiles(from))
-            if (!f.EndsWith(".bak", StringComparison.OrdinalIgnoreCase))
-                File.Copy(f, Path.Combine(dest, Path.GetFileName(f)));
+        foreach (var f in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+        {
+            if (f.EndsWith(".bak", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
+            var to = Path.Combine(dest, Path.GetRelativePath(from, f));
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(f, to);
+        }
 
         var c = new Car(game, newFolder);
         c.Repoint(templateFolder, newFolder);
@@ -164,6 +168,66 @@ public sealed class Car
         c.CurrentText();
         File.WriteAllText(c.ParamPath, c.File_.Text, ParamFile.FileEncoding);
         return c;
+    }
+
+    /// <summary>
+    /// A copy of this car in a new folder, with the changes made so far. The first version stays as it is on disk.
+    /// </summary>
+    public Car Fork(string newFolder, string newName)
+    {
+        var c = CreateFrom(Game, Folder, newFolder, newName);
+        var d = Data.Clone();
+        var old = c.Data;
+        c.Data = d;
+        c.Repoint(Folder, newFolder);
+        d.Name = newName;
+        c.File_.Apply(old.Emit(), d.Emit());
+        c.baseEntries = d.Emit();
+        File.WriteAllText(c.ParamPath, c.File_.Text, ParamFile.FileEncoding);
+        return c;
+    }
+
+    static string Norm(string p) => p.Trim().Replace('/', '\\');
+
+    /// <summary>Is this file outside this car's own folder?</summary>
+    public bool IsForeign(string rel) =>
+        !Norm(rel).StartsWith("cars\\" + Folder + "\\", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Other cars whose parameters point to this file</summary>
+    public List<string> OtherUsers(string rel)
+    {
+        var r = new List<string>();
+        var want = Norm(rel);
+        foreach (var dir in Directory.GetDirectories(Game.CarsDir))
+        {
+            var name = Path.GetFileName(dir);
+            if (name.Equals(Folder, StringComparison.OrdinalIgnoreCase)) continue;
+            var p = Path.Combine(dir, "parameters.txt");
+            if (!File.Exists(p)) continue;
+            var f = ParamFile.Load(p);
+            bool uses = f.Main.Str("COLL").Trim().Replace('/', '\\').Equals(want, StringComparison.OrdinalIgnoreCase);
+            for (int i = 0; !uses && i < 19; i++)
+                uses = f.Main.Str("MODEL " + i).Trim().Replace('/', '\\').Equals(want, StringComparison.OrdinalIgnoreCase);
+            if (uses) r.Add(name);
+        }
+        return r;
+    }
+
+    /// <summary>Copy a file into this car's folder and give its new path</summary>
+    public string CopyToOwn(string rel)
+    {
+        var src = Game.Find(rel) ?? throw new FileNotFoundException(rel);
+        var name = Path.GetFileName(src);
+        var dest = Path.Combine(Dir, name);
+        if (File.Exists(dest) && !File.ReadAllBytes(dest).SequenceEqual(File.ReadAllBytes(src)))
+        {
+            var stem = Path.GetFileNameWithoutExtension(name);
+            var ext = Path.GetExtension(name);
+            int n = 1;
+            do dest = Path.Combine(Dir, stem + "_" + n++ + ext); while (File.Exists(dest));
+        }
+        if (!File.Exists(dest)) File.Copy(src, dest);
+        return "cars\\" + Folder + "\\" + Path.GetFileName(dest);
     }
 
     /// <summary>Skins are found by name: car.bmp gives caror.bmp, car1.bmp, car-bleh.bmp (RVGL)</summary>

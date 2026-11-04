@@ -4,7 +4,7 @@ using SkiaSharp;
 
 namespace RvStudio.App;
 
-public enum SelKind { None, Body, Wheel, Spring, Axle, Pin, Spinner, AerialBase, AerialTip, CoM, Weapon1, Weapon2, HoodCam, RearCam }
+public enum SelKind { None, Body, Wheel, Spring, Axle, Pin, Spinner, AerialBase, AerialTip, CoM, Weapon1, Weapon2, HoodCam, RearCam, HullPart, HullSphere }
 
 public readonly record struct Selection(SelKind Kind, int Index = 0)
 {
@@ -24,13 +24,19 @@ public readonly record struct Selection(SelKind Kind, int Index = 0)
         SelKind.Weapon2 => "Weapon: water bomb",
         SelKind.HoodCam => "Hood camera",
         SelKind.RearCam => "Rear camera",
+        SelKind.HullPart => "Hull part " + (Index + 1),
+        SelKind.HullSphere => "Hull sphere " + (Index + 1),
         _ => ""
     };
     public bool HasFourCorners => Kind is SelKind.Wheel or SelKind.Spring or SelKind.Axle or SelKind.Pin;
+    public bool IsHull => Kind is SelKind.HullPart or SelKind.HullSphere;
 }
 
 /// <summary>How a move on one wheel or suspension part carries to the others</summary>
 public enum MoveMode { Single, Mirror, FrontBack, All }
+
+/// <summary>What the handles on the selected part do</summary>
+public enum GizmoTool { Move, Rotate, Scale }
 
 /// <summary>The open car and everything that can be done to it. The window and the 3D view only look at this</summary>
 public sealed class Doc
@@ -43,8 +49,132 @@ public sealed class Doc
     public MoveMode MoveMode = MoveMode.Mirror;
     public bool MoveLinked = true;  // spring and axle mount follow their wheel
     public float Snap = 0.5f;
+    public GizmoTool Tool = GizmoTool.Move;
 
-    readonly Stack<(string Label, CarData Data)> undo = new(), redo = new();
+    sealed record UndoState(string Label, CarData Data, List<(Prm Model, PrmVertex[] Verts, byte[]? Lods)> Models, Hull? Hull, bool HullDirty);
+
+    /// <summary>The collision hull, as it will be saved</summary>
+    public Hull? Hull;
+    public bool HullDirty;
+    public bool HullFollowsBody = true;
+
+    /// <summary>Editing a stock car: ask once whether a copy is wanted</summary>
+    public bool StockAnswered;
+    public event Action? StockTouched;
+    public bool IsStockCar => Car != null && GameFolder.IsStock(Car.Folder);
+
+    readonly HashSet<string> sharedOk = new(StringComparer.OrdinalIgnoreCase);
+
+    // Copies of the car's current hull are small, so undo keeps them whole
+    Hull? HullCopy() => Hull?.Clone();
+
+    void NoteEdit()
+    {
+        if (IsStockCar && !StockAnswered)
+        {
+            StockAnswered = true;
+            StockTouched?.Invoke();
+        }
+    }
+
+    public void LoadHull()
+    {
+        Hull = null;
+        HullDirty = false;
+        if (Car == null) return;
+        try
+        {
+            if (Car.Game.Find(D!.Coll) is { } f && new FileInfo(f).Length > 0) Hull = Hull.Load(f);
+        }
+        catch (Exception) { }
+    }
+
+    /// <summary>What's wrong with changing this file: who else needs it. Null when it's only this car's</summary>
+    public string? SharedProblem(string? rel)
+    {
+        if (Car == null || string.IsNullOrWhiteSpace(rel) || rel.Trim().Equals("NONE", StringComparison.OrdinalIgnoreCase) || sharedOk.Contains(rel)) return null;
+        var users = Car.OtherUsers(rel);
+        if (users.Count > 0) return rel + " is also used by " + string.Join(", ", users.Take(6)) + (users.Count > 6 ? " and others" : "");
+        if (Car.IsForeign(rel)) return rel + " is outside this car's folder";
+        return null;
+    }
+
+    /// <summary>The files this edit would change that other cars may need</summary>
+    public List<(string Rel, string Why)> SharedFiles(Selection s)
+    {
+        var r = new List<(string, string)>();
+        if (D is not { } d) return r;
+        void Look(string? rel)
+        {
+            if (SharedProblem(rel) is { } why && !r.Any(x => x.Item1.Equals(rel, StringComparison.OrdinalIgnoreCase))) r.Add((rel!, why));
+        }
+        if (s.IsHull || (s.Kind == SelKind.Body && HullFollowsBody && Hull != null)) Look(d.Coll);
+        if (Tool != GizmoTool.Move && !s.IsHull)
+            foreach (var (i, _, _) in s.HasFourCorners ? Corners2(s.Index) : new[] { (s.Index, false, false) })
+            {
+                int slot = SlotOf(s, i);
+                if (slot is >= 0 and < 19) Look(d.Models[slot]);
+            }
+        return r;
+    }
+
+    public void AllowShared(string rel) => sharedOk.Add(rel);
+
+    /// <summary>Copy the file into this car's folder and use the copy</summary>
+    public void MakeOwn(string rel)
+    {
+        if (Car is not { } c) return;
+        var own = c.CopyToOwn(rel);
+        Edit("Copy " + Path.GetFileName(rel), () =>
+        {
+            for (int i = 0; i < 19; i++)
+                if (c.Data.Models[i].Trim().Equals(rel.Trim(), StringComparison.OrdinalIgnoreCase)) c.Data.Models[i] = own;
+            if (c.Data.Coll.Trim().Equals(rel.Trim(), StringComparison.OrdinalIgnoreCase)) c.Data.Coll = own;
+        });
+        EndGesture();
+        if (Models.Remove(rel, out var m) && m != null)
+        {
+            m.FilePath = c.Game.Find(own);
+            Models[own] = m;
+        }
+    }
+
+    /// <summary>Carry on in a copy of the car, with everything changed so far. The original stays as it is on disk</summary>
+    public void ForkCar(string folder, string name)
+    {
+        if (Car is not { } c) return;
+        var old = c.Data.Clone();
+        var dirty = DirtyModels.ToList();
+        var hull = HullDirty ? Hull : null;
+        var sel = Sel;
+        var fork = c.Fork(folder, name);
+        // Files changed in memory go to the copy's files, the original's aren't touched
+        foreach (var m in dirty)
+        {
+            var rel = old.Models.FirstOrDefault(r => string.Equals(c.Game.Find(r), m.FilePath, StringComparison.OrdinalIgnoreCase));
+            if (rel == null) continue;
+            var target = rel;
+            if (fork.IsForeign(rel) && c.IsForeign(rel))
+            {
+                target = fork.CopyToOwn(rel);
+                for (int i = 0; i < 19; i++) if (string.Equals(fork.Data.Models[i], rel, StringComparison.OrdinalIgnoreCase)) fork.Data.Models[i] = target;
+            }
+            else target = "cars\\" + folder + "\\" + Path.GetRelativePath(c.Dir, m.FilePath!).Replace('/', '\\');
+            if (fork.Game.Find(target) is { } file) m.Save(file);
+        }
+        if (hull != null)
+        {
+            var rel = fork.Data.Coll;
+            if (fork.IsForeign(rel)) { rel = "cars\\" + folder + "\\hull.hul"; fork.Data.Coll = rel; }
+            hull.Save(Path.Combine(fork.Game.Root, rel.Replace('\\', Path.DirectorySeparatorChar)));
+        }
+        fork.Save();
+        if (File.Exists(fork.ParamPath + ".bak")) File.Delete(fork.ParamPath + ".bak");
+        Open(fork.Game, folder);
+        Select(sel);
+    }
+
+    readonly Stack<UndoState> undo = new(), redo = new();
     string? openLabel;
     DateTime openTime;
 
@@ -53,6 +183,8 @@ public sealed class Doc
     public int ModelVersion;
     public int TextureVersion;
     public string? SkinOverride;  // preview of another skin
+    public byte[]? PaintPreview;  // the texture with the Paint tab's sliders on it
+    public int PaintW, PaintH, PaintVersion;
 
     public CarSim? Sim;
     public readonly CarDynamics Dyn = new();
@@ -61,6 +193,9 @@ public sealed class Doc
     public event Action? Changed;       // values changed: redraw, refresh
     public event Action? CarOpened;
     public event Action? SelectionChanged;
+    public event Action? PartsChanged;  // a part came or went
+
+    public readonly HashSet<Selection> Hidden = new();  // only in the view, nothing to do with the file
 
     public static string WheelName(int i) => i switch { 0 => "front left", 1 => "front right", 2 => "back left", _ => "back right" };
 
@@ -71,8 +206,13 @@ public sealed class Doc
         ReloadModels();
         undo.Clear(); redo.Clear();
         Sel = new Selection(SelKind.Body);
+        Hidden.Clear();
+        sharedOk.Clear();
+        StockAnswered = false;
+        LoadHull();
         StopSim();
         SkinOverride = null;
+        PaintPreview = null;
         CarOpened?.Invoke();
         SelectionChanged?.Invoke();
         Changed?.Invoke();
@@ -114,43 +254,56 @@ public sealed class Doc
 
     public bool CanUndo => undo.Count > 0;
     public bool CanRedo => redo.Count > 0;
-    public bool Modified => (Car?.Modified ?? false) || DirtyModels.Count > 0;
+    public bool Modified => (Car?.Modified ?? false) || DirtyModels.Count > 0 || HullDirty;
 
     /// <summary>A change. Changes with the same label close in time undo together</summary>
     public void Edit(string label, Action change)
     {
         if (Car == null) return;
         var now = DateTime.UtcNow;
-        if (label != openLabel || (now - openTime).TotalSeconds > 1.5)
+        // A drag is one step however long it takes. Typing joins up while it goes on
+        if (label != openLabel || (!InGesture && (now - openTime).TotalSeconds > 1.5))
         {
-            undo.Push((label, Car.Data.Clone()));
+            undo.Push(new UndoState(label, Car.Data.Clone(), new(), HullCopy(), HullDirty));
             redo.Clear();
+            NoteEdit();
         }
         openLabel = label; openTime = now;
         change();
         Changed?.Invoke();
     }
-    public void EndGesture() => openLabel = null;
+    public bool InGesture;
+    public void EndGesture() { openLabel = null; InGesture = false; }
 
     public void Undo()
     {
         if (Car == null || undo.Count == 0) return;
-        var (l, d) = undo.Pop();
-        redo.Push((l, Car.Data));
-        Car.Data = d;
+        Step(undo, redo);
+    }
+
+    void Step(Stack<UndoState> from, Stack<UndoState> to)
+    {
+        var s = from.Pop();
+        to.Push(new UndoState(s.Label, Car!.Data, s.Models.Select(m => (m.Model, m.Model.Verts, m.Model.OtherLods)).ToList(), HullCopy(), HullDirty));
+        Car.Data = s.Data;
+        Hull = s.Hull;
+        HullDirty = s.HullDirty;
+        foreach (var (m, v, l) in s.Models)
+        {
+            m.Verts = v;
+            m.OtherLods = l;
+            m.ComputeBounds();
+        }
+        if (s.Models.Count > 0) ModelVersion++;
         openLabel = null;
+        PartsChanged?.Invoke();
         Changed?.Invoke();
         SelectionChanged?.Invoke();
     }
     public void Redo()
     {
         if (Car == null || redo.Count == 0) return;
-        var (l, d) = redo.Pop();
-        undo.Push((l, Car.Data));
-        Car.Data = d;
-        openLabel = null;
-        Changed?.Invoke();
-        SelectionChanged?.Invoke();
+        Step(redo, undo);
     }
 
     public void Touch() => Changed?.Invoke();
@@ -166,7 +319,81 @@ public sealed class Doc
                 m.Save(m.FilePath);
             }
         DirtyModels.Clear();
+        if (HullDirty && Hull != null)
+        {
+            var path = Car.Game.Find(Car.Data.Coll);
+            if (path == null)
+            {
+                Car.Data.Coll = "cars\\" + Car.Folder + "\\hull.hul";
+                path = Path.Combine(Car.Dir, "hull.hul");
+                Car.Save();
+            }
+            Files.Backup(path);
+            Hull.Save(path);
+        }
+        HullDirty = false;
         Changed?.Invoke();
+    }
+
+    // --------------------------- Collision hull ---------------------------
+
+    void HullChange(Action<Hull> change)
+    {
+        if (Hull == null) return;
+        change(Hull);
+        HullDirty = true;
+    }
+
+    /// <summary>Hull from the body, kept in memory until Save</summary>
+    public bool RebuildHull()
+    {
+        if (D is not { } d || Model(d.BodyModel) is not { } body) return false;
+        var h = CarTools.MakeHull(body, d.BodyOffset);
+        if (h == null) return false;
+        Edit("Make hull", () =>
+        {
+            Hull = h;
+            HullDirty = true;
+        });
+        EndGesture();
+        PartsChanged?.Invoke();
+        return true;
+    }
+
+    public void AddSphere(Vector3 pos, float radius)
+    {
+        Edit("Add sphere", () => HullChange(h => h.Spheres.Add((pos, radius))));
+        EndGesture();
+        PartsChanged?.Invoke();
+        Select(new Selection(SelKind.HullSphere, Hull!.Spheres.Count - 1));
+    }
+
+    public void RemoveHullItem(Selection s)
+    {
+        Edit("Remove " + s.Label, () => HullChange(h =>
+        {
+            if (s.Kind == SelKind.HullSphere && s.Index < h.Spheres.Count) h.Spheres.RemoveAt(s.Index);
+            if (s.Kind == SelKind.HullPart && s.Index < h.Convex.Count) h.Convex.RemoveAt(s.Index);
+        }));
+        EndGesture();
+        Sel = new Selection(SelKind.None);
+        PartsChanged?.Invoke();
+        SelectionChanged?.Invoke();
+        Changed?.Invoke();
+    }
+
+    public void SetSphere(int i, Vector3 pos, float r)
+    {
+        Edit("Sphere " + (i + 1), () => HullChange(h => { if (i < h.Spheres.Count) h.Spheres[i] = (pos, r); }));
+    }
+
+    // The sphere mirroring this one, if there is one
+    int MirrorSphere(Hull h, int i)
+    {
+        var want = h.Spheres[i].Pos * new Vector3(-1, 1, 1);
+        for (int k = 0; k < h.Spheres.Count; k++)
+            if (k != i && (h.Spheres[k].Pos - want).Length() < 2.5f) return k;
+        return -1;
     }
 
     // --------------------------- Moving ---------------------------
@@ -189,6 +416,8 @@ public sealed class Doc
             SelKind.Weapon2 => d.Weapon2,
             SelKind.HoodCam => d.Camera?.HoodOffset,
             SelKind.RearCam => d.Camera?.RearOffset,
+            SelKind.HullPart => Hull != null && s.Index < Hull.Convex.Count ? Hull.Convex[s.Index].Offset : null,
+            SelKind.HullSphere => Hull != null && s.Index < Hull.Spheres.Count ? Hull.Spheres[s.Index].Pos : null,
             _ => null
         };
     }
@@ -223,7 +452,21 @@ public sealed class Doc
         {
             switch (s.Kind)
             {
-                case SelKind.Body: d.BodyOffset += delta; break;
+                case SelKind.Body:
+                    d.BodyOffset += delta;
+                    if (HullFollowsBody) HullChange(h => h.Apply(Matrix4x4.CreateTranslation(delta)));
+                    break;
+                case SelKind.HullPart:
+                    HullChange(h => h.Convex[s.Index].Apply(Matrix4x4.CreateTranslation(delta)));
+                    break;
+                case SelKind.HullSphere:
+                    HullChange(h =>
+                    {
+                        int other = MoveMode is MoveMode.Mirror or MoveMode.All ? MirrorSphere(h, s.Index) : -1;
+                        h.Spheres[s.Index] = (h.Spheres[s.Index].Pos + delta, h.Spheres[s.Index].Radius);
+                        if (other >= 0) h.Spheres[other] = (h.Spheres[other].Pos + delta * new Vector3(-1, 1, 1), h.Spheres[other].Radius);
+                    });
+                    break;
                 case SelKind.Wheel:
                     foreach (var (i, map) in Corners(s.Index))
                     {
@@ -251,7 +494,7 @@ public sealed class Doc
                     if (v.LengthSquared() > 1)
                     {
                         a.Direction = Vector3.Normalize(v);
-                        a.Length = v.Length() / 2;
+                        a.Length = v.Length();
                     }
                     break;
                 case SelKind.CoM: d.CoM += delta; break;
@@ -260,6 +503,332 @@ public sealed class Doc
                 case SelKind.HoodCam: d.Camera ??= new CameraData(); d.Camera.HoodOffset += delta; break;
                 case SelKind.RearCam: d.Camera ??= new CameraData(); d.Camera.RearOffset += delta; break;
             }
+        });
+    }
+
+    // --------------------------- Adding and removing parts ---------------------------
+
+    public bool HasModel(Selection s) => D is { } d && s.Kind switch
+    {
+        SelKind.Body => d.BodyModel >= 0,
+        SelKind.Wheel => d.Wheels[s.Index].Present && d.Wheels[s.Index].Model >= 0,
+        SelKind.Spring => d.Springs[s.Index].Model >= 0,
+        SelKind.Axle => d.Axles[s.Index].Model >= 0,
+        SelKind.Pin => d.Pins[s.Index].Model >= 0,
+        SelKind.Spinner => d.Spinner.Model >= 0,
+        SelKind.AerialBase => d.Aerial.SecModel >= 0,
+        SelKind.AerialTip => d.Aerial.TopModel >= 0,
+        _ => false
+    };
+
+    public void ToggleHidden(Selection s)
+    {
+        if (!Hidden.Remove(s)) Hidden.Add(s);
+        Changed?.Invoke();
+    }
+
+    IEnumerable<int> UsedSlots(CarData d)
+    {
+        yield return d.BodyModel;
+        foreach (var w in d.Wheels) yield return w.Model;
+        foreach (var w in d.Springs) yield return w.Model;
+        foreach (var w in d.Axles) yield return w.Model;
+        foreach (var w in d.Pins) yield return w.Model;
+        yield return d.Spinner.Model;
+        yield return d.Aerial.SecModel;
+        yield return d.Aerial.TopModel;
+    }
+
+    /// <summary>The slot holding this file, or a free one</summary>
+    int SlotFor(CarData d, string rel)
+    {
+        for (int i = 0; i < 19; i++) if (d.Models[i].Equals(rel, StringComparison.OrdinalIgnoreCase)) return i;
+        var used = UsedSlots(d).ToHashSet();
+        for (int i = 0; i < 19; i++)
+            if (!used.Contains(i) && d.Models[i].Trim().Equals("NONE", StringComparison.OrdinalIgnoreCase)) return i;
+        for (int i = 0; i < 19; i++) if (!used.Contains(i)) return i;
+        throw new InvalidOperationException("All 19 model slots are in use");
+    }
+
+    void FreeUnusedSlots(CarData d)
+    {
+        var used = UsedSlots(d).ToHashSet();
+        for (int i = 0; i < 19; i++) if (!used.Contains(i)) d.Models[i] = "NONE";
+    }
+
+    /// <summary>The file as the game wants it: from the Re-Volt folder. A file from elsewhere is copied into the car's folder</summary>
+    public string BringIn(string file)
+    {
+        var game = Car!.Game.Root;
+        var full = Path.GetFullPath(file);
+        if (full.StartsWith(game + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            return Path.GetRelativePath(game, full).Replace('/', '\\');
+        var dest = Path.Combine(Car.Dir, Path.GetFileName(file));
+        if (!File.Exists(dest)) File.Copy(file, dest);
+        return "cars\\" + Car.Folder + "\\" + Path.GetFileName(file);
+    }
+
+    /// <summary>Give a part a model. With nothing there yet it gets sensible values to start from. Follows the corner mode</summary>
+    public void SetPartModel(Selection s, string rel)
+    {
+        if (D is not { } d) return;
+        Edit("Model of " + s.Label, () =>
+        {
+            int slot = SlotFor(d, rel);
+            d.Models[slot] = rel;
+            Models.Remove(rel);
+            var m = Model(slot);
+            foreach (var (i, _, _) in s.HasFourCorners ? Corners2(s.Index) : new[] { (s.Index, false, false) })
+                switch (s.Kind)
+                {
+                    case SelKind.Body: d.BodyModel = slot; break;
+                    case SelKind.Wheel:
+                        d.Wheels[i].Model = slot;
+                        d.Wheels[i].Present = true;
+                        if (d.Wheels[i].Radius <= 0 && m != null) d.Wheels[i].Radius = Math.Round((m.Max.Y - m.Min.Y) / 2, 2);
+                        break;
+                    case SelKind.Spring:
+                        if (d.Springs[i].Model < 0 && d.Springs[i].Offset == Vector3.Zero)
+                            d.Springs[i].Offset = d.Wheels[i].Offset1 - new Vector3(d.Wheels[i].Offset1.X * 0.2f, 22, 0);
+                        d.Springs[i].Model = slot;
+                        if (m != null) d.Springs[i].Length = Math.Round(m.Max.Y - m.Min.Y, 2);
+                        break;
+                    case SelKind.Axle:
+                        if (d.Axles[i].Model < 0 && d.Axles[i].Offset == Vector3.Zero)
+                            d.Axles[i].Offset = d.Wheels[i].Offset1 * new Vector3(0.3f, 1, 1);
+                        d.Axles[i].Model = slot;
+                        if (m != null) d.Axles[i].Length = Math.Round(m.Max.Z - m.Min.Z, 2);
+                        break;
+                    case SelKind.Pin:
+                        d.Pins[i].Model = slot;
+                        if (d.Pins[i].Length == 0) d.Pins[i].Length = -1;
+                        break;
+                    case SelKind.Spinner:
+                        d.Spinner.Model = slot;
+                        if (d.Spinner.Axis == Vector3.Zero) d.Spinner.Axis = new Vector3(0, -1, 0);
+                        break;
+                    case SelKind.AerialBase: d.Aerial.SecModel = slot; break;
+                    case SelKind.AerialTip: d.Aerial.TopModel = slot; break;
+                }
+            FreeUnusedSlots(d);
+        });
+        EndGesture();
+        PartsChanged?.Invoke();
+    }
+
+    /// <summary>The stock aerial, on the back of the car</summary>
+    public void AddAerial()
+    {
+        if (D is not { } d) return;
+        Edit("Add aerial", () =>
+        {
+            int sec = SlotFor(d, "cars\\misc\\Aerial.m");
+            d.Models[sec] = "cars\\misc\\Aerial.m";
+            d.Aerial.SecModel = sec;
+            int top = SlotFor(d, "cars\\misc\\AerialT.m");
+            d.Models[top] = "cars\\misc\\AerialT.m";
+            d.Aerial.TopModel = top;
+            if (d.Aerial.Length <= 0) d.Aerial.Length = 17;
+            if (d.Aerial.Direction == Vector3.Zero) d.Aerial.Direction = new Vector3(0, -1, 0);
+            if (d.Aerial.Stiffness <= 0) d.Aerial.Stiffness = 2000;
+            if (d.Aerial.Damping <= 0) d.Aerial.Damping = 5.5;
+            if (d.Aerial.Offset == Vector3.Zero && Model(d.BodyModel) is { } b)
+                d.Aerial.Offset = new Vector3(b.Max.X * 0.7f, b.Min.Y * 0.6f, b.Min.Z * 0.75f) + d.BodyOffset;
+        });
+        EndGesture();
+        PartsChanged?.Invoke();
+    }
+
+    /// <summary>Take a part off the car. Follows the corner mode. Undo brings it back</summary>
+    public void RemovePart(Selection s)
+    {
+        if (D is not { } d) return;
+        Edit("Remove " + s.Label, () =>
+        {
+            foreach (var (i, _, _) in s.HasFourCorners ? Corners2(s.Index) : new[] { (s.Index, false, false) })
+                switch (s.Kind)
+                {
+                    case SelKind.Body: d.BodyModel = -1; break;
+                    case SelKind.Wheel: d.Wheels[i].Model = -1; d.Wheels[i].Present = false; break;
+                    case SelKind.Spring: d.Springs[i].Model = -1; break;
+                    case SelKind.Axle: d.Axles[i].Model = -1; break;
+                    case SelKind.Pin: d.Pins[i].Model = -1; break;
+                    case SelKind.Spinner: d.Spinner.Model = -1; break;
+                    case SelKind.AerialBase:
+                    case SelKind.AerialTip:
+                        d.Aerial.SecModel = -1;
+                        d.Aerial.TopModel = -1;
+                        break;
+                }
+            FreeUnusedSlots(d);
+        });
+        EndGesture();
+        Sel = new Selection(SelKind.None);
+        PartsChanged?.Invoke();
+        SelectionChanged?.Invoke();
+        Changed?.Invoke();
+    }
+
+    // --------------------------- Rotating and scaling ---------------------------
+
+    /// <summary>Can this be rotated or scaled? Points like the centre of mass only move</summary>
+    public bool CanTransform(Selection s) => s.Kind is SelKind.Body or SelKind.Wheel or SelKind.Spring or SelKind.Axle
+        or SelKind.Pin or SelKind.Spinner or SelKind.AerialBase or SelKind.AerialTip or SelKind.HullPart
+        || (s.Kind == SelKind.HullSphere && Tool == GizmoTool.Scale);
+
+    int SlotOf(Selection s, int i) => s.Kind switch
+    {
+        SelKind.Body => D!.BodyModel,
+        SelKind.Wheel => D!.Wheels[i].Model,
+        SelKind.Spring => D!.Springs[i].Model,
+        SelKind.Axle => D!.Axles[i].Model,
+        SelKind.Pin => D!.Pins[i].Model,
+        SelKind.Spinner => D!.Spinner.Model,
+        _ => -1
+    };
+
+    // A mirrored corner turns the other way around every axis but the mirror's own
+    static Vector3 MirrorAxis(Vector3 n, bool x, bool z)
+    {
+        if (x) n = new Vector3(n.X, -n.Y, -n.Z);
+        if (z) n = new Vector3(-n.X, -n.Y, n.Z);
+        return n;
+    }
+
+    IEnumerable<(int Index, bool X, bool Z)> Corners2(int i)
+    {
+        yield return (i, false, false);
+        if (MoveMode is MoveMode.Mirror or MoveMode.All) yield return (i ^ 1, true, false);
+        if (MoveMode is MoveMode.FrontBack or MoveMode.All) yield return (i ^ 2, false, true);
+        if (MoveMode == MoveMode.All) yield return (i ^ 3, true, true);
+    }
+
+    // Vertices are shared by the parts that use a model: keep what undo needs, once per gesture
+    void Remember(string label, Prm m)
+    {
+        var top = undo.Count > 0 ? undo.Peek() : null;
+        if (top == null || top.Label != label) return;
+        if (!top.Models.Any(x => x.Model == m)) top.Models.Add((m, m.Verts, m.OtherLods));
+    }
+
+    /// <summary>Turn the model of what's selected around its origin. Stays in memory until Save</summary>
+    public void Rotate(Selection s, Vector3 axis, float angle)
+    {
+        if (D is not { } d || !CanTransform(s)) return;
+        var label = "Rotate " + s.Label;
+        Edit(label, () =>
+        {
+            if (s.Kind is SelKind.AerialBase or SelKind.AerialTip)
+            {
+                var v = d.Aerial.Direction.LengthSquared() < 1e-6f ? -Vector3.UnitY : d.Aerial.Direction;
+                d.Aerial.Direction = Vector3.Normalize(Vector3.Transform(v, Matrix4x4.CreateFromAxisAngle(axis, angle)));
+                return;
+            }
+            if (s.Kind == SelKind.HullPart)
+            {
+                HullChange(h =>
+                {
+                    var c = h.Convex[s.Index].Offset;
+                    h.Convex[s.Index].Apply(Matrix4x4.CreateTranslation(-c) * Matrix4x4.CreateFromAxisAngle(axis, angle) * Matrix4x4.CreateTranslation(c));
+                });
+                return;
+            }
+            if (s.Kind == SelKind.Body && HullFollowsBody)
+                HullChange(h => h.Apply(Matrix4x4.CreateTranslation(-d.BodyOffset) * Matrix4x4.CreateFromAxisAngle(axis, angle) * Matrix4x4.CreateTranslation(d.BodyOffset)));
+            var done = new HashSet<Prm>();
+            foreach (var (i, mx, mz) in s.HasFourCorners ? Corners2(s.Index) : new[] { (s.Index, false, false) })
+                if (Model(SlotOf(s, i)) is { } m && done.Add(m))
+                {
+                    Remember(label, m);
+                    var r = Matrix4x4.CreateFromAxisAngle(MirrorAxis(axis, mx, mz), angle);
+                    void Turn(Prm x)
+                    {
+                        var nv = (PrmVertex[])x.Verts.Clone();
+                        for (int k = 0; k < nv.Length; k++)
+                        {
+                            nv[k].Pos = Vector3.Transform(nv[k].Pos, r);
+                            nv[k].Normal = Vector3.TransformNormal(nv[k].Normal, r);
+                        }
+                        x.Verts = nv;
+                    }
+                    Turn(m);
+                    m.ForOtherLods(Turn);
+                    m.ComputeBounds();
+                    DirtyModels.Add(m);
+                }
+            if (s.Kind == SelKind.Spinner && d.Spinner.Axis.LengthSquared() > 1e-6f)
+                d.Spinner.Axis = Vector3.Transform(d.Spinner.Axis, Matrix4x4.CreateFromAxisAngle(axis, angle));
+            ModelVersion++;
+        });
+    }
+
+    /// <summary>Resize the model of what's selected from its origin, and the values that go with its size</summary>
+    public void Scale(Selection s, Vector3 f)
+    {
+        if (D is not { } d || !CanTransform(s) || f.X <= 0 || f.Y <= 0 || f.Z <= 0) return;
+        var label = "Scale " + s.Label;
+        Edit(label, () =>
+        {
+            if (s.Kind is SelKind.AerialBase or SelKind.AerialTip)
+            {
+                d.Aerial.Length *= f.Y;
+                return;
+            }
+            if (s.Kind == SelKind.HullPart)
+            {
+                HullChange(h =>
+                {
+                    var c = h.Convex[s.Index].Offset;
+                    h.Convex[s.Index].Apply(Matrix4x4.CreateTranslation(-c) * Matrix4x4.CreateScale(f) * Matrix4x4.CreateTranslation(c));
+                });
+                return;
+            }
+            if (s.Kind == SelKind.HullSphere)
+            {
+                HullChange(h =>
+                {
+                    float k = (f.X + f.Y + f.Z - 2);
+                    int other = MoveMode is MoveMode.Mirror or MoveMode.All ? MirrorSphere(h, s.Index) : -1;
+                    h.Spheres[s.Index] = (h.Spheres[s.Index].Pos, h.Spheres[s.Index].Radius * k);
+                    if (other >= 0) h.Spheres[other] = (h.Spheres[other].Pos, h.Spheres[other].Radius * k);
+                });
+                return;
+            }
+            if (s.Kind == SelKind.Body && HullFollowsBody)
+                HullChange(h => h.Apply(Matrix4x4.CreateTranslation(-d.BodyOffset) * Matrix4x4.CreateScale(f) * Matrix4x4.CreateTranslation(d.BodyOffset)));
+            var done = new HashSet<Prm>();
+            foreach (var (i, _, _) in s.HasFourCorners ? Corners2(s.Index) : new[] { (s.Index, false, false) })
+            {
+                if (Model(SlotOf(s, i)) is { } m && done.Add(m))
+                {
+                    Remember(label, m);
+                    void Resize(Prm x)
+                    {
+                        var nv = (PrmVertex[])x.Verts.Clone();
+                        for (int k = 0; k < nv.Length; k++)
+                        {
+                            nv[k].Pos *= f;
+                            var n = nv[k].Normal / f;
+                            nv[k].Normal = n.LengthSquared() > 1e-10f ? Vector3.Normalize(n) : nv[k].Normal;
+                        }
+                        x.Verts = nv;
+                    }
+                    Resize(m);
+                    m.ForOtherLods(Resize);
+                    m.ComputeBounds();
+                    DirtyModels.Add(m);
+                }
+                switch (s.Kind)
+                {
+                    case SelKind.Wheel:
+                        d.Wheels[i].Radius *= (f.Y + f.Z) / 2;
+                        d.Wheels[i].SkidWidth *= f.X;
+                        break;
+                    case SelKind.Spring: d.Springs[i].Length *= f.Y; break;
+                    case SelKind.Axle: d.Axles[i].Length *= f.Z; break;
+                }
+            }
+            ModelVersion++;
         });
     }
 

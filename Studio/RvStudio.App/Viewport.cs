@@ -56,16 +56,18 @@ sealed class Frame
     public (Vector3 A, Vector3 B, Vector3 C, Vector3 D, Vector4 Uv)? Shadow;
     public string? CarTexture, FxTexture, EnvTexture, ShadowTexture;
     public int TexVersion, ModelVersion;
+    public byte[]? Preview;
+    public int PreviewW, PreviewH, PreviewVersion;
     public System.Numerics.Vector3 Background = new(0.17f, 0.19f, 0.22f);
 }
 
 /// <summary>The 3D view, its camera and the mouse tools on it. Works in the game's coordinates: Y down, Z forward</summary>
-public sealed class Viewport : OpenGlControlBase
+public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitTest
 {
     readonly Doc doc;
     GL? gl;
     uint meshProg, lineProg, floorVao, floorVbo, overlayVao, overlayVbo;
-    int uMvp, uModel, uView, uTint, uMode, uEnvColor, lMvp;
+    int uMvp, uModel, uView, uTint, uMode, uEnvColor, lMvp, lOverride;
     bool es;
     readonly Dictionary<Prm, GpuMesh> meshes = new();
     readonly Dictionary<string, GpuTex> textures = new(StringComparer.OrdinalIgnoreCase);
@@ -84,9 +86,14 @@ public sealed class Viewport : OpenGlControlBase
     // What to show
     public ShadeMode Shade = ShadeMode.Textured;
     public bool ShowEnv = true, ShowWire, ShowHull, ShowShadow = true, ShowGrid = true, ShowMarkers = true, ShowTravel, Lit;
-    public Hull? HullData;
 
     public event Action<string>? Status;
+    public event Action? Picked;   // a click on the view chose something
+    public event Action<Selection>? NeedsPermission;  // this edit would change files other cars need
+    public int DrawnParts => Build(false).Items.Count;
+
+    // GL draws nothing Avalonia knows of, so without this the mouse goes right through the view
+    public bool HitTest(Point point) => true;
 
     public Viewport(Doc d)
     {
@@ -206,6 +213,7 @@ public sealed class Viewport : OpenGlControlBase
         var found = new Selection(SelKind.None);
         foreach (var part in CarPose.Build(d, null))
         {
+            if (doc.Hidden.Contains(SelOf(part))) continue;
             var m = doc.Model(part.Slot);
             if (m == null || !Matrix4x4.Invert(part.World, out var inv)) continue;
             var lo = Vector3.Transform(o, inv);
@@ -223,22 +231,24 @@ public sealed class Viewport : OpenGlControlBase
                     if (dist < best)
                     {
                         best = dist;
-                        found = part.Kind switch
-                        {
-                            PartKind.Body => new(SelKind.Body),
-                            PartKind.Wheel => new(SelKind.Wheel, part.Index),
-                            PartKind.Spring => new(SelKind.Spring, part.Index),
-                            PartKind.Axle => new(SelKind.Axle, part.Index),
-                            PartKind.Pin => new(SelKind.Pin, part.Index),
-                            PartKind.Spinner => new(SelKind.Spinner),
-                            PartKind.AerialTop => new(SelKind.AerialTip),
-                            _ => new(SelKind.AerialBase)
-                        };
+                        found = SelOf(part);
                     }
                 }
         }
         return found;
     }
+
+    static Selection SelOf(PartPose part) => part.Kind switch
+    {
+        PartKind.Body => new(SelKind.Body),
+        PartKind.Wheel => new(SelKind.Wheel, part.Index),
+        PartKind.Spring => new(SelKind.Spring, part.Index),
+        PartKind.Axle => new(SelKind.Axle, part.Index),
+        PartKind.Pin => new(SelKind.Pin, part.Index),
+        PartKind.Spinner => new(SelKind.Spinner),
+        PartKind.AerialTop => new(SelKind.AerialTip),
+        _ => new(SelKind.AerialBase)
+    };
 
     IEnumerable<(Selection, Vector3)> MarkerPoints()
     {
@@ -250,6 +260,11 @@ public sealed class Viewport : OpenGlControlBase
         {
             yield return (new(SelKind.HoodCam), d.Camera.HoodOffset);
             yield return (new(SelKind.RearCam), d.Camera.RearOffset);
+        }
+        if (ShowHull && doc.Hull is { } hull)
+        {
+            for (int i = 0; i < hull.Spheres.Count; i++) yield return (new(SelKind.HullSphere, i), hull.Spheres[i].Pos);
+            for (int i = 0; i < hull.Convex.Count; i++) yield return (new(SelKind.HullPart, i), hull.Convex[i].Offset);
         }
         if (d.Aerial.SecModel >= 0)
         {
@@ -265,17 +280,30 @@ public sealed class Viewport : OpenGlControlBase
 
     // --------------------------- Mouse ---------------------------
 
-    enum Drag { None, Orbit, Pan, Axis, Free }
+    enum Drag { None, Orbit, Pan, Axis, Free, Turn, Size }
     Drag drag;
     Point dragLast, dragStart;
     Vector3 dragAxis, accumulated;
     float dragPxPerUnit;
     Vec2 dragAxisScreen;
     bool movedOnce;
+    int dragIndex;
+    float turned, ringAngle;
+    public int LastHandle = -1;
+    public Point LastPress;
+    public string HandleDebug(Vector3 world) => $"press {LastPress} handle {LastHandle}; tip now at {ScreenOf(world)}, view {Bounds.Size}, dist {Distance}, yaw {Yaw}, pitch {Pitch}, sim {doc.Sim != null}, tool {doc.Tool}, sel {doc.Sel.Label}, scale {VisualRoot?.RenderScaling}";
 
     float HandleLength => Distance * 0.16f;
 
     Vector3[] GizmoAxes => new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
+
+    // Rings of the rotate tool: u x v is the axis, so going from u to v is a positive turn
+    static (Vector3 U, Vector3 V) RingAxes(int i) => i switch
+    {
+        0 => (Vector3.UnitY, Vector3.UnitZ),
+        1 => (Vector3.UnitZ, Vector3.UnitX),
+        _ => (Vector3.UnitX, Vector3.UnitY)
+    };
 
     int HitGizmo(Point pos)
     {
@@ -283,6 +311,30 @@ public sealed class Viewport : OpenGlControlBase
         var vp = UiViewProj();
         if (!Project(a, vp, out var s0)) return -1;
         var mouse = new Vec2((float)pos.X, (float)pos.Y);
+        if (doc.Tool != GizmoTool.Move && !doc.CanTransform(doc.Sel)) return -1;
+        if (doc.Tool == GizmoTool.Rotate)
+        {
+            int best = -1; float bestDist = 7;
+            for (int i = 0; i < 3; i++)
+            {
+                var (u, v) = RingAxes(i);
+                for (int k = 0; k < 48; k++)
+                {
+                    float t0 = k * MathF.Tau / 48, t1 = (k + 1) * MathF.Tau / 48;
+                    if (!Project(a + (u * MathF.Cos(t0) + v * MathF.Sin(t0)) * HandleLength, vp, out var p0)) continue;
+                    if (!Project(a + (u * MathF.Cos(t1) + v * MathF.Sin(t1)) * HandleLength, vp, out var p1)) continue;
+                    var ab = p1 - p0;
+                    var q = Math.Clamp(Vec2.Dot(mouse - p0, ab) / Math.Max(ab.LengthSquared(), 0.01f), 0, 1);
+                    var dist = (p0 + ab * q - mouse).Length();
+                    if (dist < bestDist)
+                    {
+                        bestDist = dist; best = i;
+                        ringAngle = t0;
+                    }
+                }
+            }
+            return best;
+        }
         if ((mouse - s0).Length() < 9) return 3;
         for (int i = 0; i < 3; i++)
         {
@@ -320,9 +372,50 @@ public sealed class Viewport : OpenGlControlBase
     {
         BeginGesture(pos);
         int g = HitGizmo(pos);
+        LastHandle = g;
+        LastPress = pos;
+        if (g < 0 && doc.Tool != GizmoTool.Move && doc.Anchor(doc.Sel) != null && !doc.CanTransform(doc.Sel))
+            Status?.Invoke(doc.Sel.Label + " is a point: it can only be moved");
+        if (g >= 0 && doc.SharedFiles(doc.Sel).Count > 0)
+        {
+            // Ask first, the handle is there again after the answer
+            NeedsPermission?.Invoke(doc.Sel);
+            return;
+        }
         if (g >= 0 && doc.Anchor(doc.Sel) is { } a)
         {
             accumulated = Vector3.Zero;
+            doc.EndGesture();
+            doc.InGesture = true;
+            dragIndex = g;
+            turned = 0;
+            if (doc.Tool == GizmoTool.Rotate)
+            {
+                drag = Drag.Turn;
+                var (u, v) = RingAxes(g);
+                dragAxis = GizmoAxes[g];
+                var at = a + (u * MathF.Cos(ringAngle) + v * MathF.Sin(ringAngle)) * HandleLength;
+                var tangent = -u * MathF.Sin(ringAngle) + v * MathF.Cos(ringAngle);
+                var vp0 = UiViewProj();
+                Project(at, vp0, out var p0);
+                Project(at + tangent * HandleLength * 0.1f, vp0, out var p1);
+                var sv0 = (p1 - p0) / 0.1f; // pixels for one radian
+                dragPxPerUnit = sv0.Length();
+                dragAxisScreen = sv0.LengthSquared() > 1 ? Vec2.Normalize(sv0) : Vec2.UnitX;
+                return;
+            }
+            if (doc.Tool == GizmoTool.Scale)
+            {
+                drag = Drag.Size;
+                var vp1 = UiViewProj();
+                Project(a, vp1, out var s0a);
+                var axis = g == 3 ? CameraAxes().Right : GizmoAxes[g];
+                Project(a + axis * HandleLength, vp1, out var s1a);
+                var sva = s1a - s0a;
+                dragPxPerUnit = Math.Max(sva.Length(), 10);
+                dragAxisScreen = sva.LengthSquared() > 1 ? Vec2.Normalize(sva) : Vec2.UnitX;
+                return;
+            }
             if (g == 3) { drag = Drag.Free; return; }
             drag = Drag.Axis;
             dragAxis = GizmoAxes[g];
@@ -341,7 +434,11 @@ public sealed class Viewport : OpenGlControlBase
 
     public void MoveTo(Point p)
     {
-        if (drag == Drag.None) return;
+        if (drag == Drag.None)
+        {
+            Hover(p);
+            return;
+        }
         var dx = (float)(p.X - dragLast.X);
         var dy = (float)(p.Y - dragLast.Y);
         if (Math.Abs(p.X - dragStart.X) + Math.Abs(p.Y - dragStart.Y) > 3) movedOnce = true;
@@ -367,6 +464,31 @@ public sealed class Viewport : OpenGlControlBase
                     ApplySnapped(dragAxis * along);
                     break;
                 }
+            case Drag.Turn:
+                {
+                    turned += Vec2.Dot(new Vec2(dx, dy), dragAxisScreen) / Math.Max(dragPxPerUnit, 1);
+                    float step = doc.Snap > 0 ? MathF.PI / 36 : 0; // 5 degrees
+                    float amount = step > 0 ? MathF.Round(turned / step) * step : turned;
+                    if (amount != 0)
+                    {
+                        turned -= amount;
+                        doc.Rotate(doc.Sel, dragAxis, amount);
+                    }
+                    break;
+                }
+            case Drag.Size:
+                {
+                    float f = 1 + Vec2.Dot(new Vec2(dx, dy), dragAxisScreen) / dragPxPerUnit;
+                    f = Math.Clamp(f, 0.5f, 2f);
+                    doc.Scale(doc.Sel, dragIndex switch
+                    {
+                        0 => new Vector3(f, 1, 1),
+                        1 => new Vector3(1, f, 1),
+                        2 => new Vector3(1, 1, f),
+                        _ => new Vector3(f)
+                    });
+                    break;
+                }
             case Drag.Free:
                 {
                     var (r, u) = CameraAxes();
@@ -376,6 +498,17 @@ public sealed class Viewport : OpenGlControlBase
                 }
         }
         Redraw();
+    }
+
+    string lastHover = "";
+    void Hover(Point p)
+    {
+        if (doc.Sim != null || doc.D == null) return;
+        bool handle = HitGizmo(p) >= 0;
+        var over = handle ? doc.Sel : PickPart(p);
+        Cursor = handle || over.Kind != SelKind.None ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
+        var text = handle ? "Drag to " + doc.Tool.ToString().ToLowerInvariant() + ": " + doc.Sel.Label : over.Kind != SelKind.None ? "Click to select: " + over.Label : "";
+        if (text != lastHover) { lastHover = text; if (text != "") Status?.Invoke(text); }
     }
 
     float PixelsPerHandle()
@@ -415,8 +548,11 @@ public sealed class Viewport : OpenGlControlBase
     public void ReleaseAt(Point p, bool left = true)
     {
         if (drag is Drag.Orbit && !movedOnce && left && doc.Sim == null)
+        {
             doc.Select(PickPart(p));
-        if (drag is Drag.Axis or Drag.Free) doc.EndGesture();
+            Picked?.Invoke();
+        }
+        if (drag is Drag.Axis or Drag.Free or Drag.Turn or Drag.Size) doc.EndGesture();
         drag = Drag.None;
         Redraw();
     }
@@ -486,6 +622,7 @@ public sealed class Viewport : OpenGlControlBase
         var root = sim != null ? doc.Dyn.Root : Matrix4x4.Identity;
         foreach (var part in CarPose.Build(d, sim != null ? doc.Dyn : null))
         {
+            if (doc.Hidden.Contains(SelOf(part))) continue;
             var m = doc.Model(part.Slot);
             if (m == null) continue;
             bool sel = !clean && sim == null && part.Kind switch
@@ -506,6 +643,7 @@ public sealed class Viewport : OpenGlControlBase
 
         f.EnvColor = new Vector3(d.EnvR, d.EnvG, d.EnvB) / 255f;
         f.CarTexture = doc.SkinOverride ?? car.Game.Find(d.TPage);
+        if (doc.PaintPreview != null) { f.Preview = doc.PaintPreview; f.PreviewW = doc.PaintW; f.PreviewH = doc.PaintH; f.PreviewVersion = doc.PaintVersion; }
         f.FxTexture = car.Game.Find("gfx\\fxpage1.bmp");
         f.EnvTexture = car.Game.Find("gfx\\envstill.bmp");
 
@@ -538,14 +676,26 @@ public sealed class Viewport : OpenGlControlBase
 
         if (clean) return f;
 
-        if (ShowHull && HullData is { } hull)
+        if ((ShowHull || doc.Sel.IsHull) && doc.Hull is { } hull)
         {
-            uint hc = Rgba(90, 230, 150, 255), sc = Rgba(255, 200, 80, 255);
-            foreach (var c in hull.Convex)
+            uint hc = Rgba(90, 230, 150, 255), sc = Rgba(255, 200, 80, 255), selc = Rgba(255, 255, 255, 255);
+            for (int k = 0; k < hull.Convex.Count; k++)
+            {
+                var c = hull.Convex[k];
+                var col = doc.Sel == new Selection(SelKind.HullPart, k) ? selc : hc;
                 foreach (var (a, b) in c.Edges)
-                    if (a < c.Points.Length && b < c.Points.Length) Line(f.Overlay, Vector3.Transform(c.Points[a], root), Vector3.Transform(c.Points[b], root), hc);
-            foreach (var (pos, r) in hull.Spheres)
-                Ring(f.Lines, Vector3.Transform(pos, root), Vector3.UnitX, Vector3.UnitZ, r, sc, 16);
+                    if (a < c.Points.Length && b < c.Points.Length) Line(f.Overlay, Vector3.Transform(c.Points[a], root), Vector3.Transform(c.Points[b], root), col);
+            }
+            for (int k = 0; k < hull.Spheres.Count; k++)
+            {
+                var (pos, r) = hull.Spheres[k];
+                var col = doc.Sel == new Selection(SelKind.HullSphere, k) ? selc : sc;
+                var at = Vector3.Transform(pos, root);
+                Ring(f.Overlay, at, Vector3.UnitX, Vector3.UnitZ, r, col, 16);
+                if (col != selc) continue; // all three only on the selected one, or the car disappears behind them
+                Ring(f.Overlay, at, Vector3.UnitX, Vector3.UnitY, r, col, 16);
+                Ring(f.Overlay, at, Vector3.UnitY, Vector3.UnitZ, r, col, 16);
+            }
         }
 
         if (ShowTravel)
@@ -575,6 +725,8 @@ public sealed class Viewport : OpenGlControlBase
                     SelKind.Weapon1 or SelKind.Weapon2 => Rgba(255, 90, 90),
                     SelKind.HoodCam or SelKind.RearCam => Rgba(120, 220, 255),
                     SelKind.AerialBase or SelKind.AerialTip => Rgba(255, 150, 240),
+                    SelKind.HullPart => Rgba(90, 230, 150),
+                    SelKind.HullSphere => Rgba(255, 200, 80),
                     _ => Rgba(180, 190, 205)
                 };
                 Cross(f.Overlay, p, s, c);
@@ -586,9 +738,29 @@ public sealed class Viewport : OpenGlControlBase
         {
             float h = HandleLength;
             uint[] cols = { Rgba(240, 80, 80), Rgba(90, 220, 90), Rgba(90, 150, 255) };
+            bool canTransform = doc.CanTransform(doc.Sel);
             for (int i = 0; i < 3; i++)
             {
                 var tip = a2 + GizmoAxes[i] * h;
+                if (doc.Tool == GizmoTool.Rotate)
+                {
+                    if (!canTransform) break;
+                    var (ru, rv) = RingAxes(i);
+                    Ring(f.Overlay, a2, ru, rv, h, cols[i], 48);
+                    continue;
+                }
+                if (doc.Tool == GizmoTool.Scale)
+                {
+                    if (!canTransform) break;
+                    Line(f.Overlay, a2, tip, cols[i]);
+                    var (bu, bv) = RingAxes(i);
+                    float bs = h * 0.05f;
+                    Line(f.Overlay, tip + (bu + bv) * bs, tip + (bu - bv) * bs, cols[i]);
+                    Line(f.Overlay, tip + (bu - bv) * bs, tip - (bu + bv) * bs, cols[i]);
+                    Line(f.Overlay, tip - (bu + bv) * bs, tip - (bu - bv) * bs, cols[i]);
+                    Line(f.Overlay, tip - (bu - bv) * bs, tip + (bu + bv) * bs, cols[i]);
+                    continue;
+                }
                 Line(f.Overlay, a2, tip, cols[i]);
                 var (u, v) = i == 1 ? (Vector3.UnitX, Vector3.UnitZ) : i == 0 ? (Vector3.UnitY, Vector3.UnitZ) : (Vector3.UnitX, Vector3.UnitY);
                 Ring(f.Overlay, tip - GizmoAxes[i] * h * 0.08f, u, v, h * 0.05f, cols[i], 8);
@@ -687,8 +859,7 @@ out vec4 fragColor;
 void main() {
   if (uMode == 3) { // env pass: added on top
     vec4 e = texture(uTex, vEnv);
-    // Only the bright part of the picture shows as a shine on the paint
-    fragColor = vec4(max(e.rgb - vec3(0.45), vec3(0.0)) * uEnvColor * 0.4, 1.0);
+    fragColor = vec4(e.rgb * uEnvColor * 0.5, 1.0);
     return;
   }
   if (uMode == 4) { // shadow: the texture says how dark
@@ -713,8 +884,8 @@ void main() {
 in vec3 aPos; in vec4 aColor; uniform mat4 uMvp; out vec4 vColor;
 void main() { gl_Position = uMvp * vec4(aPos, 1.0); vColor = aColor; }";
     const string FsLine = @"
-in vec4 vColor; out vec4 fragColor;
-void main() { fragColor = vColor; }";
+in vec4 vColor; uniform vec4 uOverride; out vec4 fragColor;
+void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
 
     protected override void OnOpenGlInit(GlInterface gi)
     {
@@ -729,6 +900,7 @@ void main() { fragColor = vColor; }";
         uMode = gl.GetUniformLocation(meshProg, "uMode");
         uEnvColor = gl.GetUniformLocation(meshProg, "uEnvColor");
         lMvp = gl.GetUniformLocation(lineProg, "uMvp");
+        lOverride = gl.GetUniformLocation(lineProg, "uOverride");
 
         overlayVao = gl.GenVertexArray();
         overlayVbo = gl.GenBuffer();
@@ -779,6 +951,17 @@ void main() { fragColor = vColor; }";
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
         return t;
+    }
+
+    uint previewId;
+    int previewVersion = -1;
+    uint PreviewTex(Frame f)
+    {
+        if (previewId != 0 && previewVersion == f.PreviewVersion) return previewId;
+        if (previewId != 0) gl!.DeleteTexture(previewId);
+        previewId = MakeTexture(f.Preview!, f.PreviewW, f.PreviewH);
+        previewVersion = f.PreviewVersion;
+        return previewId;
     }
 
     uint Tex(string? path, int version)
@@ -926,7 +1109,6 @@ void main() { fragColor = vColor; }";
         g.ActiveTexture(TextureUnit.Texture0);
         g.Uniform1(g.GetUniformLocation(meshProg, "uTex"), 0);
         Mat(uView, view);
-        var noTint = new Vector4(0, 0, 0, 0);
 
         if (floor && f.Floor && doc.Sim == null)
         {
@@ -975,7 +1157,7 @@ void main() { fragColor = vColor; }";
 
         g.UseProgram(meshProg);
         // Opaque, env on top, then see-through
-        uint carTex = Tex(f.CarTexture, f.TexVersion);
+        uint carTex = f.Preview != null ? PreviewTex(f) : Tex(f.CarTexture, f.TexVersion);
         uint fxTex = Tex(f.FxTexture, 0);
         uint envTex = Tex(f.EnvTexture, 0);
 
@@ -989,8 +1171,7 @@ void main() { fragColor = vColor; }";
                 g.UseProgram(meshProg);
                 Mat(uMvp, it.World * vp);
                 Mat(uModel, it.World);
-                var tint = it.Selected ? new Vector4(0.25f, 0.55f, 1f, 0.2f) : noTint;
-                g.Uniform4(uTint, tint.X, tint.Y, tint.Z, f.Lit ? -Math.Max(tint.W, 0.001f) : tint.W);
+                g.Uniform4(uTint, 0f, 0f, 0f, f.Lit ? -0.001f : 0f);
                 foreach (var b in mesh.Batches)
                 {
                     if (b.Pass != pass) continue;
@@ -1002,7 +1183,8 @@ void main() { fragColor = vColor; }";
 
         Pass(0);
 
-        if (f.Env && f.Shade == ShadeMode.Textured && (f.EnvColor.X + f.EnvColor.Y + f.EnvColor.Z) > 0)
+        // Reflections add the game's dark environment picture. Without the picture there's nothing to add
+        if (f.Env && f.EnvTexture != null && f.Shade == ShadeMode.Textured && (f.EnvColor.X + f.EnvColor.Y + f.EnvColor.Z) > 0)
         {
             g.Enable(EnableCap.Blend);
             g.BlendFunc(BlendingFactor.One, BlendingFactor.One);
@@ -1031,17 +1213,19 @@ void main() { fragColor = vColor; }";
         g.DepthMask(true);
         g.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
-        if (f.Wire)
+        // Wireframe, and what's selected is outlined so its colours stay what they are
+        g.UseProgram(lineProg);
+        foreach (var it in f.Items)
         {
-            g.UseProgram(lineProg);
-            foreach (var it in f.Items)
-            {
-                var mesh = Mesh(it.Mesh, f.ModelVersion);
-                Mat(lMvp, it.World * vp);
-                g.BindVertexArray(mesh.LineVao);
-                g.DrawArrays(PrimitiveType.Lines, 0, (uint)mesh.LineCount);
-            }
+            if (!f.Wire && !it.Selected) continue;
+            var mesh = Mesh(it.Mesh, f.ModelVersion);
+            Mat(lMvp, it.World * vp);
+            if (it.Selected) g.Uniform4(lOverride, 0.35f, 0.7f, 1f, 0.55f);
+            else g.Uniform4(lOverride, 0f, 0f, 0f, 0f);
+            g.BindVertexArray(mesh.LineVao);
+            g.DrawArrays(PrimitiveType.Lines, 0, (uint)mesh.LineCount);
         }
+        g.Uniform4(lOverride, 0f, 0f, 0f, 0f);
 
         g.Disable(EnableCap.DepthTest);
         g.Disable(EnableCap.CullFace);

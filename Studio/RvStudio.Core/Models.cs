@@ -51,6 +51,42 @@ public sealed class Prm
 
     public static Prm Read(BinaryReader r)
     {
+        var m = ReadOne(r);
+        var rest = r.BaseStream.Length - r.BaseStream.Position;
+        if (rest > 0) m.OtherLods = r.ReadBytes((int)rest);
+        return m;
+    }
+
+    /// <summary>
+    /// Do the same to the farther LODs. Most stock wheels have them, and the game shows them from a distance,
+    /// so a change only on the first one would make a wheel jump back as it goes away.
+    /// </summary>
+    public void ForOtherLods(Action<Prm> change)
+    {
+        if (OtherLods == null) return;
+        var lods = new List<Prm>();
+        using (var r = new BinaryReader(new MemoryStream(OtherLods)))
+        {
+            try
+            {
+                while (r.BaseStream.Position + 4 <= r.BaseStream.Length) lods.Add(ReadOne(r));
+                if (r.BaseStream.Position != r.BaseStream.Length) return; // not LODs: don't touch
+            }
+            catch (EndOfStreamException) { return; }
+        }
+        using var o = new MemoryStream();
+        using var w = new BinaryWriter(o);
+        foreach (var l in lods)
+        {
+            change(l);
+            l.Write(w);
+        }
+        w.Flush();
+        OtherLods = o.ToArray();
+    }
+
+    static Prm ReadOne(BinaryReader r)
+    {
         var m = new Prm();
         int nf = r.ReadUInt16(), nv = r.ReadUInt16();
         m.Faces = new PrmFace[nf];
@@ -68,8 +104,6 @@ public sealed class Prm
             m.Verts[i].Pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
             m.Verts[i].Normal = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
         }
-        var rest = r.BaseStream.Length - r.BaseStream.Position;
-        if (rest > 0) m.OtherLods = r.ReadBytes((int)rest);
         m.ComputeBounds();
         return m;
     }
@@ -84,6 +118,12 @@ public sealed class Prm
     public void Save(string path)
     {
         using var w = new BinaryWriter(File.Create(path));
+        Write(w);
+        if (OtherLods != null) w.Write(OtherLods);
+    }
+
+    void Write(BinaryWriter w)
+    {
         w.Write((ushort)Faces.Length);
         w.Write((ushort)Verts.Length);
         foreach (var f in Faces)
@@ -98,7 +138,34 @@ public sealed class Prm
             w.Write(v.Pos.X); w.Write(v.Pos.Y); w.Write(v.Pos.Z);
             w.Write(v.Normal.X); w.Write(v.Normal.Y); w.Write(v.Normal.Z);
         }
-        if (OtherLods != null) w.Write(OtherLods);
+    }
+
+    /// <summary>The same model for the other side: X turned around, polygons kept facing outwards</summary>
+    public void MirrorX()
+    {
+        void One(Prm m)
+        {
+            for (int i = 0; i < m.Verts.Length; i++)
+            {
+                m.Verts[i].Pos.X = -m.Verts[i].Pos.X;
+                m.Verts[i].Normal.X = -m.Verts[i].Normal.X;
+            }
+            foreach (var f in m.Faces)
+            {
+                // swapping two opposite corners keeps the side that shows, for triangles and quads
+                (f.V0, f.V2) = (f.V2, f.V0);
+                Swap(f, 0, 2);
+            }
+            m.ComputeBounds();
+        }
+        static void Swap(PrmFace f, int a, int b)
+        {
+            (f.U[a], f.U[b]) = (f.U[b], f.U[a]);
+            (f.V[a], f.V[b]) = (f.V[b], f.V[a]);
+            (f.Colors[a], f.Colors[b]) = (f.Colors[b], f.Colors[a]);
+        }
+        One(this);
+        ForOtherLods(One);
     }
 
     /// <summary>Is every polygon using vertices that exist?</summary>
@@ -120,6 +187,36 @@ public sealed class ConvexHull
     public Vector3[] Points = Array.Empty<Vector3>();
     public (short A, short B)[] Edges = Array.Empty<(short, short)>();
     public (Vector3 Normal, float D)[] Faces = Array.Empty<(Vector3, float)>();
+
+    public ConvexHull Clone()
+    {
+        var c = (ConvexHull)MemberwiseClone();
+        c.Points = (Vector3[])Points.Clone();
+        c.Edges = ((short, short)[])Edges.Clone();
+        c.Faces = ((Vector3, float)[])Faces.Clone();
+        return c;
+    }
+
+    /// <summary>Move every point and keep the planes true. Offset is the middle, Min and Max are from it, as in the game's files</summary>
+    public void Apply(Matrix4x4 m)
+    {
+        if (!Matrix4x4.Invert(m, out var inv)) return;
+        var nm = Matrix4x4.Transpose(inv);
+        for (int i = 0; i < Points.Length; i++) Points[i] = Vector3.Transform(Points[i], m);
+        for (int i = 0; i < Faces.Length; i++)
+        {
+            var (n, d) = Faces[i];
+            var on = Vector3.Transform(n * -d, m);
+            var nn = Vector3.Normalize(Vector3.TransformNormal(n, nm));
+            Faces[i] = (nn, -Vector3.Dot(nn, on));
+        }
+        if (Points.Length == 0) return;
+        var lo = new Vector3(float.MaxValue); var hi = new Vector3(float.MinValue);
+        foreach (var p in Points) { lo = Vector3.Min(lo, p); hi = Vector3.Max(hi, p); }
+        Offset = (lo + hi) / 2;
+        Min = lo - Offset;
+        Max = hi - Offset;
+    }
 }
 
 /// <summary>A .hul collision hull: convex parts, then spheres</summary>
@@ -128,6 +225,16 @@ public sealed class Hull
     public List<ConvexHull> Convex = new();
     public List<(Vector3 Pos, float Radius)> Spheres = new();
     public byte[]? Tail; // anything after the spheres, kept as it is
+
+    public Hull Clone() => new() { Convex = Convex.Select(c => c.Clone()).ToList(), Spheres = new(Spheres), Tail = Tail };
+
+    /// <summary>Everything in the hull. A sphere stays a sphere: its radius follows the smallest stretch</summary>
+    public void Apply(Matrix4x4 m)
+    {
+        foreach (var c in Convex) c.Apply(m);
+        float s = Math.Min(new Vector3(m.M11, m.M12, m.M13).Length(), Math.Min(new Vector3(m.M21, m.M22, m.M23).Length(), new Vector3(m.M31, m.M32, m.M33).Length()));
+        for (int i = 0; i < Spheres.Count; i++) Spheres[i] = (Vector3.Transform(Spheres[i].Pos, m), Spheres[i].Radius * s);
+    }
 
     static Vector3 V(BinaryReader r) => new(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
     static void W(BinaryWriter w, Vector3 v) { w.Write(v.X); w.Write(v.Y); w.Write(v.Z); }

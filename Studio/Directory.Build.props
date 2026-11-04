@@ -1,4 +1,7 @@
 <Project>
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(RVS_OBJ)' != ''">
     <BaseIntermediateOutputPath>$(RVS_OBJ)\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
   </PropertyGroup>

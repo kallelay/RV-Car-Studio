@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 
@@ -62,60 +63,51 @@ public sealed class Page : ScrollViewer
         stack.Children.Add(g);
     }
 
-    TextBox NumBox()
-    {
-        return new TextBox { MinHeight = 26, Height = 26, Padding = new Thickness(5, 2), FontSize = 12, VerticalContentAlignment = VerticalAlignment.Center };
-    }
-
     static string Show(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
 
-    static bool Parse(string? s, out double v) =>
-        double.TryParse(s?.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out v);
-
-    public void Num(string label, Func<double> get, Action<double> set, string? tip = null, double min = double.MinValue, double max = double.MaxValue)
+    public void Num(string label, Func<double> get, Action<double> set, string? tip = null, double min = double.MinValue, double max = double.MaxValue, bool whole = false)
     {
-        var b = NumBox();
-        loaders.Add(() => { if (!b.IsFocused) b.Text = Show(get()); });
-        b.TextChanged += (_, _) =>
+        var b = new NumberBox(min, max, whole);
+        loaders.Add(() => b.Show(get()));
+        b.Edited += v =>
         {
-            if (loading || !Parse(b.Text, out var v) || v < min || v > max) return;
-            if (Math.Abs(v - get()) < 1e-9) return;
+            if (loading || Math.Abs(v - get()) < 1e-9) return;
             doc.Edit(label, () => set(v));
         };
-        b.LostFocus += (_, _) => b.Text = Show(get());
+        b.Done += () => b.Show(get(), true);
         Row(label, b, tip);
     }
 
     public void Int(string label, Func<int> get, Action<int> set, string? tip = null, int min = int.MinValue, int max = int.MaxValue) =>
-        Num(label, () => get(), v => set((int)v), tip, min, max);
+        Num(label, () => get(), v => set((int)v), tip, min, max, true);
 
     public void Vec(string label, Func<Vector3> get, Action<Vector3> set, string? tip = null)
     {
-        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("*,3,*,3,*") };
-        var boxes = new[] { NumBox(), NumBox(), NumBox() };
+        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("*,2,*,2,*") };
+        var boxes = new[] { new NumberBox(), new NumberBox(), new NumberBox() };
         for (int i = 0; i < 3; i++)
         {
             int k = i;
             Grid.SetColumn(boxes[i], i * 2);
             g.Children.Add(boxes[i]);
-            boxes[i].TextChanged += (_, _) =>
+            boxes[i].Edited += v =>
             {
-                if (loading || !Parse(boxes[k].Text, out var v)) return;
+                if (loading) return;
                 var cur = get();
                 var nv = k == 0 ? cur with { X = (float)v } : k == 1 ? cur with { Y = (float)v } : cur with { Z = (float)v };
                 if (nv == cur) return;
                 doc.Edit(label, () => set(nv));
             };
-            boxes[i].LostFocus += (_, _) => LoadVec();
+            boxes[i].Done += () => LoadVec(true);
         }
-        void LoadVec()
+        void LoadVec(bool force)
         {
             var v = get();
-            if (!boxes[0].IsFocused) boxes[0].Text = Show(Math.Round(v.X, 3));
-            if (!boxes[1].IsFocused) boxes[1].Text = Show(Math.Round(v.Y, 3));
-            if (!boxes[2].IsFocused) boxes[2].Text = Show(Math.Round(v.Z, 3));
+            boxes[0].Show(Math.Round(v.X, 3), force);
+            boxes[1].Show(Math.Round(v.Y, 3), force);
+            boxes[2].Show(Math.Round(v.Z, 3), force);
         }
-        loaders.Add(LoadVec);
+        loaders.Add(() => LoadVec(false));
         Row(label, g, tip);
     }
 
@@ -178,4 +170,102 @@ public sealed class Page : ScrollViewer
     static readonly AvaloniaProperty RangeBaseValue = Avalonia.Controls.Primitives.RangeBase.ValueProperty;
 
     public void Add(Control c) => stack.Children.Add(c);
+}
+
+/// <summary>A number with decimals. Type it, or use the arrows, the Up and Down keys or the wheel. Shift: bigger steps, Ctrl: finer</summary>
+public sealed class NumberBox : Grid
+{
+    readonly TextBox box = new()
+    {
+        MinHeight = 26, Height = 26, MinWidth = 0, Padding = new Thickness(5, 2, 1, 2), FontSize = 12,
+        VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(1, 1, 0, 1)
+    };
+    readonly double min, max;
+    readonly bool whole;
+    string? shown;   // text we put there: TextChanged arrives late, this tells it from typing
+
+    public event Action<double>? Edited;
+    public event Action? Done;
+    public double Value { get; private set; }
+
+    public NumberBox(double min = double.MinValue, double max = double.MaxValue, bool whole = false)
+    {
+        this.min = min; this.max = max; this.whole = whole;
+        ColumnDefinitions = new ColumnDefinitions("*,15");
+        Children.Add(box);
+
+        var arrows = new Grid { RowDefinitions = new RowDefinitions("*,*"), Height = 26 };
+        Grid.SetColumn(arrows, 1);
+        arrows.Children.Add(Arrow("▲", 1, 0));
+        arrows.Children.Add(Arrow("▼", -1, 1));
+        Children.Add(arrows);
+
+        box.TextChanged += (_, _) =>
+        {
+            if (box.Text == null || box.Text == shown) return;
+            if (Parse(box.Text, out var v) && v >= min && v <= max)
+            {
+                Value = whole ? Math.Round(v) : v;
+                Edited?.Invoke(Value);
+            }
+        };
+        box.LostFocus += (_, _) => Done?.Invoke();
+        box.AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Key.Up) { Step(1, e.KeyModifiers); e.Handled = true; }
+            else if (e.Key == Key.Down) { Step(-1, e.KeyModifiers); e.Handled = true; }
+            else if (e.Key == Key.Enter) { Done?.Invoke(); box.SelectAll(); e.Handled = true; }
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        PointerWheelChanged += (_, e) =>
+        {
+            if (!box.IsFocused) return;
+            Step(Math.Sign(e.Delta.Y), e.KeyModifiers);
+            e.Handled = true;
+        };
+    }
+
+    RepeatButton Arrow(string text, int dir, int row)
+    {
+        var b = new RepeatButton
+        {
+            Content = new TextBlock { Text = text, FontSize = 7, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            Padding = new Thickness(0), MinHeight = 0, MinWidth = 0, CornerRadius = new CornerRadius(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, Focusable = false
+        };
+        Grid.SetRow(b, row);
+        b.Click += (_, _) => Step(dir, KeyModifiers.None);
+        return b;
+    }
+
+    // Steps that suit the size of the number: 1500 goes by 10, 40 by 1, 0.8 by 0.01
+    double StepSize()
+    {
+        if (whole) return 1;
+        var a = Math.Abs(Value);
+        return a >= 1000 ? 10 : a >= 100 ? 1 : a >= 10 ? 0.5 : a >= 1 ? 0.1 : a >= 0.1 ? 0.01 : 0.001;
+    }
+
+    public void Step(int dir, KeyModifiers mods)
+    {
+        var step = StepSize();
+        if (mods.HasFlag(KeyModifiers.Shift)) step *= 10;
+        if (mods.HasFlag(KeyModifiers.Control) && !whole) step /= 10;
+        var v = Math.Round(Math.Clamp(Value + dir * step, min, max), 6);
+        Value = v;
+        shown = Format(v);
+        box.Text = shown;
+        Edited?.Invoke(v);
+    }
+
+    static string Format(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
+    static bool Parse(string s, out double v) => double.TryParse(s.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+
+    public void Show(double v, bool force = false)
+    {
+        Value = v;
+        if (box.IsFocused && !force) return;
+        shown = Format(v);
+        if (box.Text != shown) box.Text = shown;
+    }
 }

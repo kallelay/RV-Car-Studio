@@ -19,6 +19,13 @@ public sealed partial class MainWindow : Window
     public readonly Viewport View;
     readonly TextBox search = new() { Watermark = "Search cars   (#stock  #custom)", FontSize = 12, Margin = new Thickness(8, 8, 8, 4) };
     readonly ListBox carList = new() { FontSize = 12 };
+    readonly Control pickerPanel;
+    readonly Control lockedPanel;
+    readonly TextBlock lockedName = new() { FontSize = 16, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
+    readonly TextBlock lockedInfo = new() { FontSize = 11.5, Foreground = Page.Faint, TextWrapping = TextWrapping.Wrap };
+    readonly ListBox partsList = new() { FontSize = 12 };
+    bool fillingParts;
+    public bool CarLocked => lockedPanel.IsVisible;
     readonly TextBlock carCount = new() { FontSize = 11, Foreground = Page.Faint, Margin = new Thickness(10, 0, 0, 6) };
     public readonly TextBlock StatusText = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0) };
     readonly TextBlock titleText = new() { FontSize = 15, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 16, 0) };
@@ -28,7 +35,7 @@ public sealed partial class MainWindow : Window
     readonly Border selectedHost = new();
     readonly ItemsControl issues = new();
     readonly TextBlock issuesHead = new() { FontSize = 12, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-    readonly TextBlock hud = new() { FontSize = 15, Foreground = Brushes.White, FontWeight = FontWeight.SemiBold, IsVisible = false, Margin = new Thickness(14), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+    readonly TextBlock hud = new() { IsHitTestVisible = false, FontSize = 15, Foreground = Brushes.White, FontWeight = FontWeight.SemiBold, IsVisible = false, Margin = new Thickness(14), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
     readonly TextBox rawText = new() { AcceptsReturn = true, FontFamily = new FontFamily("Consolas,Menlo,monospace"), FontSize = 12, TextWrapping = TextWrapping.NoWrap };
     readonly List<Page> pages = new();
     readonly List<CarEntry> allCars = new();
@@ -51,6 +58,8 @@ public sealed partial class MainWindow : Window
         MinWidth = 1000; MinHeight = 600;
         Background = BarBrush;
         View = new Viewport(Doc);
+        pickerPanel = BuildPicker();
+        lockedPanel = BuildLocked();
 
         Content = BuildLayout();
 
@@ -58,6 +67,11 @@ public sealed partial class MainWindow : Window
         Doc.SelectionChanged += OnSelectionChanged;
         Doc.CarOpened += OnCarOpened;
         View.Status += s => Say(s);
+        View.Picked += () => Tabs.SelectedIndex = 0;
+        View.NeedsPermission += async s => await AskShared(s);
+        Doc.StockTouched += () => stockBanner.IsVisible = true;
+        BuildStockBanner();
+        Doc.PartsChanged += FillParts;
         search.TextChanged += (_, _) => FillList();
         carList.SelectionChanged += async (_, _) => await OnCarPicked();
         simTimer.Tick += (_, _) => SimTick();
@@ -90,18 +104,10 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(main, 2);
         root.Children.Add(main);
 
-        // Cars
-        var left = new DockPanel { Background = PanelBrush };
-        var head = new StackPanel();
-        head.Children.Add(search);
-        head.Children.Add(carCount);
-        DockPanel.SetDock(head, Dock.Top);
-        left.Children.Add(head);
-        var newBtn = new Button { Content = "+  New car", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Margin = new Thickness(8), FontSize = 12 };
-        newBtn.Click += async (_, _) => await NewCar();
-        DockPanel.SetDock(newBtn, Dock.Bottom);
-        left.Children.Add(newBtn);
-        left.Children.Add(carList);
+        // The car: pick one, then it stays until you ask to change it
+        var left = new Panel { Background = PanelBrush };
+        left.Children.Add(pickerPanel);
+        left.Children.Add(lockedPanel);
         main.Children.Add(left);
 
         var split1 = new GridSplitter { Width = 3, Background = LineBrush, ResizeDirection = GridResizeDirection.Columns };
@@ -115,6 +121,7 @@ public sealed partial class MainWindow : Window
         var overlay = new Grid();
         overlay.Children.Add(View);
         overlay.Children.Add(hud);
+        overlay.Children.Add(stockBanner);
         mid.Children.Add(overlay);
         var split2 = new GridSplitter { Height = 3, Background = LineBrush, ResizeDirection = GridResizeDirection.Rows };
         Grid.SetRow(split2, 1);
@@ -144,6 +151,241 @@ public sealed partial class MainWindow : Window
         return root;
     }
 
+    Control BuildPicker()
+    {
+        var left = new DockPanel { IsVisible = true };
+        var head = new StackPanel();
+        head.Children.Add(new TextBlock { Text = "Pick a car", FontSize = 14, FontWeight = FontWeight.SemiBold, Margin = new Thickness(10, 10, 10, 0) });
+        head.Children.Add(search);
+        head.Children.Add(carCount);
+        DockPanel.SetDock(head, Dock.Top);
+        left.Children.Add(head);
+        var bottom = new StackPanel { Margin = new Thickness(8), Spacing = 4 };
+        var newBtn = new Button { Content = "+  New car", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, FontSize = 12 };
+        newBtn.Click += async (_, _) => await NewCar();
+        var keep = new Button { Content = "Keep the open car", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, FontSize = 12 };
+        keep.Click += (_, _) => SetLocked(Doc.Car != null);
+        bottom.Children.Add(keep);
+        bottom.Children.Add(newBtn);
+        DockPanel.SetDock(bottom, Dock.Bottom);
+        left.Children.Add(bottom);
+        left.Children.Add(carList);
+        return left;
+    }
+
+    Control BuildLocked()
+    {
+        var left = new DockPanel { IsVisible = false };
+        var head = new StackPanel { Margin = new Thickness(10), Spacing = 4 };
+        head.Children.Add(lockedName);
+        head.Children.Add(lockedInfo);
+        var change = new Button { Content = "Change car...", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, FontSize = 12, Margin = new Thickness(0, 6, 0, 0) };
+        ToolTip.SetTip(change, "Ctrl+O");
+        change.Click += (_, _) => ChangeCar();
+        head.Children.Add(change);
+        head.Children.Add(new TextBlock { Text = "Parts", FontSize = 13, FontWeight = FontWeight.SemiBold, Foreground = Page.Accent, Margin = new Thickness(0, 10, 0, 0) });
+        var hullEdit = new CheckBox { Content = "Show and edit the hull", FontSize = 12, MinHeight = 22 };
+        hullEdit.IsCheckedChanged += (_, _) => { View.ShowHull = hullEdit.IsChecked == true; FillParts(); View.Redraw(); };
+        head.Children.Add(hullEdit);
+        DockPanel.SetDock(head, Dock.Top);
+        left.Children.Add(head);
+        var add = new Button { Content = "+  Add a part", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, FontSize = 12, Margin = new Thickness(8) };
+        add.Flyout = addMenu;
+        addMenu.Opening += (_, _) => FillAddMenu();
+        DockPanel.SetDock(add, Dock.Bottom);
+        left.Children.Add(add);
+        left.Children.Add(partsList);
+        partsList.SelectionChanged += (_, _) =>
+        {
+            if (!fillingParts && partsList.SelectedItem is ListBoxItem { Tag: Selection s }) Doc.Select(s);
+        };
+        return left;
+    }
+
+    // --------------------------- Stock cars and shared files ---------------------------
+
+    readonly Border stockBanner = new()
+    {
+        IsVisible = false, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10),
+        Background = new SolidColorBrush(Color.Parse("#3A3320")), BorderBrush = Brushes.Goldenrod, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(12, 7)
+    };
+
+    public bool StockBannerShown => stockBanner.IsVisible;
+
+    void BuildStockBanner()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        row.Children.Add(new TextBlock { Text = "You're changing a stock car. Nothing is saved yet: make your own copy?", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+        var copy = new Button { Content = "Make a copy", FontSize = 12, Padding = new Thickness(9, 3), Background = Page.Accent };
+        copy.Click += async (_, _) => await CopyCar();
+        var keep = new Button { Content = "Keep editing the original", FontSize = 12, Padding = new Thickness(9, 3) };
+        keep.Click += (_, _) => stockBanner.IsVisible = false;
+        row.Children.Add(copy);
+        row.Children.Add(keep);
+        stockBanner.Child = row;
+    }
+
+    /// <summary>Carry on in a copy of this car, with what's been changed so far</summary>
+    public async Task<bool> CopyCar()
+    {
+        if (Doc.Car is not { } c) return false;
+        var folder = await Dialogs.Input(this, "Your copy of " + Doc.D!.Name + ". Its folder inside cars:", c.Folder + "_my");
+        if (string.IsNullOrWhiteSpace(folder)) return false;
+        var name = await Dialogs.Input(this, "Its name:", Doc.D.Name + " Mod");
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        try
+        {
+            Doc.ForkCar(folder, name);
+            stockBanner.IsVisible = false;
+            LoadCarList();
+            Settings.LastCar = folder;
+            SetLocked(true);
+            Say("Now working on your copy, " + name + ". " + c.Folder + " stays as it was");
+            return true;
+        }
+        catch (Exception ex) { Say("Can't make the copy: " + ex.Message); return false; }
+    }
+
+    /// <summary>Saving a stock car with no answer yet</summary>
+    public async Task SaveAsked()
+    {
+        if (Doc.Car == null) return;
+        if (Doc.IsStockCar && Doc.Modified && stockBanner.IsVisible)
+        {
+            var r = await Dialogs.Ask(this, Doc.D!.Name + " is a stock car. Saving changes the game's own file, and RVGL may mark the car as modified online. The first version stays as .bak.", "Make a copy", "Save over it", "Cancel");
+            if (r == 2) return;
+            stockBanner.IsVisible = false;
+            if (r == 0) { await CopyCar(); return; }
+        }
+        Save();
+    }
+
+    public async Task<bool> AskShared(Selection s) => await AskSharedFiles(Doc.SharedFiles(s));
+
+    /// <summary>Files others need: use copies, or change them for all. False means don't do it</summary>
+    public async Task<bool> AskSharedFiles(List<(string Rel, string Why)> files)
+    {
+        if (files.Count == 0) return true;
+        var r = await Dialogs.Ask(this, string.Join("\n", files.Select(f => f.Why)) + "\n\nChanging it would change the other cars too.", "Use my own copy", "Change it for all", "Cancel");
+        if (r == 2) return false;
+        foreach (var (rel, _) in files)
+        {
+            if (r == 0) Doc.MakeOwn(rel);
+            else Doc.AllowShared(rel);
+        }
+        LoadCarDetails();
+        Say(r == 0 ? "This car now has its own copy. Drag again" : "You can change it now. Drag again");
+        return true;
+    }
+
+    void LoadCarDetails()
+    {
+        foreach (var p in pages) p.Refresh();
+        selectedPage?.Refresh();
+        View.Redraw();
+    }
+
+    readonly MenuFlyout addMenu = new();
+
+    void FillAddMenu()
+    {
+        addMenu.Items.Clear();
+        if (Doc.D is not { } d) return;
+        void Offer(string text, Selection s) => addMenu.Items.Add(Item(text, async () => await PickModelFor(s)));
+        if (d.BodyModel < 0) Offer("Body", new(SelKind.Body));
+        for (int i = 0; i < 4; i++) if (!Doc.HasModel(new(SelKind.Wheel, i))) Offer("Wheel: " + Doc.WheelName(i), new(SelKind.Wheel, i));
+        for (int i = 0; i < 4; i++) if (!Doc.HasModel(new(SelKind.Spring, i))) Offer("Spring: " + Doc.WheelName(i), new(SelKind.Spring, i));
+        for (int i = 0; i < 4; i++) if (!Doc.HasModel(new(SelKind.Axle, i))) Offer("Axle: " + Doc.WheelName(i), new(SelKind.Axle, i));
+        for (int i = 0; i < 4; i++) if (!Doc.HasModel(new(SelKind.Pin, i))) Offer("Pin: " + Doc.WheelName(i), new(SelKind.Pin, i));
+        if (d.Spinner.Model < 0) Offer("Spinner", new(SelKind.Spinner));
+        if (d.Aerial.SecModel < 0) addMenu.Items.Add(Item("Aerial (the stock one)", () => { Doc.AddAerial(); Say("Aerial added"); }));
+    }
+
+    public async Task PickModelFor(Selection s)
+    {
+        if (Doc.Car == null) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Model for " + s.Label,
+            AllowMultiple = false,
+            SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(Doc.Car.Dir),
+            FileTypeFilter = new[] { new FilePickerFileType("Re-Volt models") { Patterns = new[] { "*.prm", "*.m" } } }
+        });
+        var path = files.FirstOrDefault()?.TryGetLocalPath();
+        if (path == null) return;
+        try
+        {
+            Prm.Load(path);
+            Doc.SetPartModel(s, Doc.BringIn(path));
+            Doc.Select(s);
+            Say(s.Label + ": " + Path.GetFileName(path));
+        }
+        catch (Exception ex) { Say("Can't use that model: " + ex.Message); }
+    }
+
+    public void SetLocked(bool locked)
+    {
+        lockedPanel.IsVisible = locked;
+        pickerPanel.IsVisible = !locked;
+        if (locked) View.Focus();
+    }
+
+    /// <summary>Back to the list of cars. The open car stays until another one is picked</summary>
+    public void ChangeCar()
+    {
+        search.Text = "";
+        FillList();
+        SetLocked(false);
+        search.Focus();
+    }
+
+    void FillParts()
+    {
+        if (Doc.D is not { } d) return;
+        fillingParts = true;
+        partsList.Items.Clear();
+        void Add(Selection s)
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+            row.Children.Add(new TextBlock { Text = s.Label, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis });
+            if (Doc.HasModel(s))
+            {
+                var eye = new CheckBox { IsChecked = !Doc.Hidden.Contains(s), MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+                ToolTip.SetTip(eye, "Show or hide it in the view. The file doesn't change");
+                eye.IsCheckedChanged += (_, _) => { if ((eye.IsChecked != true) != Doc.Hidden.Contains(s)) Doc.ToggleHidden(s); };
+                Grid.SetColumn(eye, 1);
+                row.Children.Add(eye);
+            }
+            partsList.Items.Add(new ListBoxItem { Content = row, Tag = s, Padding = new Thickness(10, 1, 4, 1), MinHeight = 22 });
+        }
+        if (d.BodyModel >= 0) Add(new(SelKind.Body));
+        for (int i = 0; i < 4; i++) if (d.Wheels[i].Present) Add(new(SelKind.Wheel, i));
+        for (int i = 0; i < 4; i++) if (d.Springs[i].Model >= 0) Add(new(SelKind.Spring, i));
+        for (int i = 0; i < 4; i++) if (d.Axles[i].Model >= 0) Add(new(SelKind.Axle, i));
+        for (int i = 0; i < 4; i++) if (d.Pins[i].Model >= 0) Add(new(SelKind.Pin, i));
+        if (d.Spinner.Model >= 0) Add(new(SelKind.Spinner));
+        if (d.Aerial.SecModel >= 0) { Add(new(SelKind.AerialBase)); Add(new(SelKind.AerialTip)); }
+        Add(new(SelKind.CoM));
+        Add(new(SelKind.Weapon1));
+        if (d.HasWeapon2) Add(new(SelKind.Weapon2));
+        if (d.Camera != null) { Add(new(SelKind.HoodCam)); Add(new(SelKind.RearCam)); }
+        if (View.ShowHull && Doc.Hull is { } h)
+        {
+            for (int i = 0; i < h.Convex.Count; i++) Add(new(SelKind.HullPart, i));
+            for (int i = 0; i < h.Spheres.Count; i++) Add(new(SelKind.HullSphere, i));
+        }
+        SyncParts();
+        fillingParts = false;
+    }
+
+    void SyncParts()
+    {
+        bool was = fillingParts;
+        fillingParts = true;
+        partsList.SelectedItem = partsList.Items.Cast<ListBoxItem>().FirstOrDefault(i => i.Tag is Selection s && s == Doc.Sel);
+        fillingParts = was;
+    }
+
     static MenuItem Item(string text, Action act, string? gesture = null)
     {
         var m = new MenuItem { Header = text, FontSize = 13 };
@@ -155,10 +397,12 @@ public sealed partial class MainWindow : Window
     Menu BuildMenu()
     {
         var file = new MenuItem { Header = "File", FontSize = 13 };
+        file.Items.Add(Item("Change car...", ChangeCar, "Ctrl+O"));
         file.Items.Add(Item("Open Re-Volt folder...", async () => await AskGameFolder()));
         file.Items.Add(Item("New car...", async () => await NewCar()));
         file.Items.Add(new Separator());
-        file.Items.Add(Item("Save", Save, "Ctrl+S"));
+        file.Items.Add(Item("Save", async () => await SaveAsked(), "Ctrl+S"));
+        file.Items.Add(Item("Make a copy of this car...", async () => await CopyCar()));
         file.Items.Add(Item("Revert to the saved car", Revert));
         file.Items.Add(new Separator());
         file.Items.Add(Item("Open car folder", OpenFolder));
@@ -219,12 +463,26 @@ public sealed partial class MainWindow : Window
         p.Children.Add(titleText);
         p.Children.Add(modifiedDot);
         p.Children.Add(Sep());
-        p.Children.Add(BarButton("Save", "Save the car (Ctrl+S). The first version stays as .bak", Save, saveBtn));
+        p.Children.Add(BarButton("Save", "Save the car (Ctrl+S). The first version stays as .bak", async () => await SaveAsked(), saveBtn));
         p.Children.Add(BarButton("Undo", "Ctrl+Z", Doc.Undo, undoBtn));
         p.Children.Add(BarButton("Redo", "Ctrl+Y", Doc.Redo, redoBtn));
         p.Children.Add(Sep());
 
-        p.Children.Add(new TextBlock { Text = "Move:", VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = Page.Faint, Margin = new Thickness(0, 0, 5, 0) });
+        foreach (var (tool, text, tip) in new[]
+        {
+            (GizmoTool.Move, "Move", "Drag the arrows or the circle (W)"),
+            (GizmoTool.Rotate, "Rotate", "Drag a ring: turns the model itself, or the aerial's direction (E). 5 degree steps with snap on"),
+            (GizmoTool.Scale, "Scale", "Drag a box, or the circle for all axes: resizes the model and its radius or length (R)")
+        })
+        {
+            var t = new RadioButton { Content = text, GroupName = "tool", FontSize = 12, IsChecked = tool == Doc.Tool, Margin = new Thickness(0, 0, 4, 0), MinHeight = 24, Tag = tool };
+            ToolTip.SetTip(t, tip);
+            t.IsCheckedChanged += (_, _) => { if (t.IsChecked == true) { Doc.Tool = tool; View.Redraw(); } };
+            toolButtons.Add(t);
+            p.Children.Add(t);
+        }
+        p.Children.Add(Sep());
+        p.Children.Add(new TextBlock { Text = "Corners:", VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = Page.Faint, Margin = new Thickness(0, 0, 5, 0) });
         foreach (var (mode, text, tip) in new[]
         {
             (MoveMode.Single, "Single", "Only this wheel or part"),
@@ -262,7 +520,7 @@ public sealed partial class MainWindow : Window
         Toggle("Reflections (EnvRGB)", true, v => View.ShowEnv = v);
         Toggle("Shadow", true, v => View.ShowShadow = v);
         Toggle("Wireframe", false, v => View.ShowWire = v);
-        Toggle("Collision hull", false, v => { View.ShowHull = v; LoadHull(); });
+        Toggle("Collision hull", false, v => { View.ShowHull = v; FillParts(); });
         Toggle("Suspension travel", false, v => View.ShowTravel = v);
         Toggle("Markers", true, v => View.ShowMarkers = v);
         Toggle("Grid", true, v => View.ShowGrid = v);
@@ -342,6 +600,7 @@ public sealed partial class MainWindow : Window
         if (Doc.Game == null) return;
         Doc.Open(Doc.Game, folder);
         Settings.LastCar = folder;
+        SetLocked(true);
         loadingList = true;
         carList.SelectedItem = carList.Items.Cast<ListBoxItem>().FirstOrDefault(i => string.Equals((string)i.Tag!, folder, StringComparison.OrdinalIgnoreCase));
         loadingList = false;
@@ -351,7 +610,7 @@ public sealed partial class MainWindow : Window
     {
         if (loadingList || carList.SelectedItem is not ListBoxItem it || Doc.Game == null) return;
         var folder = (string)it.Tag!;
-        if (Doc.Car != null && folder == Doc.Car.Folder) return;
+        if (Doc.Car != null && folder == Doc.Car.Folder) { SetLocked(true); return; }
         if (!await AskSave()) { FillList(); return; }
         PickCar(folder);
     }
@@ -375,25 +634,17 @@ public sealed partial class MainWindow : Window
 
     void OnCarOpened()
     {
-        View.HullData = null;
-        LoadHull();
+        stockBanner.IsVisible = false;
+        ResetPaint();
         View.FrameCar();
         titleText.Text = Doc.D!.Name == "" ? Doc.Car!.Folder : Doc.D.Name;
+        lockedName.Text = titleText.Text;
+        lockedInfo.Text = "cars\\" + Doc.Car!.Folder + (GameFolder.IsStock(Doc.Car.Folder) ? "  ·  stock" : "");
+        FillParts();
         foreach (var p in pages) p.Refresh();
         RefreshRaw();
         RunChecks();
         Say("Opened " + Doc.Car!.Folder);
-    }
-
-    void LoadHull()
-    {
-        View.HullData = null;
-        if (Doc.Car == null) return;
-        try
-        {
-            if (Doc.Car.Game.Find(Doc.D!.Coll) is { } f && new FileInfo(f).Length > 0) View.HullData = Hull.Load(f);
-        }
-        catch (Exception) { }
     }
 
     void OnDocChanged()
@@ -415,6 +666,7 @@ public sealed partial class MainWindow : Window
 
     void OnSelectionChanged()
     {
+        SyncParts();
         selectedPage = BuildSelectedPage();
         selectedHost.Child = selectedPage;
         selectedPage.Refresh();
@@ -473,10 +725,11 @@ public sealed partial class MainWindow : Window
         keys.Add(e.Key);
         var typing = FocusManager?.GetFocusedElement() is TextBox;
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        if (ctrl && e.Key == Key.S) { Save(); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.S) { _ = SaveAsked(); e.Handled = true; return; }
         if (typing && !ctrl) { if (e.Key == Key.Escape) View.Focus(); return; }
         if (ctrl && e.Key == Key.Z) { Doc.Undo(); e.Handled = true; return; }
         if (ctrl && e.Key == Key.Y) { Doc.Redo(); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.O) { ChangeCar(); e.Handled = true; return; }
         if (e.Key == Key.F5) { TestRunGame(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); e.Handled = true; return; }
         if (e.Key == Key.F6) { if (Doc.Sim != null) StopDrive(); else StartDrive(SimGround.Flat); e.Handled = true; return; }
         if (Doc.Sim != null)
@@ -494,6 +747,9 @@ public sealed partial class MainWindow : Window
             case Key.D3: View.SetView(ViewMode.Front); break;
             case Key.D4: View.SetView(ViewMode.Side); break;
             case Key.F: View.FrameCar(); break;
+            case Key.W: SetTool(GizmoTool.Move); break;
+            case Key.E: SetTool(GizmoTool.Rotate); break;
+            case Key.R: SetTool(GizmoTool.Scale); break;
             case Key.Left: View.Nudge(-1, 0, 0, amount); break;
             case Key.Right: View.Nudge(1, 0, 0, amount); break;
             case Key.Up: View.Nudge(0, 0, 1, amount); break;
@@ -503,6 +759,12 @@ public sealed partial class MainWindow : Window
             default: return;
         }
         e.Handled = true;
+    }
+
+    readonly List<RadioButton> toolButtons = new();
+    public void SetTool(GizmoTool t)
+    {
+        foreach (var b in toolButtons) if (Equals(b.Tag, t)) b.IsChecked = true;
     }
 
     // --------------------------- Drive ---------------------------
@@ -579,7 +841,20 @@ public sealed partial class MainWindow : Window
 
     // --------------------------- Tools with side effects ---------------------------
 
-    void AutoShade() => DoAutoShade(0.45f, 0.55f, 1f);
+    async void AutoShade() => await ShadeAsked(0.45f, 0.55f, 1f);
+
+    public async Task ShadeAsked(float ambient, float sun, float occlusion)
+    {
+        if (Doc.D is not { } d) return;
+        var files = new List<(string, string)>();
+        var slots = new List<int> { d.BodyModel };
+        slots.AddRange(d.Wheels.Where(w => w.Present).Select(w => w.Model));
+        if (d.Spinner.Model >= 0) slots.Add(d.Spinner.Model);
+        foreach (var s in slots.Distinct())
+            if (s is >= 0 and < 19 && Doc.SharedProblem(d.Models[s]) is { } why) files.Add((d.Models[s], why));
+        if (!await AskSharedFiles(files)) return;
+        DoAutoShade(ambient, sun, occlusion);
+    }
 
     public void DoAutoShade(float ambient, float sun, float occlusion)
     {
@@ -622,24 +897,21 @@ public sealed partial class MainWindow : Window
     void MakeHull()
     {
         if (Doc.Car == null || Doc.Model(Doc.D!.BodyModel) is not { } body) { Say("The car has no body to make a hull from"); return; }
-        var hull = CarTools.MakeHull(body, Doc.D.BodyOffset);
-        if (hull == null) { Say("Couldn't make a hull from this body"); return; }
-        var path = Path.Combine(Doc.Car.Dir, "hull.hul");
-        Files.Backup(path);
-        hull.Save(path);
-        Tool("Hull", () => Doc.D!.Coll = "cars\\" + Doc.Car.Folder + "\\hull.hul");
+        if (Doc.Car.IsForeign(Doc.D.Coll) || Doc.Car.OtherUsers(Doc.D.Coll).Count > 0)
+            Tool("Hull", () => Doc.D!.Coll = "cars\\" + Doc.Car.Folder + "\\hull.hul");
+        if (!Doc.RebuildHull()) { Say("Couldn't make a hull from this body"); return; }
         View.ShowHull = true;
-        LoadHull();
-        Say("Hull saved: " + path + " (shown in green)");
+        FillParts();
+        Say("Hull made, shown in green. Save keeps it");
         View.Redraw();
     }
 
-    public void TestRunGame(bool dev)
+    public async void TestRunGame(bool dev)
     {
         if (Doc.Car == null) return;
         try
         {
-            Save();
+            await SaveAsked();
             var run = new TestRun(Doc.Car.Game);
             if (run.FindExe() == null) { Say("No RVGL found in " + Doc.Car.Game.Root); return; }
             run.Start(Doc.Car.Folder, SelectedLevel, dev);
@@ -660,19 +932,37 @@ public sealed partial class MainWindow : Window
     async Task NewCar()
     {
         if (Doc.Game == null) return;
-        var template = Doc.Car?.Folder ?? "gencar";
-        var folder = await Dialogs.Input(this, "New car, starting as a copy of '" + template + "'. Its folder inside cars:", "");
-        if (string.IsNullOrWhiteSpace(folder)) return;
-        var name = await Dialogs.Input(this, "Its name:", folder);
-        if (string.IsNullOrWhiteSpace(name)) return;
+        var w = new NewCarWizard(Doc.Game, Doc.Car?.Folder);
+        await w.ShowDialog(this);
+        if (w.Result is not { } r) return;
         if (!await AskSave()) return;
         try
         {
-            Car.CreateFrom(Doc.Game, template, folder, name);
-            LoadCarList();
-            PickCar(folder);
+            CreateCar(r);
         }
         catch (Exception ex) { Say("Can't make the car: " + ex.Message); }
+    }
+
+    /// <summary>Make the car and open it where that kind of work starts</summary>
+    public void CreateCar(NewCarChoice r)
+    {
+        var c = Car.CreateFrom(Doc.Game!, r.BaseCar, r.Folder, r.Name);
+        if (r.Kind == NewCarKind.Original)
+        {
+            CarTools.SetupOriginal(c, r.BodyFile!, r.WheelFile, r.TextureFile);
+            c.Save();
+            if (File.Exists(c.ParamPath + ".bak")) File.Delete(c.ParamPath + ".bak");
+        }
+        LoadCarList();
+        PickCar(r.Folder);
+        Tabs.SelectedIndex = r.Kind == NewCarKind.Repaint ? PaintTabIndex : 0;
+        View.ShowHull = false;
+        Say(r.Kind switch
+        {
+            NewCarKind.Repaint => "Repaint: change the colours in the Paint tab, or open the texture in your image editor",
+            NewCarKind.Remodel => "Remodel: click a part to change it. Replace, Remove and Add a part are on the left and on its page",
+            _ => "Your model is in: wheels placed, sizes fitted, a first hull made. Check the positions, then Tools for shade, shadow and carbox"
+        });
     }
 
     async Task RenameCar()

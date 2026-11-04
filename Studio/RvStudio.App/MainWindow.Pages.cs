@@ -21,6 +21,8 @@ public sealed partial class MainWindow
     void BuildTabs()
     {
         AddTab("Selected", selectedHost, "The part you clicked in the 3D view");
+        PaintTabIndex = Tabs.ItemCount;
+        AddTab("Paint", PaintPage(), "Colours of the car, seen live");
         AddTab("Car", CarPage());
         AddTab("Handling", HandlingPage());
         AddTab("Menu", FrontendPage());
@@ -60,12 +62,42 @@ public sealed partial class MainWindow
         var s = Doc.Sel;
         CarData D() => Doc.D!;
         p.Header(s.Label);
+        if (s.IsHull)
+        {
+            HullPage(p, s);
+            return p;
+        }
+        if (Doc.HasModel(s) || s.Kind is SelKind.AerialBase or SelKind.AerialTip)
+        {
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,4,*,4,*") };
+            var replace = new Button { Content = "Replace...", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            ToolTip.SetTip(replace, "Use another model file. From outside the game folder it's copied into the car's folder");
+            replace.Click += async (_, _) => await PickModelFor(s);
+            var hide = new Button { Content = Doc.Hidden.Contains(s) ? "Show" : "Hide", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            ToolTip.SetTip(hide, "Only in the view, to reach what's behind it. The file doesn't change");
+            hide.Click += (_, _) =>
+            {
+                Doc.ToggleHidden(s);
+                hide.Content = Doc.Hidden.Contains(s) ? "Show" : "Hide";
+                FillParts();
+            };
+            var remove = new Button { Content = "Remove", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            ToolTip.SetTip(remove, "Take it off the car. Follows the corner mode, undo brings it back");
+            remove.Click += (_, _) => Doc.RemovePart(s);
+            Grid.SetColumn(hide, 2);
+            Grid.SetColumn(remove, 4);
+            row.Children.Add(replace);
+            row.Children.Add(hide);
+            row.Children.Add(remove);
+            p.Add(row);
+        }
         switch (s.Kind)
         {
             case SelKind.None:
                 p.Note("Click a part of the car in the 3D view, or one of the crosses: centre of mass, weapons, aerial, cameras, suspension mounts.");
                 break;
             case SelKind.Body:
+                p.Check("Hull follows the body", () => Doc.HullFollowsBody, v => Doc.HullFollowsBody = v, "Moving, turning or sizing the body does the same to the collision hull");
                 p.Int("Model slot", () => D().BodyModel, v => D().BodyModel = v, "Which line of the MODEL list", -1, 18);
                 ModelFile(p, () => D().BodyModel);
                 p.Vec("Position", () => D().BodyOffset, v => D().BodyOffset = v, "Offset of the model. X right, Y down, Z forward");
@@ -170,7 +202,7 @@ public sealed partial class MainWindow
                 p.Int("Top model", () => D().Aerial.TopModel, v => D().Aerial.TopModel = v, null, -1, 18);
                 p.Vec("Base", () => D().Aerial.Offset, v => D().Aerial.Offset = v);
                 p.Vec("Direction", () => D().Aerial.Direction, v => D().Aerial.Direction = v, "Y goes down, so straight up is 0 -1 0");
-                p.Num("Length", () => D().Aerial.Length, v => D().Aerial.Length = v, "Each section of the physics. The whole aerial is about 2.5 x this", 0);
+                p.Num("Length", () => D().Aerial.Length, v => D().Aerial.Length = v, "Of the whole aerial, from base to tip", 0);
                 p.Num("Stiffness", () => D().Aerial.Stiffness, v => D().Aerial.Stiffness = v, "About 2000 on stock cars");
                 p.Num("Damping", () => D().Aerial.Damping, v => D().Aerial.Damping = v, "About 5. 0 wiggles forever");
                 p.Button("Straight up", () => Tool("Aerial", () => D().Aerial.Direction = new Vector3(0, -1, 0)));
@@ -221,22 +253,7 @@ public sealed partial class MainWindow
             var skins = Doc.Car.FindSkins();
             return skins.Count > 1 ? "Skins: " + string.Join(", ", skins.Select(Path.GetFileNameWithoutExtension)) : "No other skins";
         });
-        var skinRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-        var prev = new Button { Content = "Next skin", FontSize = 12, Padding = new Thickness(8, 3) };
-        prev.Click += (_, _) =>
-        {
-            if (Doc.Car == null) return;
-            var skins = Doc.Car.FindSkins();
-            if (skins.Count == 0) return;
-            var cur = Doc.SkinOverride ?? Doc.Car.Game.Find(Doc.D!.TPage);
-            int i = skins.FindIndex(s => string.Equals(s, cur, StringComparison.OrdinalIgnoreCase));
-            Doc.SkinOverride = skins[(i + 1) % skins.Count];
-            Say("Showing " + Path.GetFileName(Doc.SkinOverride));
-            View.Redraw();
-        };
-        skinRow.Children.Add(prev);
-        p.Add(skinRow);
-        p.Text("Hull", () => D().Coll, v => { D().Coll = v; LoadHull(); }, "Collision hull, .hul");
+        p.Text("Hull", () => D().Coll, v => { D().Coll = v; Doc.LoadHull(); }, "Collision hull, .hul");
         p.Text("Carbox", () => D().TCarBox, v => D().TCarBox = v);
         p.Header("Model list");
         for (int i = 0; i < 19; i++)
@@ -375,7 +392,7 @@ public sealed partial class MainWindow
         var amb = p.Slide("Sky light", 0, 1, 0.45);
         var sun = p.Slide("Sun", 0, 1, 0.55);
         var occ = p.Slide("Dark corners", 0, 1, 1);
-        p.Button("Shade the car", () => DoAutoShade((float)amb.Value, (float)sun.Value, (float)occ.Value), "See it, then Save. The first version of each model stays as .bak", true);
+        p.Button("Shade the car", async () => await ShadeAsked((float)amb.Value, (float)sun.Value, (float)occ.Value), "See it, then Save. The first version of each model stays as .bak", true);
 
         p.Header("Shadow");
         p.Button("Make shadow.bmp from the car", () => Tool("Shadow", () => Say("Shadow saved: " + CarTools.MakeShadow(Doc.Car!))), "Top view, white on black, and the shadow table around it");
@@ -384,19 +401,14 @@ public sealed partial class MainWindow
         p.Button("Make carbox.bmp", async () => await MakeCarbox(), "A picture of the car with its name, on white");
 
         p.Header("Collision");
-        p.Button("Make a hull from the body", MakeHull, "One convex part and spheres inside. For a first drive: a hull made by hand fits better");
+        p.Button("Make a hull from the body", MakeHull, "One convex part and spheres inside, to edit from there. Save keeps it");
+        p.Button("Show and edit the hull", () => { View.ShowHull = true; FillParts(); View.Redraw(); }, "Its parts and spheres appear in the Parts list and in the view");
 
         p.Header("Fit to the models");
         p.Button("Radius, skid width, spring and axle length", () => Tool("Fit", () => CarTools.FitToModels(Doc.Car!)));
         p.Button("Inertia from the body's shape", () => Tool("Inertia", () => CarTools.ComputeInertia(Doc.Car!)));
         p.Button("Place wheels on a new body", () => Tool("Place wheels", () => CarTools.PlaceWheels(Doc.Car!)));
         p.Button("Make right side like the left", () => Tool("Symmetry", () => CarTools.Symmetrize(Doc.D!)));
-
-        p.Header("Texture");
-        var bright = p.Slide("Brightness", -0.6, 0.6, 0);
-        var satur = p.Slide("Colour", 0, 2, 1);
-        var hue = p.Slide("Hue", -180, 180, 0);
-        p.Button("Save as a new skin", SaveSkin(bright, satur, hue), "Makes car-<name>.bmp, RVGL lists it as a skin. The original stays");
 
         p.Header("Readme");
         var author = new TextBox { Watermark = "Your name", FontSize = 12, Text = Settings.Author };
@@ -419,22 +431,233 @@ public sealed partial class MainWindow
         return p;
     }
 
-    Action SaveSkin(Slider bright, Slider satur, Slider hue) => () =>
+    // ---------------------------- Paint ----------------------------
+
+    public int PaintTabIndex;
+    public Slider PaintHue = null!, PaintColour = null!, PaintBright = null!;
+    readonly WrapPanel swatches = new();
+    public readonly HashSet<int> PaintOnly = new();
+    SkiaSharp.SKBitmap? paintSrc;
+    int paintRun;
+    bool paintLoading;
+    FileSystemWatcher? texWatcher;
+
+    Page PaintPage()
     {
-        if (Doc.Car == null || Doc.Car.Game.Find(Doc.D!.TPage) is not { } tex) { Say("No texture"); return; }
-        using var src = Images.Load(tex);
-        if (src == null) return;
-        using var o = CarTools.AdjustTexture(src, (float)bright.Value, (float)satur.Value, (float)hue.Value);
-        var stem = Path.GetFileNameWithoutExtension(tex);
-        var dir = Path.GetDirectoryName(tex)!;
+        var p = NewPage();
+        p.Header("Repaint");
+        p.Note("Everything shows on the car at once. Nothing is written until you choose below.");
+        PaintHue = p.Slide("Hue", -180, 180, 0, _ => PaintChanged(), "Turns the colours around the colour wheel");
+        PaintColour = p.Slide("Colour", 0, 2, 1, _ => PaintChanged(), "From grey to very strong");
+        PaintBright = p.Slide("Brightness", -0.6, 0.6, 0, _ => PaintChanged());
+        p.Header("Only these colours");
+        p.Note("Click colours of this texture to change only those. None clicked: all of them. Black and greys stay.");
+        p.Add(swatches);
+        p.Button("Back to the texture as it is", () => { ResetPaint(); }, null);
+        p.Header("Keep it");
+        p.Button("Save as a new skin", () => PaintSaveSkin(), "A new file car-alt1.bmp next to the texture. RVGL lists it as a skin, the original stays", true);
+        p.Button("Change this car's texture", async () => await PaintApply(), "The first version stays as .bak");
+        p.Header("Your image editor");
+        p.Note("Paint on the real texture: open it, and each time you save there the car here changes.");
+        p.Button("Open the texture and watch it", OpenTextureEditor);
+        p.Button("Next skin", NextSkin);
+        p.Info(() =>
+        {
+            if (Doc.Car == null) return "";
+            var skins = Doc.Car.FindSkins();
+            return skins.Count > 1 ? "Skins: " + string.Join(", ", skins.Select(Path.GetFileNameWithoutExtension)) : "No other skins";
+        });
+        return p;
+    }
+
+    void NextSkin()
+    {
+        if (Doc.Car == null) return;
+        var skins = Doc.Car.FindSkins();
+        if (skins.Count == 0) return;
+        var cur = Doc.SkinOverride ?? Doc.Car.Game.Find(Doc.D!.TPage);
+        int i = skins.FindIndex(s => string.Equals(s, cur, StringComparison.OrdinalIgnoreCase));
+        Doc.SkinOverride = skins[(i + 1) % skins.Count];
+        ResetPaintKeepSkin();
+        Say("Showing " + Path.GetFileName(Doc.SkinOverride));
+    }
+
+    string? PaintFile() => Doc.Car == null ? null : Doc.SkinOverride ?? Doc.Car.Game.Find(Doc.D!.TPage);
+
+    void ReloadPaintSource()
+    {
+        paintSrc?.Dispose();
+        paintSrc = Images.Load(PaintFile());
+        swatches.Children.Clear();
+        PaintOnly.Clear();
+        if (paintSrc == null) return;
+        foreach (var (bucket, _, sample) in CarTools.MainColours(paintSrc).Take(10))
+        {
+            var t = new Avalonia.Controls.Primitives.ToggleButton
+            {
+                Width = 34, Height = 26, Margin = new Thickness(0, 0, 4, 4), MinWidth = 0, MinHeight = 0, Tag = bucket,
+                Background = new SolidColorBrush(Color.FromRgb(sample.Red, sample.Green, sample.Blue)), BorderThickness = new Thickness(2)
+            };
+            t.IsCheckedChanged += (_, _) =>
+            {
+                if (t.IsChecked == true) { PaintOnly.Add(bucket); t.BorderBrush = Brushes.White; }
+                else { PaintOnly.Remove(bucket); t.BorderBrush = null; }
+                PaintChanged();
+            };
+            swatches.Children.Add(t);
+        }
+    }
+
+    void ResetPaintKeepSkin()
+    {
+        paintLoading = true;
+        PaintHue.Value = 0; PaintColour.Value = 1; PaintBright.Value = 0;
+        paintLoading = false;
+        Doc.PaintPreview = null;
+        ReloadPaintSource();
+        Doc.TextureVersion++;
+        View.Redraw();
+    }
+
+    public void ResetPaint()
+    {
+        Doc.SkinOverride = null;
+        texWatcher?.Dispose();
+        texWatcher = null;
+        ResetPaintKeepSkin();
+    }
+
+    bool PaintIsPlain => PaintHue.Value == 0 && PaintColour.Value == 1 && PaintBright.Value == 0;
+
+    SkiaSharp.SKBitmap PaintResult(SkiaSharp.SKBitmap src) =>
+        CarTools.AdjustTexture(src, (float)PaintBright.Value, (float)PaintColour.Value, (float)PaintHue.Value, PaintOnly.ToArray());
+
+    /// <summary>Work out the look in the background: the newest one wins, the sliders never wait</summary>
+    public void PaintChanged()
+    {
+        if (paintLoading || paintSrc == null) return;
+        if (PaintIsPlain)
+        {
+            Doc.PaintPreview = null;
+            View.Redraw();
+            return;
+        }
+        int run = ++paintRun;
+        var src = paintSrc;
+        float b = (float)PaintBright.Value, c = (float)PaintColour.Value, h = (float)PaintHue.Value;
+        var only = PaintOnly.ToArray();
+        Task.Run(() =>
+        {
+            using var o = CarTools.AdjustTexture(src, b, c, h, only);
+            var rgba = Doc.ToRgba(o, out int w, out int ht);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (run != paintRun) return;
+                Doc.PaintPreview = rgba;
+                Doc.PaintW = w; Doc.PaintH = ht;
+                Doc.PaintVersion++;
+                View.Redraw();
+            });
+        });
+    }
+
+    public string? PaintSaveSkin()
+    {
+        if (paintSrc == null || PaintFile() is not { } tex) { Say("No texture"); return null; }
+        using var o = PaintResult(paintSrc);
+        var main = Doc.Car!.Game.Find(Doc.D!.TPage) ?? tex;
+        var stem = Path.GetFileNameWithoutExtension(main);
+        var dir = Path.GetDirectoryName(main)!;
         int n = 1;
         string path;
         do path = Path.Combine(dir, stem + "-alt" + n++ + ".bmp"); while (File.Exists(path));
-        Images.SaveBmp24(o, path);
+        CarTools.SaveTexture(o, path, paintSrc.AlphaType != SkiaSharp.SKAlphaType.Opaque);
         Doc.SkinOverride = path;
-        Say("Skin saved: " + Path.GetFileName(path));
-        View.Redraw();
-    };
+        ResetPaintKeepSkin();
+        Say("Skin saved: " + Path.GetFileName(path) + ". RVGL shows it on the car selection screen");
+        return path;
+    }
+
+    public async Task PaintApply()
+    {
+        if (paintSrc == null || Doc.Car == null || PaintFile() is not { } tex) { Say("No texture"); return; }
+        var rel = Doc.D!.TPage;
+        if (Doc.IsStockCar)
+        {
+            var r = await Dialogs.Ask(this, Doc.D.Name + " is a stock car, this is the game's own texture.", "Make a copy", "Change it", "Cancel");
+            if (r == 2) return;
+            if (r == 0)
+            {
+                if (!await CopyCar()) return;
+                tex = PaintFile()!;
+            }
+        }
+        else if (Doc.SharedProblem(rel) is { } why && !await AskSharedFiles(new() { (rel, why) })) return;
+        tex = PaintFile() ?? tex;
+        WritePaint(tex);
+    }
+
+    public void WritePaint(string tex)
+    {
+        using var o = PaintResult(paintSrc!);
+        Files.Backup(tex);
+        CarTools.SaveTexture(o, tex, paintSrc!.AlphaType != SkiaSharp.SKAlphaType.Opaque);
+        ResetPaintKeepSkin();
+        Say("Texture changed: " + Path.GetFileName(tex) + ". The first version stays as .bak");
+    }
+
+    void OpenTextureEditor()
+    {
+        if (PaintFile() is not { } tex) { Say("No texture"); return; }
+        WatchTexture(tex);
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(tex) { UseShellExecute = true }); }
+        catch (Exception ex) { Say("Couldn't open it: " + ex.Message + ". It's still being watched: " + tex); return; }
+        Say("Watching " + Path.GetFileName(tex) + ": save in your editor and it shows here");
+    }
+
+    public void WatchTexture(string tex)
+    {
+        texWatcher?.Dispose();
+        texWatcher = new FileSystemWatcher(Path.GetDirectoryName(tex)!, Path.GetFileName(tex)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName };
+        FileSystemEventHandler onChange = (_, _) => Avalonia.Threading.DispatcherTimer.RunOnce(() =>
+        {
+            ResetPaintKeepSkin(); // an editor may still be writing: this comes a moment later
+            Say("Texture reloaded " + DateTime.Now.ToShortTimeString());
+        }, TimeSpan.FromMilliseconds(400));
+        texWatcher.Changed += onChange;
+        texWatcher.Created += onChange;
+        texWatcher.EnableRaisingEvents = true;
+    }
+
+    // ---------------------------- Hull ----------------------------
+
+    void HullPage(Page p, Selection s)
+    {
+        if (Doc.Hull is not { } h0) { p.Note("This car has no hull. Tools can make one."); return; }
+        if (s.Kind == SelKind.HullPart)
+        {
+            int i = s.Index;
+            p.Info(() => Doc.Hull is { } h && i < h.Convex.Count ? $"{h.Convex[i].Points.Length} points, {h.Convex[i].Faces.Length} faces. Size {h.Convex[i].Max.X * 2:0.#} x {h.Convex[i].Max.Y * 2:0.#} x {h.Convex[i].Max.Z * 2:0.#}" : "");
+            p.Note("Use the Move, Rotate and Scale handles in the view. The whole part goes together, so it stays a solid.");
+        }
+        else
+        {
+            int i = s.Index;
+            p.Vec("Position", () => Doc.Hull != null && i < Doc.Hull.Spheres.Count ? Doc.Hull.Spheres[i].Pos : default, v => Doc.SetSphere(i, v, Doc.Hull!.Spheres[i].Radius));
+            p.Num("Radius", () => Doc.Hull != null && i < Doc.Hull.Spheres.Count ? Doc.Hull.Spheres[i].Radius : 0, v => Doc.SetSphere(i, Doc.Hull!.Spheres[i].Pos, (float)v), "Keep spheres inside the body", 0.1);
+            p.Note("Spheres give the car its bumps against walls and other cars. Keep them inside the green shape. With Mirror L/R the one on the other side follows.");
+        }
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,4,*") };
+        var add = new Button { Content = "Add a sphere", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        add.Click += (_, _) => Doc.AddSphere(Doc.Anchor(s) ?? default, 8);
+        var remove = new Button { Content = "Remove", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        remove.Click += (_, _) => Doc.RemoveHullItem(s);
+        Grid.SetColumn(remove, 2);
+        row.Children.Add(add);
+        row.Children.Add(remove);
+        p.Add(row);
+        p.Button("Make again from the body", MakeHull);
+    }
 
     readonly ComboBox levelBox = new() { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
     List<string> levelFolders = new();

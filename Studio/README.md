@@ -8,10 +8,16 @@ C#, .NET 10, Avalonia and OpenGL. Runs on Windows now, written so Linux and macO
 
 ## In the 3D view
 
-Click a part to select it, drag its arrows to move it. Right drag or dragging on nothing turns the view, middle drag
-pans, the wheel zooms. Arrow keys and PgUp/PgDn nudge, Shift for bigger steps. 1 2 3 4: 3D, top, front, side. F: frame the car.
+Pick a car once: it stays locked until Change car (Ctrl+O). Click a part in the view or the Parts list to select it,
+and use its handles: Move (W), Rotate (E), Scale (R). Rotate and Scale change the model itself, with all its LODs, and the
+radius or length that goes with its size. Right drag or dragging on nothing turns the view, middle drag pans, the wheel
+zooms. Arrow keys and PgUp/PgDn nudge, Shift for bigger steps. 1 2 3 4: 3D, top, front, side. F: frame the car.
 
-The Move buttons say what happens to the other corners:
+Add a part, Replace, Remove and Hide are in the Parts list and on the selected part's page. Hide only changes the view.
+
+Number boxes take typing, their arrows, Up and Down, or the wheel. Shift: bigger steps, Ctrl: finer.
+
+The Corners buttons say what happens to the other corners:
 
 | | |
 |---|---|
@@ -21,6 +27,24 @@ The Move buttons say what happens to the other corners:
 | All four | all corners, mirrored both ways |
 
 Crosses in the view are the centre of mass, weapon points, aerial, cameras and suspension mounts: they can be dragged too.
+
+## Starting a car
+
+**New car** asks what you're making. *Repaint*: new colours on a car that exists, opens on the Paint tab. *Remodel*: start
+from a car and change its settings, parts or models. *Original car*: your own body, one wheel for all four (the right side
+mirrored) and a texture. Wheels are placed, sizes fitted and a first hull made. The handling comes from the base car.
+
+**Paint** shows hue, colour and brightness on the car as you move them, for all colours or only the ones you click.
+Keep it as a new skin or over the texture. *Open the texture and watch it* opens your image editor, and each save there
+shows here.
+
+**Stock cars:** the first change offers a copy that keeps what you've done. The game's own files stay as they are.
+**Shared files:** before changing a model or hull other cars use, or one outside the car's folder, it asks: your own copy,
+change it for all, or cancel.
+
+**Collision hull:** it follows the body when you move, rotate or scale it (a switch on the body's page turns that off).
+*Show and edit the hull* lists its parts and spheres. Parts move, turn and scale as a whole, so they stay solid. Spheres
+move and resize, can be added and removed, and with Mirror L/R the one on the other side follows.
 
 ## What it does for you
 
