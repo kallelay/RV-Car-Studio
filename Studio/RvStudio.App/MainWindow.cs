@@ -41,6 +41,7 @@ public sealed partial class MainWindow : Window
     readonly List<CarEntry> allCars = new();
     Page? selectedPage;
     readonly DispatcherTimer simTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    readonly RaceMap raceMap = new() { Width = 170, Height = 170, IsVisible = false, IsHitTestVisible = false, Margin = new Thickness(12), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top };
     readonly DispatcherTimer checkTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
     readonly DispatcherTimer rawTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     readonly HashSet<Key> keys = new();
@@ -76,6 +77,7 @@ public sealed partial class MainWindow : Window
         carList.SelectionChanged += async (_, _) => await OnCarPicked();
         simTimer.Tick += (_, _) => SimTick();
         checkTimer.Tick += (_, _) => { checkTimer.Stop(); RunChecks(); };
+        shadeFinal.Tick += (_, _) => ShadeFinish();
         rawTimer.Tick += (_, _) => { rawTimer.Stop(); ApplyRaw(); };
 
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
@@ -121,6 +123,7 @@ public sealed partial class MainWindow : Window
         var overlay = new Grid();
         overlay.Children.Add(View);
         overlay.Children.Add(hud);
+        overlay.Children.Add(raceMap);
         overlay.Children.Add(stockBanner);
         mid.Children.Add(overlay);
         var split2 = new GridSplitter { Height = 3, Background = LineBrush, ResizeDirection = GridResizeDirection.Rows };
@@ -187,6 +190,10 @@ public sealed partial class MainWindow : Window
         var hullEdit = new CheckBox { Content = "Show and edit the hull", FontSize = 12, MinHeight = 22 };
         hullEdit.IsCheckedChanged += (_, _) => { View.ShowHull = hullEdit.IsChecked == true; FillParts(); View.Redraw(); };
         head.Children.Add(hullEdit);
+        var hullSolid = new CheckBox { Content = "Solid, smooth shaded", FontSize = 12, MinHeight = 22, Margin = new Thickness(18, 0, 0, 0) };
+        ToolTip.SetTip(hullSolid, "Show the hull's spheres and parts solid instead of as wires");
+        hullSolid.IsCheckedChanged += (_, _) => { View.HullSolid = hullSolid.IsChecked == true; View.Redraw(); };
+        head.Children.Add(hullSolid);
         DockPanel.SetDock(head, Dock.Top);
         left.Children.Add(head);
         var add = new Button { Content = "+  Add a part", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, FontSize = 12, Margin = new Thickness(8) };
@@ -216,6 +223,7 @@ public sealed partial class MainWindow : Window
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         row.Children.Add(new TextBlock { Text = "You're changing a stock car. Nothing is saved yet: make your own copy?", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+        ToolTip.SetTip(row, "If you keep editing, Save puts your changes in packs\\local on top of the game's files. RVGL shows them everywhere, and may mark the car as changed online.");
         var copy = new Button { Content = "Make a copy", FontSize = 12, Padding = new Thickness(9, 3), Background = Page.Accent };
         copy.Click += async (_, _) => await CopyCar();
         var keep = new Button { Content = "Keep editing the original", FontSize = 12, Padding = new Thickness(9, 3) };
@@ -246,13 +254,24 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { Say("Can't make the copy: " + ex.Message); return false; }
     }
 
+    async Task DropLocal()
+    {
+        if (Doc.Car is not { } c) return;
+        if (!c.HasLocalChanges) { Say("This car has no saved changes on top of the game's files"); return; }
+        var r = await Dialogs.Ask(this, "Delete your saved changes of " + c.Folder + " in packs\\local? The car goes back to the game's own files.", "Delete them", "Keep them");
+        if (r != 0) return;
+        c.DropLocalChanges();
+        PickCar(c.Folder);
+        Say("Back to the game's version of " + c.Folder);
+    }
+
     /// <summary>Saving a stock car with no answer yet</summary>
     public async Task SaveAsked()
     {
         if (Doc.Car == null) return;
         if (Doc.IsStockCar && Doc.Modified && stockBanner.IsVisible)
         {
-            var r = await Dialogs.Ask(this, Doc.D!.Name + " is a stock car. Saving changes the game's own file, and RVGL may mark the car as modified online. The first version stays as .bak.", "Make a copy", "Save over it", "Cancel");
+            var r = await Dialogs.Ask(this, Doc.D!.Name + " is a stock car. Saving puts your changes in packs\\local, on top of the game's files, which stay as they are. RVGL may mark the car as changed online.", "Make a copy", "Save the changes", "Cancel");
             if (r == 2) return;
             stockBanner.IsVisible = false;
             if (r == 0) { await CopyCar(); return; }
@@ -301,26 +320,36 @@ public sealed partial class MainWindow : Window
         if (d.Aerial.SecModel < 0) addMenu.Items.Add(Item("Aerial (the stock one)", () => { Doc.AddAerial(); Say("Aerial added"); }));
     }
 
+    /// <summary>Choose a model by seeing it. Null: nothing chosen. Empty: no model</summary>
+    public async Task<string?> AskModel(string title)
+    {
+        if (Doc.Car == null) return null;
+        var p = new ModelPicker(Doc.Car.Game, Doc.Car.Folder, title);
+        await p.ShowDialog(this);
+        if (p.FilePath != null)
+        {
+            try
+            {
+                Prm.Load(p.FilePath);
+                return Doc.BringIn(p.FilePath);
+            }
+            catch (Exception ex)
+            {
+                Say("Can't use that model: " + ex.Message);
+                return null;
+            }
+        }
+        return p.Result;
+    }
+
     public async Task PickModelFor(Selection s)
     {
-        if (Doc.Car == null) return;
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Model for " + s.Label,
-            AllowMultiple = false,
-            SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(Doc.Car.Dir),
-            FileTypeFilter = new[] { new FilePickerFileType("Re-Volt models") { Patterns = new[] { "*.prm", "*.m" } } }
-        });
-        var path = files.FirstOrDefault()?.TryGetLocalPath();
-        if (path == null) return;
-        try
-        {
-            Prm.Load(path);
-            Doc.SetPartModel(s, Doc.BringIn(path));
-            Doc.Select(s);
-            Say(s.Label + ": " + Path.GetFileName(path));
-        }
-        catch (Exception ex) { Say("Can't use that model: " + ex.Message); }
+        var rel = await AskModel("Model for " + s.Label);
+        if (rel == null) return;
+        if (rel == "") { Doc.RemovePart(s); return; }
+        Doc.SetPartModel(s, rel);
+        Doc.Select(s);
+        Say(s.Label + ": " + Path.GetFileName(rel));
     }
 
     public void SetLocked(bool locked)
@@ -403,6 +432,7 @@ public sealed partial class MainWindow : Window
         file.Items.Add(new Separator());
         file.Items.Add(Item("Save", async () => await SaveAsked(), "Ctrl+S"));
         file.Items.Add(Item("Make a copy of this car...", async () => await CopyCar()));
+        file.Items.Add(Item("Back to the game's version of this car...", async () => await DropLocal()));
         file.Items.Add(Item("Revert to the saved car", Revert));
         file.Items.Add(new Separator());
         file.Items.Add(Item("Open car folder", OpenFolder));
@@ -428,22 +458,30 @@ public sealed partial class MainWindow : Window
         tools.Items.Add(Item("Compute inertia from the body", () => Tool("Inertia", () => CarTools.ComputeInertia(Doc.Car!))));
         tools.Items.Add(Item("Place wheels on a new body", () => Tool("Place wheels", () => CarTools.PlaceWheels(Doc.Car!))));
         tools.Items.Add(Item("Fit shadow to the car", () => Tool("Shadow table", () => CarTools.FitShadowTable(Doc.Car!))));
-        tools.Items.Add(Item("Fill frontend stats from a simulated run", () => Tool("Stats", () => CarSim.FillStats(Doc.D!))));
+        tools.Items.Add(Item("Fill frontend stats from a simulated run", () => Tool("Stats", () => CarSim.FillStats(Doc.D!, Doc.Hull))));
 
         var run = new MenuItem { Header = "Run", FontSize = 13 };
         run.Items.Add(Item("Test run in RVGL", () => TestRunGame(false), "F5"));
         run.Items.Add(Item("Test run in RVGL, dev mode (Ctrl+R reloads the car)", () => TestRunGame(true), "Shift+F5"));
         run.Items.Add(new Separator());
         run.Items.Add(Item("Drive here", () => StartDrive(SimGround.Flat), "F6"));
+        run.Items.Add(Item("Race here", () => StartRace(), "F7"));
         run.Items.Add(Item("Automatic runs and report", AutoRuns));
 
         var help = new MenuItem { Header = "Help", FontSize = 13 };
+        help.Items.Add(Item("Guide and calculations", ShowGuide, "F1"));
         help.Items.Add(Item("Mouse and keys", () => Say("Left drag: turn the view, click: select, arrows on the handle: move. Right drag: turn, middle drag: pan, wheel: zoom. Arrows + PgUp/PgDn: nudge. 1 2 3 4: views. F: frame the car.")));
         help.Items.Add(Item("About", () => Say("RV Car Studio 3 by Kallel A.Y (theKDL). GPL v3. Re-Volt is a trademark of its owners.")));
 
         var m = new Menu { Background = BarBrush, Height = 28 };
         foreach (var x in new[] { file, edit, tools, run, help }) m.Items.Add(x);
         return m;
+    }
+
+    readonly List<RadioButton> shadeButtons = new();
+    public void SetShadeView(ShadeMode m)
+    {
+        foreach (var b in shadeButtons) if (Equals(b.Tag, m)) b.IsChecked = true;
     }
 
     Button BarButton(string text, string tip, Action click, Button? use = null)
@@ -522,20 +560,31 @@ public sealed partial class MainWindow : Window
         Toggle("Wireframe", false, v => View.ShowWire = v);
         Toggle("Collision hull", false, v => { View.ShowHull = v; FillParts(); });
         Toggle("Suspension travel", false, v => View.ShowTravel = v);
+        Toggle("Vertex normals", false, v => View.ShowNormals = v);
         Toggle("Markers", true, v => View.ShowMarkers = v);
         Toggle("Grid", true, v => View.ShowGrid = v);
         Toggle("Soft light", false, v => View.Lit = v);
-        viewMenu.Items.Add(new Separator());
-        foreach (var (m, n) in new[] { (ShadeMode.Textured, "Textured"), (ShadeMode.VertexColours, "Only the shading"), (ShadeMode.Clay, "Clay") })
-            viewMenu.Items.Add(Item(n, () => { View.Shade = m; View.Redraw(); }));
         var showBtn = new Button { Content = "Show ▾", FontSize = 12, Padding = new Thickness(9, 4), Margin = new Thickness(2, 0), Flyout = viewMenu };
         p.Children.Add(showBtn);
+        foreach (var (m, n, tip) in new[]
+        {
+            (ShadeMode.Textured, "Texture", "As in the game"),
+            (ShadeMode.VertexColours, "Shading", "Texture off: only the vertex colours, to see shading work"),
+            (ShadeMode.Clay, "Clay", "Only the shape")
+        })
+        {
+            var r = new RadioButton { Content = n, GroupName = "shade", FontSize = 12, IsChecked = m == View.Shade, Margin = new Thickness(4, 0, 0, 0), MinHeight = 24, Tag = m };
+            ToolTip.SetTip(r, tip);
+            r.IsCheckedChanged += (_, _) => { if (r.IsChecked == true) { View.Shade = m; View.Redraw(); } };
+            shadeButtons.Add(r);
+            p.Children.Add(r);
+        }
         p.Children.Add(Sep());
 
         var runBtn = BarButton("▶  Test run", "Run the car in RVGL (F5)", () => TestRunGame(false));
         runBtn.Background = Page.Accent;
         p.Children.Add(runBtn);
-        p.Children.Add(BarButton("Drive here", "Drive with the arrow keys, a quick simulation (F6)", () => StartDrive(SimGround.Flat)));
+        p.Children.Add(BarButton("Drive here", "Drive with the arrow keys: the original game's physics on a plain floor (F6)", () => StartDrive(SimGround.Flat)));
 
         return new Border { Background = PanelBrush, BorderBrush = LineBrush, BorderThickness = new Thickness(0, 0, 0, 1), Child = p };
     }
@@ -557,11 +606,9 @@ public sealed partial class MainWindow : Window
         Doc.Game = new GameFolder(path);
         LoadCarList();
         BuildGameDependent();
-        if (allCars.Count > 0)
-        {
-            var last = allCars.FirstOrDefault(c => c.Folder.Equals(Settings.LastCar, StringComparison.OrdinalIgnoreCase));
-            PickCar(last?.Folder ?? allCars[0].Folder);
-        }
+        SetLocked(false);
+        titleText.Text = "Pick a car";
+        search.Focus();
     }
 
     void LoadCarList()
@@ -584,15 +631,42 @@ public sealed partial class MainWindow : Window
         carList.Items.Clear();
         foreach (var c in show)
         {
-            var row = new StackPanel { Tag = c.Folder };
-            row.Children.Add(new TextBlock { Text = c.Name, FontSize = 13 });
-            row.Children.Add(new TextBlock { Text = c.Folder + (c.Stock ? "  ·  stock" : ""), FontSize = 10.5, Foreground = Page.Faint });
-            carList.Items.Add(new ListBoxItem { Content = row, Padding = new Thickness(10, 4), Tag = c.Folder });
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("56,*") };
+            var image = new Image { Width = 48, Height = 48, Source = thumbs.GetValueOrDefault(c.Folder) };
+            row.Children.Add(image);
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = c.Name, FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = c.Folder + (c.Stock ? "  ·  stock" : ""), FontSize = 10.5, Foreground = Page.Faint, TextTrimming = TextTrimming.CharacterEllipsis });
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            if (image.Source == null) _ = LoadThumb(c.Folder, image);
+            carList.Items.Add(new ListBoxItem { Content = row, Padding = new Thickness(6, 3), Tag = c.Folder });
         }
         carCount.Text = show.Count == allCars.Count ? allCars.Count + " cars" : show.Count + " of " + allCars.Count + " cars";
         if (Doc.Car != null)
             carList.SelectedItem = carList.Items.Cast<ListBoxItem>().FirstOrDefault(i => (string)i.Tag! == Doc.Car.Folder);
         loadingList = false;
+    }
+
+    readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap> thumbs = new(StringComparer.OrdinalIgnoreCase);
+
+    async Task LoadThumb(string folder, Image image)
+    {
+        var game = Doc.Game;
+        if (game == null) return;
+        var png = await Task.Run(() =>
+        {
+            try
+            {
+                using var b = Thumbnail.OfCar(new Car(game, folder), 96);
+                return Thumbnail.Png(b);
+            }
+            catch (Exception) { return null; }
+        });
+        if (png == null) return;
+        var bmp = new Avalonia.Media.Imaging.Bitmap(new MemoryStream(png));
+        thumbs[folder] = bmp;
+        image.Source = bmp;
     }
 
     public void PickCar(string folder)
@@ -635,6 +709,7 @@ public sealed partial class MainWindow : Window
     void OnCarOpened()
     {
         stockBanner.IsVisible = false;
+        shadeOld = null;
         ResetPaint();
         View.FrameCar();
         titleText.Text = Doc.D!.Name == "" ? Doc.Car!.Folder : Doc.D.Name;
@@ -732,10 +807,22 @@ public sealed partial class MainWindow : Window
         if (ctrl && e.Key == Key.O) { ChangeCar(); e.Handled = true; return; }
         if (e.Key == Key.F5) { TestRunGame(e.KeyModifiers.HasFlag(KeyModifiers.Shift)); e.Handled = true; return; }
         if (e.Key == Key.F6) { if (Doc.Sim != null) StopDrive(); else StartDrive(SimGround.Flat); e.Handled = true; return; }
+        if (e.Key == Key.F7) { if (Doc.Sim != null) StopDrive(); else StartRace(ctrl); e.Handled = true; return; }
+        if (e.Key == Key.F1) { ShowGuide(); e.Handled = true; return; }
         if (Doc.Sim != null)
         {
             if (e.Key == Key.Escape) StopDrive();
-            if (e.Key == Key.R) { Doc.Sim.Reset(); }
+            if (e.Key == Key.R)
+            {
+                if (Doc.Race is { } race) race.Reposition(race.Player);
+                else Doc.Sim.Reset();
+            }
+            if (e.Key == Key.I && Doc.Race is { } driven)
+            {
+                driven.AiDrivesPlayer = !driven.AiDrivesPlayer;
+                Say(driven.AiDrivesPlayer ? "The AI drives your car, with your car's AI values. I to take it back" : "You drive");
+            }
+            if (e.Key == Key.Space && !e.KeyModifiers.HasFlag(KeyModifiers.Control)) Doc.Sim.Flip();
             e.Handled = true;
             return;
         }
@@ -778,13 +865,58 @@ public sealed partial class MainWindow : Window
         simLast = DateTime.UtcNow;
         simTimer.Start();
         View.Focus();
-        Say("Driving: arrows or WASD, R to restart, Esc to leave. A quick simulation: the real test is Test run.");
+        Say("Driving: arrows or WASD, or a gamepad. R to restart, Esc to leave. Space flips it when it's nearly upside down, as in the game. The original game's physics on a plain floor: Test run has the real tracks.");
     }
+
+    // ---- Race here ----
+    public int RaceTrackIndex, RaceGroundIndex, RaceOpponents = 5, RaceLapsHere = 3;
+    public float RaceSkill = 0.92f;
+    public bool RaceSameCar, RaceAiDrives;
+
+    /// <summary>Secret: Ctrl+F7 races on the game's surfaces</summary>
+    public void StartRace(bool materials = false)
+    {
+        if (Doc.Car == null) return;
+        Doc.StartRace(RaceTrackIndex, materials ? RaceGround.Materials : (RaceGround)RaceGroundIndex, RaceOpponents, RaceLapsHere, RaceSkill, RaceSameCar, RaceAiDrives);
+        raceMap.Race = Doc.Race;
+        raceMap.IsVisible = true;
+        hud.IsVisible = true;
+        driveCamYaw = float.NaN;
+        simLast = DateTime.UtcNow;
+        simTimer.Start();
+        View.Focus();
+        Say("Race: arrows or WASD, or a gamepad. Space or X flips a car on its roof, R puts you back on the road, I lets the AI drive, Esc leaves. The car physics follows the game's. The CPU driver, road and walls are this editor's own.");
+    }
+
+    static string Clock(float seconds) => float.IsInfinity(seconds) ? "-" : $"{(int)(seconds / 60)}:{seconds % 60:00.00}";
+
+    string RaceHud(Race r)
+    {
+        var me = r.Player;
+        if (!r.Started) return Math.Ceiling(r.Countdown).ToString("0");
+        var lines = new List<string>();
+        int lap = Math.Clamp(me.Lap, 1, r.Laps);
+        if (me.Finished) lines.Add($"FINISHED {Place(r.PlaceOf(me))} in {Clock(me.FinishTime)}");
+        else lines.Add($"{Place(r.PlaceOf(me))} of {r.Cars.Count}    Lap {lap}/{r.Laps}    {Clock(r.Time)}");
+        lines.Add($"{me.Sim.SpeedMph:0} mph    best lap {Clock(me.BestLap)}" + (r.AiDrivesPlayer ? "    AI driving" : ""));
+        if (r.Track.Ground == RaceGround.Materials) lines.Add("On: " + me.Sim.SurfaceName);
+        if (r.Time < 1) lines.Add("GO!");
+        int n = 1;
+        foreach (var c in r.Standings.Take(me.Finished ? r.Cars.Count : 4))
+            lines.Add($"{n++}. {c.Name}" + (c.Finished ? "  " + Clock(c.FinishTime) : ""));
+        return string.Join("\n", lines);
+    }
+
+    static string Place(int p) => p + (p % 10 == 1 && p != 11 ? "st" : p % 10 == 2 && p != 12 ? "nd" : p % 10 == 3 && p != 13 ? "rd" : "th");
+
+    public string HudText => hud.Text ?? "";
 
     public void StopDrive()
     {
         simTimer.Stop();
         Doc.StopSim();
+        raceMap.Race = null;
+        raceMap.IsVisible = false;
         hud.IsVisible = false;
         View.SetView(ViewMode.Perspective);
         View.FrameCar();
@@ -805,22 +937,40 @@ public sealed partial class MainWindow : Window
         if (keys.Contains(Key.Down) || keys.Contains(Key.S)) th -= 1;
         if (keys.Contains(Key.Left) || keys.Contains(Key.A)) st -= 1;
         if (keys.Contains(Key.Right) || keys.Contains(Key.D)) st += 1;
+        if (GamePad.Read() is { } pad)
+        {
+            if (pad.Steer != 0) st = pad.Steer;
+            if (pad.Throttle != 0) th = pad.Throttle;
+            if (pad.Flip) s.Flip();
+            if (pad.Back)
+            {
+                if (Doc.Race is { } padRace) padRace.Reposition(padRace.Player);
+                else s.Reset();
+            }
+        }
         if (!float.IsNaN(AutoThrottle)) { th = AutoThrottle; st = AutoSteer; }
         s.Throttle = th;
         s.Steer = st;
+        if (Doc.Race is { } race)
+        {
+            race.PlayerThrottle = th;
+            race.PlayerSteer = st;
+        }
         Doc.TickSim(dt);
 
         var fwd = Vector3.Transform(Vector3.UnitZ, s.Rot);
         var yaw = MathF.Atan2(fwd.X, fwd.Z);
         if (float.IsNaN(driveCamYaw)) driveCamYaw = yaw;
         var diff = MathF.IEEERemainder(yaw - driveCamYaw, MathF.Tau);
-        driveCamYaw += diff * Math.Min(1, dt * 4);
+        driveCamYaw += diff * Math.Min(1, dt * 4); // as the game's camera: a quarter of a second behind
         View.View = ViewMode.Perspective;
-        View.Target = s.Pos + new Vector3(0, -15, 0);
+        // The game's Behind camera: 460 back and 150 up, aimed 60 over the car
+        View.Target = s.Centre + new Vector3(0, -60, 0);
         View.Yaw = driveCamYaw + MathF.PI;
-        View.Pitch = 0.3f;
-        View.Distance = 300;
-        hud.Text = $"{s.SpeedMph:0} mph   {s.SpeedMph * 1.609f:0} km/h";
+        View.Pitch = MathF.Atan2(90, 460);
+        View.Distance = MathF.Sqrt(90 * 90 + 460 * 460);
+        hud.Text = Doc.Race is { } running ? RaceHud(running) : $"{s.SpeedMph:0} mph   {s.SpeedMph * 1.609f:0} km/h";
+        raceMap.InvalidateVisual();
         View.Redraw();
     }
 
@@ -830,11 +980,11 @@ public sealed partial class MainWindow : Window
         Say("Running...");
         var d = Doc.D.Clone();
         var rows = new List<string>();
-        var a = CarSim.RunAcceleration(d);
+        var a = CarSim.RunAcceleration(d, Doc.Hull);
         rows.Add($"Acceleration: {a.Note}");
         rows.Add($"   in the file: TopEnd {d.TopEnd:0}, Acc {d.Acc:0.0}. Simulated: TopEnd {a.TopEnd:0}, Acc {a.Acc:0.0}");
-        rows.Add($"Hard turn: {CarSim.RunCircle(d).Note}");
-        rows.Add($"Bumps: {CarSim.RunBumps(d).Note}");
+        rows.Add($"Hard turn: {CarSim.RunCircle(d, Doc.Hull).Note}");
+        rows.Add($"Bumps: {CarSim.RunBumps(d, Doc.Hull).Note}");
         Dialogs.ShowText(this, "Automatic runs", string.Join("\n", rows) + "\n\nThis is a simulation from the parameters, not the game. Use Test run for the real thing.");
         Say("Automatic runs done");
     }
@@ -842,6 +992,98 @@ public sealed partial class MainWindow : Window
     // --------------------------- Tools with side effects ---------------------------
 
     async void AutoShade() => await ShadeAsked(0.45f, 0.55f, 1f);
+
+    // ------- Realtime: sliders shade with fewer rays at once, the full quality follows when they stop -------
+
+    Dictionary<Prm, (uint[][] Colors, byte[]? Lods)>? shadeOld;
+    bool shadeBusy, shadePending, shadeAsking;
+    float shadeA = 0.45f, shadeS = 0.55f, shadeO = 1f;
+    readonly DispatcherTimer shadeFinal = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    public int ShadeRuns;
+
+    List<Prm> ShadedModels()
+    {
+        var d = Doc.D!;
+        var slots = new List<int> { d.BodyModel };
+        slots.AddRange(d.Wheels.Where(w => w.Present).Select(w => w.Model));
+        if (d.Spinner.Model >= 0) slots.Add(d.Spinner.Model);
+        return slots.Distinct().Select(s => Doc.Model(s)).Where(m => m != null).Select(m => m!).ToList();
+    }
+
+    public async Task ShadeLive(float ambient, float sun, float occlusion)
+    {
+        if (Doc.D == null || shadeAsking) return;
+        (shadeA, shadeS, shadeO) = (ambient, sun, occlusion);
+        if (shadeOld == null)
+        {
+            shadeAsking = true;
+            var d = Doc.D;
+            var files = new List<(string, string)>();
+            var slots = new List<int> { d.BodyModel };
+            slots.AddRange(d.Wheels.Where(w => w.Present).Select(w => w.Model));
+            if (d.Spinner.Model >= 0) slots.Add(d.Spinner.Model);
+            foreach (var s in slots.Distinct())
+                if (s is >= 0 and < 19 && Doc.SharedProblem(d.Models[s]) is { } why) files.Add((d.Models[s], why));
+            var go = await AskSharedFiles(files);
+            shadeAsking = false;
+            if (!go) return;
+            Doc.Edit("Shade", () => { });
+            Doc.EndGesture();
+            shadeOld = ShadedModels().ToDictionary(m => m, m => (m.Faces.Select(f => (uint[])f.Colors.Clone()).ToArray(), m.OtherLods));
+        }
+        shadeFinal.Stop();
+        shadeFinal.Start();
+        if (shadeBusy) { shadePending = true; return; }
+        shadeBusy = true;
+        do
+        {
+            shadePending = false;
+            await ShadeRun(false);
+        } while (shadePending);
+        shadeBusy = false;
+    }
+
+    async Task ShadeRun(bool full)
+    {
+        var models = ShadedModels();
+        foreach (var m in models) Doc.DirtyModels.Add(m);
+        var opt = ShadeNow(full ? 48 : 14);
+        var (scene, worlds) = ShadeSceneNow();
+        await Task.Run(() =>
+        {
+            foreach (var m in models) Shader.Shade(m, opt, full, scene, worlds.TryGetValue(m, out var w) ? w : null);
+        });
+        ShadeRuns++;
+        Doc.ModelVersion++;
+        Doc.Touch();
+    }
+
+    async void ShadeFinish()
+    {
+        shadeFinal.Stop();
+        if (shadeBusy || Doc.D == null || shadeOld == null) return;
+        shadeBusy = true;
+        await ShadeRun(true);
+        shadeBusy = false;
+        Say("Shaded. Save keeps it, the first version of each model stays as .bak");
+    }
+
+    /// <summary>Back to the colours from before the sliders were touched</summary>
+    public void ShadeUndo()
+    {
+        if (shadeOld == null) return;
+        shadeFinal.Stop();
+        foreach (var (m, old) in shadeOld)
+        {
+            for (int i = 0; i < m.Faces.Length; i++) Array.Copy(old.Colors[i], m.Faces[i].Colors, 4);
+            m.OtherLods = old.Lods;
+            Doc.DirtyModels.Remove(m);
+        }
+        shadeOld = null;
+        Doc.ModelVersion++;
+        Doc.Touch();
+        Say("Shading as it was");
+    }
 
     public async Task ShadeAsked(float ambient, float sun, float occlusion)
     {
@@ -856,10 +1098,71 @@ public sealed partial class MainWindow : Window
         DoAutoShade(ambient, sun, occlusion);
     }
 
+    // Everything the shading panel says
+    public ShadeSmooth ShadeSmoothing = ShadeSmooth.ModelNormals;
+    public float ShadeAngle = 45, ShadeAround = 54, ShadeHeight = 66, ShadeSoft, ShadeBounce, ShadeContrast = 1;
+    public Avalonia.Media.Color ShadeSky = Avalonia.Media.Colors.White, ShadeSunColour = Avalonia.Media.Colors.White, ShadeBounceColour = Avalonia.Media.Colors.White;
+    public bool ShadeWholeCar = true;
+
+    static Vector3 Light(Avalonia.Media.Color c) => new(c.R / 255f, c.G / 255f, c.B / 255f);
+
+    public ShadeOptions ShadeNow(int rays)
+    {
+        float around = ShadeAround * MathF.PI / 180, height = ShadeHeight * MathF.PI / 180;
+        var sunDir = new Vector3(MathF.Cos(height) * MathF.Sin(around), -MathF.Sin(height), MathF.Cos(height) * MathF.Cos(around));
+        return new ShadeOptions(shadeA, shadeS, shadeO, sunDir, rays, ShadeSmoothing, ShadeAngle,
+            Light(ShadeSky), Light(ShadeSunColour), Light(ShadeBounceColour), ShadeBounce, ShadeContrast, ShadeSoft);
+    }
+
+    // The whole car standing together: wheels shade the body, the body shades the wheels
+    (ShadeScene? Scene, Dictionary<Prm, Matrix4x4?> Worlds) ShadeSceneNow()
+    {
+        var worlds = new Dictionary<Prm, Matrix4x4?>();
+        if (!ShadeWholeCar || Doc.D == null) return (null, worlds);
+        var parts = new List<(Prm, Matrix4x4)>();
+        foreach (var part in CarPose.Build(Doc.D))
+        {
+            if (part.Kind is PartKind.AerialSection or PartKind.AerialTop) continue;
+            if (Doc.Model(part.Slot) is not { } m) continue;
+            parts.Add((m, part.World));
+            worlds.TryAdd(m, part.World);
+        }
+        return (new ShadeScene(parts), worlds);
+    }
+
+    /// <summary>Rewrite the vertex normals of the car's main models. Undo takes it back</summary>
+    public async Task RewriteNormals(ShadeSmooth mode, float angle)
+    {
+        if (Doc.D is not { } d) return;
+        var files = new List<(string, string)>();
+        var slots = new List<int> { d.BodyModel };
+        slots.AddRange(d.Wheels.Where(w => w.Present).Select(w => w.Model));
+        if (d.Spinner.Model >= 0) slots.Add(d.Spinner.Model);
+        foreach (var s in slots.Distinct())
+            if (s is >= 0 and < 19 && Doc.SharedProblem(d.Models[s]) is { } why) files.Add((d.Models[s], why));
+        if (!await AskSharedFiles(files)) return;
+        DoRewriteNormals(mode, angle);
+    }
+
+    public void DoRewriteNormals(ShadeSmooth mode, float angle)
+    {
+        var models = ShadedModels();
+        int before = models.Sum(m => m.Verts.Length);
+        bool ok = true;
+        Doc.EditModels("Vertex normals", models, () =>
+        {
+            foreach (var m in models) ok &= Shader.SetNormals(m, mode, angle);
+        });
+        int after = models.Sum(m => m.Verts.Length);
+        Say(!ok ? "A model would need too many vertices: it stays as it was" : after == before ? $"Normals rewritten, {after} vertices. Save keeps it, undo takes it back" : $"Normals rewritten: {before} vertices became {after}, as sharp edges need two. Save keeps it, undo takes it back");
+    }
+
     public void DoAutoShade(float ambient, float sun, float occlusion)
     {
         if (Doc.D is not { } d) return;
-        var opt = new CarTools.ShadeOptions(ambient, sun, occlusion);
+        (shadeA, shadeS, shadeO) = (ambient, sun, occlusion);
+        var opt = ShadeNow(48);
+        var (scene, worlds) = ShadeSceneNow();
         var slots = new List<int> { d.BodyModel };
         slots.AddRange(d.Wheels.Where(w => w.Present).Select(w => w.Model));
         if (d.Spinner.Model >= 0) slots.Add(d.Spinner.Model);
@@ -867,7 +1170,7 @@ public sealed partial class MainWindow : Window
         foreach (var slot in slots.Distinct())
             if (Doc.Model(slot) is { } m)
             {
-                CarTools.AutoShade(m, opt);
+                Shader.Shade(m, opt, true, scene, worlds.TryGetValue(m, out var world) ? world : null);
                 Doc.DirtyModels.Add(m);
                 n++;
             }
@@ -914,13 +1217,22 @@ public sealed partial class MainWindow : Window
             await SaveAsked();
             var run = new TestRun(Doc.Car.Game);
             if (run.FindExe() == null) { Say("No RVGL found in " + Doc.Car.Game.Root); return; }
-            run.Start(Doc.Car.Folder, SelectedLevel, dev);
-            Say(dev ? "RVGL started in dev mode: Ctrl+R reloads the car, Start Race has Calc Car Stats" : "RVGL started with " + Doc.D!.Name + " picked: choose Start Race");
+            var game = run.Start(Doc.Car.Folder, SelectedLevel, dev, RaceCars, RaceLaps);
+            if (!RaceByItself || dev)
+            {
+                Say(dev ? "RVGL started in dev mode: Ctrl+R reloads the car, Start Race has Calc Car Stats" : "RVGL started with " + Doc.D!.Name + " picked: choose Start Race");
+                return;
+            }
+            Say("RVGL starting. It goes to the race by itself: leave its window in front");
+            var levelName = SelectedLevel == null ? null : run.Levels().FirstOrDefault(l => l.Folder == SelectedLevel).Name;
+            await TestRun.DriveToRace(game, new RaceSetup(Doc.D!.Name, levelName, RaceCars, RaceLaps), s => Dispatcher.UIThread.Post(() => Say(s)));
         }
         catch (Exception ex) { Say("Couldn't start RVGL: " + ex.Message); }
     }
 
     public string? SelectedLevel;
+    public bool RaceByItself = true;
+    public int RaceCars = 8, RaceLaps = 3;
 
     void OpenFolder()
     {

@@ -3,14 +3,45 @@ using System.Text;
 
 namespace RvStudio.Core;
 
-/// <summary>The Re-Volt folder: finds files whatever the case in their path, which matters outside Windows</summary>
+/// <summary>
+/// The Re-Volt folder as RVGL sees it. A packlist (packs\default.txt) stacks folders: the root, then packs, later ones
+/// win. Stock cars usually live in packs, and what's in the root's cars folder under the same name is then ignored.
+/// Packs are read-only except one, normally "local", where edits to anything in a pack go.
+/// </summary>
 public sealed class GameFolder
 {
     public readonly string Root;
-    public GameFolder(string root) => Root = Path.GetFullPath(root);
+    /// <summary>Folders the game reads, lowest first</summary>
+    public readonly IReadOnlyList<string> Layers;
+    /// <summary>Where edits of things in read-only packs go</summary>
+    public readonly string WritableLayer;
     public string CarsDir => Path.Combine(Root, "cars");
 
-    public static bool IsGameFolder(string? p) => !string.IsNullOrEmpty(p) && Directory.Exists(Path.Combine(p, "cars"));
+    public GameFolder(string root)
+    {
+        Root = Path.GetFullPath(root);
+        var layers = new List<string>();
+        string? writable = null;
+        var list = Path.Combine(Root, "packs", "default.txt");
+        if (File.Exists(list))
+            foreach (var raw in File.ReadAllLines(list))
+            {
+                var line = raw.Trim();
+                if (line == "" || line.StartsWith(';')) continue;
+                bool star = line.EndsWith('*');
+                if (star) line = line[..^1].Trim();
+                var name = line.Trim('"');
+                var dir = name.Equals("default", StringComparison.OrdinalIgnoreCase) ? Root : Path.Combine(Root, "packs", name);
+                layers.Add(dir);
+                if (star) writable = dir;
+            }
+        if (layers.Count == 0) layers.Add(Root);
+        Layers = layers;
+        WritableLayer = writable ?? (layers.Count == 1 && layers[0] == Root ? Root : Path.Combine(Root, "packs", "local"));
+    }
+
+    public static bool IsGameFolder(string? p) => !string.IsNullOrEmpty(p) &&
+        (Directory.Exists(Path.Combine(p, "cars")) || Directory.Exists(Path.Combine(p, "packs")));
 
     static readonly string[] Stock =
     {
@@ -19,12 +50,10 @@ public sealed class GameFolder
     };
     public static bool IsStock(string folder) => Stock.Contains(folder, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Full path of a path written in parameters.txt, null if there's no such file</summary>
-    public string? Find(string? relative)
+    // A path in one folder, whatever the case: Linux needs that
+    static string? FindIn(string layer, string[] parts)
     {
-        if (string.IsNullOrWhiteSpace(relative) || relative.Trim().Equals("NONE", StringComparison.OrdinalIgnoreCase)) return null;
-        var parts = relative.Trim().Split('\\', '/', StringSplitOptions.RemoveEmptyEntries);
-        var cur = Root;
+        var cur = layer;
         for (int i = 0; i < parts.Length; i++)
         {
             var next = Path.Combine(cur, parts[i]);
@@ -39,14 +68,103 @@ public sealed class GameFolder
         return cur;
     }
 
+    /// <summary>The file the game would read for a path written in parameters.txt, null if there's none</summary>
+    public string? Find(string? relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative) || relative.Trim().Equals("NONE", StringComparison.OrdinalIgnoreCase)) return null;
+        var parts = relative.Trim().Split('\\', '/', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = Layers.Count - 1; i >= 0; i--)
+            if (FindIn(Layers[i], parts) is { } f) return f;
+        return null;
+    }
+
+    /// <summary>A file as the game names it: from the top of whichever folder it's in. Null if it's outside them all</summary>
+    public string? RelOf(string fullPath)
+    {
+        var full = Path.GetFullPath(fullPath);
+        foreach (var layer in Layers.Reverse().Append(Root))
+            if (full.StartsWith(layer + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                return Path.GetRelativePath(layer, full).Replace('/', '\\');
+        return null;
+    }
+
+    static bool IsIn(string file, string dir) => file.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The folder a car is read from. Null if there's no such car</summary>
+    public string? CarLayer(string folder)
+    {
+        for (int i = Layers.Count - 1; i >= 0; i--)
+            if (FindIn(Layers[i], new[] { "cars", folder }) != null || Directory.Exists(Path.Combine(Layers[i], "cars", folder))) return Layers[i];
+        return null;
+    }
+
+    /// <summary>Where a car's changes are written: where it lives, unless that's a read-only pack</summary>
+    public string CarHome(string folder)
+    {
+        var layer = CarLayer(folder);
+        if (layer == null || layer == Root || layer == WritableLayer) return Path.Combine(layer ?? Root, "cars", folder);
+        return Path.Combine(WritableLayer, "cars", folder);
+    }
+
+    /// <summary>Where to write a file so the game reads it. Files in read-only packs are never touched</summary>
+    public string WritePath(string relative)
+    {
+        var rel = relative.Trim().Replace('/', '\\');
+        var cur = Find(rel);
+        if (cur != null && (IsIn(cur, WritableLayer) || (IsIn(cur, Root) && !IsInPack(cur)))) return cur;
+        var parts = rel.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        string path;
+        if (parts.Length > 2 && parts[0].Equals("cars", StringComparison.OrdinalIgnoreCase))
+            path = Path.Combine(new[] { CarHome(parts[1]) }.Concat(parts.Skip(2)).ToArray());
+        else
+            path = Path.Combine(new[] { WritableLayer }.Concat(parts).ToArray());
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        return path;
+    }
+
+    bool IsInPack(string file) => IsIn(file, Path.Combine(Root, "packs"));
+
+    /// <summary>Make sure there's a copy that can be changed, and give it</summary>
+    public string EnsureWritable(string relative)
+    {
+        var cur = Find(relative);
+        var target = WritePath(relative);
+        if (cur != null && !string.Equals(cur, target, StringComparison.OrdinalIgnoreCase)) File.Copy(cur, target, true);
+        return target;
+    }
+
+    public IEnumerable<string> CarFolders()
+    {
+        var seen = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var layer in Layers)
+        {
+            var dir = Path.Combine(layer, "cars");
+            if (!Directory.Exists(dir)) continue;
+            foreach (var d in Directory.GetDirectories(dir)) seen.Add(Path.GetFileName(d));
+        }
+        return seen;
+    }
+
+    /// <summary>Every file of a car folder as the game sees it: path as written in parameters.txt, then the real file</summary>
+    public Dictionary<string, string> CarFiles(string folder)
+    {
+        var r = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var layer in Layers)
+        {
+            var dir = Path.Combine(layer, "cars", folder);
+            if (!Directory.Exists(dir)) continue;
+            foreach (var f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+                r["cars\\" + folder + "\\" + Path.GetRelativePath(dir, f).Replace('/', '\\')] = f;
+        }
+        return r;
+    }
+
     public IEnumerable<CarEntry> ListCars()
     {
-        if (!Directory.Exists(CarsDir)) yield break;
-        foreach (var dir in Directory.GetDirectories(CarsDir).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+        foreach (var folder in CarFolders())
         {
-            var p = Path.Combine(dir, "parameters.txt");
-            if (!File.Exists(p)) continue;
-            var folder = Path.GetFileName(dir);
+            var p = Find("cars\\" + folder + "\\parameters.txt");
+            if (p == null) continue;
             var name = ParamFile.Load(p).Main.Str("Name");
             yield return new CarEntry(folder, name == "" ? "(no name)" : name, IsStock(folder));
         }
@@ -59,8 +177,13 @@ public sealed class Car
 {
     public readonly GameFolder Game;
     public string Folder { get; private set; }
-    public string Dir => Path.Combine(Game.CarsDir, Folder);
-    public string ParamPath => Path.Combine(Dir, "parameters.txt");
+    /// <summary>Where this car's changes are written</summary>
+    public string Dir => Game.CarHome(Folder);
+    string ParamRel => "cars\\" + Folder + "\\parameters.txt";
+    /// <summary>The file it's read from, or will be written to</summary>
+    public string ParamPath => Game.Find(ParamRel) ?? Path.Combine(Dir, "parameters.txt");
+    /// <summary>Saved changes of a car that lives in a read-only pack</summary>
+    public bool HasLocalChanges => !Game.WritableLayer.Equals(Game.Root, StringComparison.OrdinalIgnoreCase) && Directory.Exists(Path.Combine(Game.WritableLayer, "cars", Folder));
 
     public ParamFile File_ { get; private set; }
     public CarData Data { get; set; }
@@ -108,10 +231,11 @@ public sealed class Car
     public void Save()
     {
         var content = CurrentText();
-        Files.Backup(ParamPath);
-        var tmp = ParamPath + ".tmp";
+        var target = Game.WritePath(ParamRel);
+        Files.Backup(target);
+        var tmp = target + ".tmp";
         File.WriteAllText(tmp, content, ParamFile.FileEncoding);
-        File.Move(tmp, ParamPath, true);
+        File.Move(tmp, target, true);
     }
 
     // Paths from the old folder of the car to the new one
@@ -136,7 +260,8 @@ public sealed class Car
     {
         if (!ValidFolderName(newFolder)) throw new ArgumentException("That isn't a good folder name");
         var dest = Path.Combine(Game.CarsDir, newFolder);
-        if (Directory.Exists(dest)) throw new IOException("There already is a folder " + newFolder);
+        if (Game.CarLayer(newFolder) != null) throw new IOException("There already is a car " + newFolder);
+        if (Game.CarLayer(Folder) != Game.Root) throw new InvalidOperationException("This car lives in a pack. Make a copy instead");
         if (Modified) Save();
         Directory.Move(Dir, dest);
         var old = Folder;
@@ -149,15 +274,16 @@ public sealed class Car
     public static Car CreateFrom(GameFolder game, string templateFolder, string newFolder, string newName)
     {
         if (!ValidFolderName(newFolder)) throw new ArgumentException("That isn't a good folder name");
-        var from = Path.Combine(game.CarsDir, templateFolder);
         var dest = Path.Combine(game.CarsDir, newFolder);
-        if (!Directory.Exists(from)) throw new DirectoryNotFoundException(from);
-        if (Directory.Exists(dest)) throw new IOException("There already is a folder " + newFolder);
+        var files = game.CarFiles(templateFolder);
+        if (files.Count == 0) throw new DirectoryNotFoundException(templateFolder);
+        if (game.CarLayer(newFolder) != null) throw new IOException("There already is a car " + newFolder);
         Directory.CreateDirectory(dest);
-        foreach (var f in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+        var prefix = "cars\\" + templateFolder + "\\";
+        foreach (var (rel, f) in files)
         {
             if (f.EndsWith(".bak", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) continue;
-            var to = Path.Combine(dest, Path.GetRelativePath(from, f));
+            var to = Path.Combine(dest, rel[prefix.Length..].Replace('\\', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(to)!);
             File.Copy(f, to);
         }
@@ -198,12 +324,11 @@ public sealed class Car
     {
         var r = new List<string>();
         var want = Norm(rel);
-        foreach (var dir in Directory.GetDirectories(Game.CarsDir))
+        foreach (var name in Game.CarFolders())
         {
-            var name = Path.GetFileName(dir);
             if (name.Equals(Folder, StringComparison.OrdinalIgnoreCase)) continue;
-            var p = Path.Combine(dir, "parameters.txt");
-            if (!File.Exists(p)) continue;
+            var p = Game.Find("cars\\" + name + "\\parameters.txt");
+            if (p == null) continue;
             var f = ParamFile.Load(p);
             bool uses = f.Main.Str("COLL").Trim().Replace('/', '\\').Equals(want, StringComparison.OrdinalIgnoreCase);
             for (int i = 0; !uses && i < 19; i++)
@@ -218,6 +343,7 @@ public sealed class Car
     {
         var src = Game.Find(rel) ?? throw new FileNotFoundException(rel);
         var name = Path.GetFileName(src);
+        Directory.CreateDirectory(Dir);
         var dest = Path.Combine(Dir, name);
         if (File.Exists(dest) && !File.ReadAllBytes(dest).SequenceEqual(File.ReadAllBytes(src)))
         {
@@ -230,6 +356,13 @@ public sealed class Car
         return "cars\\" + Folder + "\\" + Path.GetFileName(dest);
     }
 
+    /// <summary>Forget saved changes of a car in a read-only pack: it goes back to what the pack has</summary>
+    public void DropLocalChanges()
+    {
+        var dir = Path.Combine(Game.WritableLayer, "cars", Folder);
+        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+    }
+
     /// <summary>Skins are found by name: car.bmp gives caror.bmp, car1.bmp, car-bleh.bmp (RVGL)</summary>
     public List<string> FindSkins()
     {
@@ -238,7 +371,9 @@ public sealed class Car
         if (tex == null) return r;
         var stem = Path.GetFileNameWithoutExtension(tex);
         var box = Data.TCarBox == "" ? "" : Path.GetFileNameWithoutExtension(Data.TCarBox.Replace('\\', '/'));
-        foreach (var f in Directory.GetFiles(Path.GetDirectoryName(tex)!).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+        var texDir = Path.GetDirectoryName((Game.RelOf(tex) ?? "").Replace('\\', '/'))?.Replace('/', '\\') + "\\";
+        foreach (var f in Game.CarFiles(Folder).Where(kv => kv.Key.StartsWith(texDir, StringComparison.OrdinalIgnoreCase) && kv.Key.LastIndexOf('\\') == texDir.Length - 1)
+                     .Select(kv => kv.Value).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
         {
             if (!Path.GetExtension(f).Equals(".bmp", StringComparison.OrdinalIgnoreCase)) continue;
             var n = Path.GetFileNameWithoutExtension(f);
@@ -270,11 +405,11 @@ public sealed class Car
     {
         if (File.Exists(zipPath)) File.Delete(zipPath);
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
-        foreach (var f in Directory.GetFiles(Dir, "*", SearchOption.AllDirectories))
+        foreach (var (rel, f) in Game.CarFiles(Folder))
         {
             var ext = Path.GetExtension(f).ToLowerInvariant();
             if (ext is ".bak" or ".tmp") continue;
-            zip.CreateEntryFromFile(f, "cars/" + Folder + "/" + Path.GetRelativePath(Dir, f).Replace('\\', '/'));
+            zip.CreateEntryFromFile(f, rel.Replace('\\', '/'));
         }
         if (!withExternal) return;
         foreach (var rel in ExternalFiles())

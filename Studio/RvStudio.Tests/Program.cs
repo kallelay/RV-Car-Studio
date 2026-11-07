@@ -209,20 +209,298 @@ void WritePass()
     Check(d2.Wheels[1].Offset1 == new Vector3(50, 1, 2), "symmetrize");
 }
 
+// A game folder built here: the same car in the root and in a pack, the way RVGL installs it
+void Packs()
+{
+    var dir = Path.Combine(Path.GetTempPath(), "rvs_packs_" + Guid.NewGuid().ToString("N"));
+    void Put(string rel, string text)
+    {
+        var p = Path.Combine(dir, rel.Replace('\\', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+        File.WriteAllText(p, text);
+    }
+    var param = "{\r\nName \"Pack Car\"\r\nMODEL 0 \"cars\\one\\body.prm\"\r\nTPAGE \"cars\\one\\car.bmp\"\r\nCOLL \"cars\\one\\hull.hul\"\r\nBODY {\r\nModelNum 0\r\nMass 1\r\n}\r\n}\r\n";
+    Put("packs\\default.txt", "\"default\"\n\"game_files\"\n;comment\n\"local\" *\n");
+    Put("cars\\one\\parameters.txt", "{\r\nName \"Old in the root\"\r\n}\r\n");
+    Put("cars\\one\\body.prm", "");
+    Put("packs\\game_files\\cars\\one\\parameters.txt", param);
+    Put("packs\\game_files\\cars\\one\\car.bmp", "from the pack");
+    Put("packs\\game_files\\cars\\only\\parameters.txt", "{\r\nName \"Only in a pack\"\r\n}\r\n");
+    Put("cars\\mine\\parameters.txt", "{\r\nName \"Custom\"\r\n}\r\n");
+    Put("cars\\mine\\hull.hul", "x");
+    try
+    {
+        var g = new GameFolder(dir);
+        Check(g.Layers.Count == 3 && g.WritableLayer.EndsWith("local"), "packlist read");
+        var list = g.ListCars().ToList();
+        Check(list.Count == 3 && list.Any(c => c.Folder == "only"), "cars from packs listed: " + list.Count);
+        Check(list.First(c => c.Folder == "one").Name == "Pack Car", "the pack beats the root");
+        var one = new Car(g, "one");
+        Check(one.Data.Name == "Pack Car" && one.ParamPath.Contains("game_files"), "read from the pack");
+        Check(g.WritePath("cars\\one\\car.bmp").Contains(Path.Combine("packs", "local")), "changes to a pack's file go to local");
+        Check(g.WritePath("cars\\one\\body.prm") == Path.Combine(dir, "cars", "one", "body.prm"), "a file only the root has is the one the game reads");
+        var packBytes = File.ReadAllBytes(one.ParamPath);
+        one.Data.BodyMass = 9;
+        one.Save();
+        Check(File.ReadAllBytes(Path.Combine(dir, "packs", "game_files", "cars", "one", "parameters.txt")).SequenceEqual(packBytes), "the pack isn't touched");
+        Check(new ParamFile(File.ReadAllText(Path.Combine(dir, "cars", "one", "parameters.txt"))).Main.Str("Name") == "Old in the root", "nor the root");
+        var again = new Car(g, "one");
+        Check(again.Data.BodyMass == 9 && again.ParamPath.Contains(Path.Combine("packs", "local")), "read back from local");
+        Check(again.HasLocalChanges, "local changes known");
+        again.DropLocalChanges();
+        Check(new Car(g, "one").Data.BodyMass == 1, "dropped: back to the pack");
+        var mine = new Car(g, "mine");
+        mine.Data.BodyMass = 2;
+        mine.Save();
+        Check(File.Exists(Path.Combine(dir, "cars", "mine", "parameters.txt.bak")) && !Directory.Exists(Path.Combine(dir, "packs", "local", "cars", "mine")), "a root car stays in the root");
+        var copy = Car.CreateFrom(g, "one", "fresh", "Fresh");
+        Check(File.ReadAllText(Path.Combine(dir, "cars", "fresh", "car.bmp")) == "from the pack" && copy.Data.TPage == "cars\\fresh\\car.bmp", "a copy takes the files the game uses");
+        Check(g.EnsureWritable("cars\\one\\car.bmp").Contains(Path.Combine("packs", "local")) && g.Find("cars\\one\\car.bmp")!.Contains(Path.Combine("packs", "local")), "paintable copy");
+    }
+    finally { Directory.Delete(dir, true); }
+}
+
+void NewTools(CarData rc, Hull? hull)
+{
+    // ---- The calculator against the physics ----
+    var calc = CarCalc.Of(rc, hull);
+    Console.WriteLine($"rc: front {calc.FrontShare * 100:0}%, sag {calc.FrontSag:0.0}/{calc.RearSag:0.0}, top {calc.TopSpeedReal:0} ({rc.TopEnd:0}), to top {calc.TimeToTop:0.0} s ({rc.Acc:0.0}), {calc.FrontHz:0.0} Hz, damping {calc.FrontDamping:0.00}, slide at {calc.SlideFront:0}");
+    if (rc.TopEnd > 0) Check(Math.Abs(calc.TopSpeedReal - rc.TopEnd) / rc.TopEnd < 0.03, $"calculated top speed: {calc.TopSpeedReal:0} for {rc.TopEnd:0}");
+    if (rc.Acc > 0) Check(Math.Abs(calc.TimeToTop - rc.Acc) / rc.Acc < 0.25, $"calculated time to top: {calc.TimeToTop:0.0} for {rc.Acc:0.0}");
+    var standing = new CarSim(rc, hull);
+    for (int i = 0; i < 400; i++) standing.Advance(1 / 60f);
+    Check(Math.Abs(standing.Compression[0] - calc.FrontSag) < Math.Max(calc.FrontSag * 0.5f, 1.5f), $"calculated sag: {calc.FrontSag:0.0}, in the simulation {standing.Compression[0]:0.0}");
+    var heavier = CarCalc.Of(CarCalc.Scaled(rc, engine: 2));
+    Check(heavier.Accel0 > calc.Accel0 * 1.9f, "what-if: twice the engine");
+    Check(CarCalc.Of(new CarData()).Warnings.Count > 0, "warns about a car without wheels");
+    var soft = CarCalc.Scaled(rc, springs: 0.02f);
+    Check(CarCalc.Of(soft).Warnings.Any(w => w.Contains("too soft")), "warns about springs that can't hold the car");
+
+    // ---- Shading ----
+    var quad = new Prm { Verts = new PrmVertex[] {
+        new() { Pos = new(0, 0, 0), Normal = new(0, -1, 0) }, new() { Pos = new(10, 0, 0), Normal = new(0, -1, 0) },
+        new() { Pos = new(10, 0, 10), Normal = new(0, -1, 0) }, new() { Pos = new(0, 0, 10), Normal = new(0, -1, 0) },
+        new() { Pos = new(0, 10, 10), Normal = new(0, 0, 1) }, new() { Pos = new(10, 10, 10), Normal = new(0, 0, 1) } } };
+    PrmFace Face(short a, short b, short c, short d) => new() { Flags = FaceFlags.Quad, V0 = a, V1 = b, V2 = c, V3 = d };
+    quad.Faces = new[] { Face(0, 1, 2, 3), Face(3, 2, 5, 4) };
+    var byFace = Shader.CornerNormals(quad, ShadeSmooth.Faces);
+    var smooth = Shader.CornerNormals(quad, ShadeSmooth.Smooth);
+    var angled = Shader.CornerNormals(quad, ShadeSmooth.ByAngle, 45);
+    var wide = Shader.CornerNormals(quad, ShadeSmooth.ByAngle, 120);
+    Check(byFace[0][2] != byFace[1][1], "by faces: a shared corner differs");
+    Check(smooth[0][2] == smooth[1][1], "smooth: a shared corner agrees");
+    Check(angled[0][2] == byFace[0][2], "by angle: a 90 degree edge stays sharp under 45");
+    Check(wide[0][2] == smooth[0][2], "by angle: and goes smooth over 90");
+    Check(byFace[0][0].Y < -0.9f, "faces know their outside from the model's normals: " + byFace[0][0]);
+
+    var flat = new Prm { Verts = (PrmVertex[])quad.Verts.Clone(), Faces = new[] { Face(0, 1, 2, 3), Face(3, 2, 5, 4) } };
+    Shader.Shade(flat, new ShadeOptions(Rays: 12, Smooth: ShadeSmooth.Faces));
+    Check(flat.Faces.All(f => f.Colors.All(c => c == f.Colors[0])), "shading by faces: one colour per polygon");
+    Check(flat.Faces[0].Colors[0] != flat.Faces[1].Colors[0], "and polygons facing away differ");
+    var warm = new Prm { Verts = (PrmVertex[])quad.Verts.Clone(), Faces = new[] { Face(0, 1, 2, 3) } };
+    warm.Faces[0].Colors[0] = 0x80FFFFFF;
+    Shader.Shade(warm, new ShadeOptions(Rays: 12, SkyColour: new(1, 0.3f, 0.1f), SunColour: new(1, 0.5f, 0.2f)));
+    uint wc = warm.Faces[0].Colors[0];
+    Check(((wc >> 16) & 255) > (wc & 255) + 20, $"coloured light: {wc:X8}");
+    Check((wc >> 24) == 0x80, "alpha stays");
+
+    var verts = new Prm { Verts = (PrmVertex[])quad.Verts.Clone(), Faces = new[] { Face(0, 1, 2, 3), Face(3, 2, 5, 4) } };
+    Check(Shader.SetNormals(verts, ShadeSmooth.Faces) && verts.Verts.Length == 8, "normals by faces split the shared vertices: " + verts.Verts.Length);
+    Check(verts.Faces.All(f => Enumerable.Range(0, 4).All(k => f.Index(k) < verts.Verts.Length)), "polygons still point at their vertices");
+    var together = new Prm { Verts = (PrmVertex[])quad.Verts.Clone(), Faces = new[] { Face(0, 1, 2, 3), Face(3, 2, 5, 4) } };
+    Shader.SetNormals(together, ShadeSmooth.Smooth);
+    Check(together.Verts.Length <= 6 && together.Verts.Length >= 6, "smooth normals keep the vertex count");
+    var saved = Path.Combine(Path.GetTempPath(), "rvs_normals_" + Guid.NewGuid().ToString("N") + ".prm");
+    try
+    {
+        verts.Save(saved);
+        var back = Prm.Load(saved);
+        Check(back.Verts.Length == 8 && back.Faces[1].V0 == verts.Faces[1].V0, "and it saves");
+    }
+    finally { File.Delete(saved); }
+
+    // ---- Colours ----
+    using (var bmp = new SkiaSharp.SKBitmap(4, 1, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Opaque))
+    {
+        bmp.SetPixel(0, 0, new SkiaSharp.SKColor(200, 30, 30));
+        bmp.SetPixel(1, 0, new SkiaSharp.SKColor(100, 15, 15));
+        bmp.SetPixel(2, 0, new SkiaSharp.SKColor(30, 30, 200));
+        bmp.SetPixel(3, 0, new SkiaSharp.SKColor(0, 0, 0));
+        using var same = CarTools.AdjustTexture(bmp, new PaintOptions());
+        Check(Enumerable.Range(0, 4).All(x => { var a = same.GetPixel(x, 0); var b = bmp.GetPixel(x, 0); return Math.Abs(a.Red - b.Red) + Math.Abs(a.Green - b.Green) + Math.Abs(a.Blue - b.Blue) <= 6; }), "no change, no change");
+        using var swapped = CarTools.AdjustTexture(bmp, new PaintOptions(From: new SkiaSharp.SKColor(200, 30, 30), To: new SkiaSharp.SKColor(30, 200, 30), Tolerance: 0.3f));
+        var px = swapped.GetPixel(0, 0);
+        Check(px.Green > 170 && px.Red < 60, "a colour swaps for another: " + px);
+        Check(swapped.GetPixel(2, 0).Blue > 170 && swapped.GetPixel(2, 0).Green < 60, "others stay");
+        Check(swapped.GetPixel(3, 0) == new SkiaSharp.SKColor(0, 0, 0), "black stays see-through");
+        using var tinted = CarTools.AdjustTexture(bmp, new PaintOptions(Colourise: new SkiaSharp.SKColor(30, 200, 30), ColouriseAmount: 1));
+        Check(tinted.GetPixel(2, 0).Green > tinted.GetPixel(2, 0).Blue, "colourise turns everything to one colour");
+        using var hard = CarTools.AdjustTexture(bmp, new PaintOptions(Contrast: 2));
+        Check(hard.GetPixel(0, 0).Red >= bmp.GetPixel(0, 0).Red && hard.GetPixel(1, 0).Red <= bmp.GetPixel(1, 0).Red, "contrast");
+        using var warmer = CarTools.AdjustTexture(bmp, new PaintOptions(Warmth: 1));
+        Check(warmer.GetPixel(2, 0).Blue < bmp.GetPixel(2, 0).Blue, "warmth");
+    }
+    Check(new PaintOptions().IsPlain && !new PaintOptions(Contrast: 1.2f).IsPlain, "knows when nothing is asked");
+
+    // ---- Race, with you driving ----
+    {
+        var track = RaceTrack.Make(0);
+        var race = new Race(track, 1);
+        var me = race.Add("Me", "rc", rc.Clone(), hull, true);
+        race.Grid();
+        race.PlayerThrottle = 1;
+        while (race.Countdown > 0) race.Step();
+        var from = me.Sim.Pos;
+        for (int i = 0; i < 200; i++) race.Step();
+        Check((me.Sim.Pos - from).Length() > 100, "your throttle drives your car: " + (me.Sim.Pos - from).Length());
+        Check(me.Run > -270, "and counts as progress: " + me.Run);
+
+        // Full throttle with the wheel turned: the wall has to hold it, whatever happens
+        race.PlayerSteer = 1;
+        float worst = 0;
+        for (int i = 0; i < 2500; i++)
+        {
+            race.Step();
+            var side = RaceTrack.Side(track.Tangents[me.Hint]);
+            worst = Math.Max(worst, Math.Abs(System.Numerics.Vector3.Dot(me.Sim.Pos - track.Points[me.Hint], side)));
+        }
+        Check(worst < track.Width / 2 + 40, $"walls hold a car in: {worst:0} of {track.Width / 2:0}");
+        Check(!float.IsNaN(me.Sim.Pos.X) && me.Hits > 0, "after " + me.Hits + " hits");
+        race.Reposition(me);
+        var side2 = RaceTrack.Side(track.Tangents[me.Hint]);
+        Check(Math.Abs(System.Numerics.Vector3.Dot(me.Sim.Pos - track.Points[me.Hint], side2)) < 5 && me.Sim.Up.Y < -0.9f, "R puts you back on the road");
+    }
+
+    // ---- Grounds ----
+    foreach (var ground in new[] { RaceGround.Bumpy, RaceGround.Ramp, RaceGround.Materials })
+    {
+        var track = RaceTrack.Make(0, ground);
+        var race = new Race(track, 1) { AiDrivesPlayer = true };
+        var me = race.Add("Me", "rc", rc.Clone(), hull, true);
+        race.Add("Other", "rc", rc.Clone(), hull, false, 0.9f);
+        race.Grid();
+        var seen = new HashSet<string>();
+        bool flew = false;
+        float highest = 0;
+        while (!race.AllDone && race.Time < 200)
+        {
+            race.Step();
+            seen.Add(me.Sim.SurfaceName);
+            if (race.Started && me.Sim.Touching.All(t => !t)) flew = true;
+            highest = Math.Max(highest, -me.Sim.Pos.Y);
+            if (float.IsNaN(me.Sim.Pos.X)) break;
+        }
+        Console.WriteLine($"  {ground}: {me.FinishTime:0.0} s, {me.Sim.SurfaceName}, surfaces {seen.Count}, highest {highest:0}, hits {me.Hits}");
+        Check(race.AllDone, $"{ground}: the race finishes in {race.Time:0.0} s");
+        if (ground == RaceGround.Ramp) Check(flew && highest > 60, $"the ramp makes a jump: {highest:0} high");
+        if (ground == RaceGround.Materials) Check(seen.Count >= Material.Track.Length - 1, "it drives over all the surfaces: " + string.Join(", ", seen));
+    }
+    var plain = RaceTrack.Make(0);
+    Check(!RaceTrack.GroundNames.Contains("Materials") && plain.SurfaceAt(0, 0) == Material.Default && plain.Height(0, 800) == 0, "Materials isn't offered, and plain stays plain");
+    var hiddenTrack = RaceTrack.Make(0, RaceGround.Materials);
+    Check(Enumerable.Range(0, hiddenTrack.Points.Length).Select(i => hiddenTrack.Band[i]).Distinct().Count() == Material.Track.Length, "each surface has its own part of the lap");
+
+    // Ice has to be slippery: the same car on the same bend, with the game's numbers
+    float SideG(Material m)
+    {
+        var s = new CarSim(rc, hull) { World = CollWorld.Flat(m), Throttle = 1 };
+        for (int i = 0; i < 350; i++) s.StepOnce();
+        s.Steer = 1;
+        float best = 0;
+        for (int i = 0; i < 500; i++)
+        {
+            s.StepOnce();
+            best = Math.Max(best, Math.Abs(s.AngVel.Y) * s.Vel.Length() / CarCalc.Gravity);
+        }
+        return best;
+    }
+    float onRoad = SideG(Material.Default), onIce = SideG(Material.Track.First(m => m.Name == "Ice"));
+    Console.WriteLine($"  sideways grip: road {onRoad:0.00} g, ice {onIce:0.00} g");
+    Check(onIce < onRoad * 0.7f, $"ice holds less than road: {onIce:0.00} against {onRoad:0.00}");
+
+    // ---- The game's collision rules ----
+    var wall = CollPoly.Make(new[] { new Vector3(0, 0, 0), new Vector3(100, 0, 0), new Vector3(100, 0, 100), new Vector3(0, 0, 100) }, CollWorld.Up);
+    Check(wall.Touch(new(50, -20, 50), new(50, -9, 50), 10, out var pn, out _, out _, out var pd) && pd < 0 && pn == wall.Normal, "a sphere sinking into a face: " + pd);
+    Check(!wall.Touch(new(50, -20, 50), new(50, -13, 50), 10, out _, out _, out _, out _), "not when it's over 2 units clear");
+    Check(wall.Touch(new(106, -5, 50), new(106, -5, 50), 10, out var en, out _, out var ep, out _) && Math.Abs(ep.X - 100) < 0.01f && en.X > 0.5f, "over an edge it pushes out from the edge: " + en);
+    Check(!wall.Touch(new(106, -5, 106), new(106, -5, 106), 10, out _, out _, out _, out _), "a corner doesn't count, as in the game");
+    Check(!wall.Touch(new(50, 60, 50), new(50, 60, 50), 10, out _, out _, out _, out _), "from far behind, nothing");
+    Check(Material.Game.Length == 27 && Material.Game[10].Name == "Ice" && Material.Game[26].Name == "Paving" && Material.Game[8].Name == "Boundary", "materials in the order of an .ncp");
+
+    // On its roof with no input, it comes to rest and is held: the game's Stacked. On its wheels it never is
+    var roof = new CarSim(rc, hull);
+    roof.Place(System.Numerics.Vector3.Zero, 0);
+    roof.Rot = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitZ, MathF.PI);
+    for (int i = 0; i < 1500; i++) roof.StepOnce();
+    Check(roof.Stacked && roof.SpeedMph == 0, $"on its roof it comes to rest: {roof.SpeedMph} mph");
+    var parked = new CarSim(rc, hull);
+    for (int i = 0; i < 1500; i++) parked.StepOnce();
+    Check(!parked.Stacked, "on its wheels it never is");
+
+    // Skill has to mean something
+    float Solo(float skill)
+    {
+        var race = new Race(RaceTrack.Make(1), 1) { AiDrivesPlayer = true };
+        race.Add("Solo", "rc", rc.Clone(), hull, true, skill);
+        race.Grid();
+        while (!race.AllDone && race.Time < 150) race.Step();
+        return race.Player.FinishTime;
+    }
+    float quick = Solo(1f), slow = Solo(0.65f);
+    Console.WriteLine($"  solo lap of Park: skill 1: {quick:0.0} s, skill 0.65: {slow:0.0} s");
+    Check(slow > quick * 1.05f, $"a less skilled driver is slower: {slow:0.0} against {quick:0.0}");
+
+    // ---- Race ----
+    for (int t = 0; t < RaceTrack.Names.Length; t++)
+    {
+        var track = RaceTrack.Make(t);
+        Check(track.Length > 8000 && track.Points.Length > 50, $"{track.Name}: {track.Length:0} units long");
+        // A road that crosses itself or folds up would be useless
+        float tightest = track.Radius.Min();
+        Check(tightest > track.Width * 0.45f, $"{track.Name}: tightest bend {tightest:0}");
+        var race = new Race(track, 1);
+        race.Add("Me", "rc", rc.Clone(), hull, true);
+        race.Add("A", "rc", rc.Clone(), hull, false, 0.95f);
+        race.Add("B", "rc", rc.Clone(), hull, false, 0.9f);
+        race.AiDrivesPlayer = true;
+        race.Grid();
+        Check(race.Cars.Select(c => c.Sim.Pos).Distinct().Count() == 3, "each starts in its own place");
+        var startGap = (race.Cars[0].Sim.Pos - race.Cars[1].Sim.Pos).Length();
+        Check(startGap > race.Cars[0].HalfWidth, "with room: " + startGap);
+        var last = race.Cars[1].Run;
+        bool forward = true;
+        while (race.Countdown > 0) race.Step();
+        Check(race.Cars[1].Sim.SpeedMph < 1, "nobody moves before the start");
+        float limit = 200;
+        while (!race.AllDone && race.Time < limit)
+        {
+            race.Step();
+            if (race.Cars[1].Run < last - 150) forward = false; // one step of the road is 90: backing out of a bump is fine, a jump along the road isn't
+            last = race.Cars[1].Run;
+            if (float.IsNaN(race.Cars[0].Sim.Pos.X)) break;
+        }
+        foreach (var c in race.Standings) Console.WriteLine($"  {track.Name}: {c.Name} {c.FinishTime:0.0} s, best lap {c.BestLap:0.0}, hits {c.Hits}, ran {c.Run:0} of {track.Length * race.Laps:0}");
+        Check(race.AllDone, $"{track.Name}: all CPU cars finish in {race.Time:0.0} s");
+        Check(forward, $"{track.Name}: nobody jumps along the road");
+        var best = race.Cars.Min(c => c.FinishTime);
+        Check(best > track.Length / ((float)rc.TopSpeed * CarSim.MphToUnits), "and not faster than light: " + best);
+    }
+}
+
 void Fit()
 {
-    if (args.Length > 2) CarSim.EngineScale = float.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
-    if (args.Length > 3) CarSim.RollScale = float.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture);
     var rows = new List<(string Car, double TopReal, double AccReal, float Top, float Acc)>();
     foreach (var e in game.ListCars().Where(x => x.Stock))
     {
         var c = new Car(game, e.Folder);
         var d = c.Data;
         if (d.TopEnd <= 0 || d.Acc <= 0 || !d.Wheels.Any(w => w.Present)) continue;
-        var r = CarSim.RunAcceleration(d);
+        Hull? hull = null;
+        try { if (game.Find(d.Coll) is { } hullFile) hull = Hull.Load(hullFile); } catch (Exception) { }
+        var r = CarSim.RunAcceleration(d, hull);
         rows.Add((e.Folder, d.TopEnd, d.Acc, r.TopEnd, r.Acc));
-        var bumps = CarSim.RunBumps(d);
-        var circle = CarSim.RunCircle(d);
+        var bumps = CarSim.RunBumps(d, hull);
+        var circle = CarSim.RunCircle(d, hull);
         Console.WriteLine($"{e.Folder,-9} TopEnd {d.TopEnd,6:0} sim {r.TopEnd,6:0}   Acc {d.Acc,5:0.0} sim {r.Acc,5:0.0}   {circle.Note}; {bumps.Note}");
     }
     rows = rows.Where(r => r.AccReal < 20 && r.TopReal > 1000).ToList();
@@ -231,11 +509,81 @@ void Fit()
 }
 
 Parser();
+Packs();
+if (game.Find("cars\\rc\\parameters.txt") != null)
+{
+    var flipped = new CarSim(new Car(game, "rc").Data);
+    flipped.Advance(0.5f);
+    flipped.Pos += new System.Numerics.Vector3(300, 0, 200);
+    var heading = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitY, 0.6f);
+    flipped.Rot = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitZ, MathF.PI) * heading;
+    Check(flipped.Up.Y > 0.9f, "on its roof");
+    var noseBefore = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, flipped.Rot);
+    Check(flipped.Flip(), "it flips when upside down");
+    for (int i = 0; i < 120; i++) flipped.Advance(1 / 60f);
+    var nose = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, flipped.Rot);
+    Check(flipped.Up.Y < -0.95f, "Space puts it on its wheels: " + flipped.Up);
+    Check(Math.Abs(MathF.Atan2(nose.X, nose.Z) - MathF.Atan2(noseBefore.X, noseBefore.Z)) < 0.1f && Math.Abs(noseBefore.X) > 0.3f, "still facing the same way: " + nose);
+    Check(Math.Abs(flipped.Pos.X - 300) < 30 && flipped.Touching.Any(t => t), "and stays where it was, on the floor: " + flipped.Pos);
+    Check(!flipped.Righting && !flipped.Flip(), "not when it's on its wheels, as in the game");
+
+    // The physics against what's known of the real car, with nothing fitted
+    var rcData = new Car(game, "rc").Data;
+    Hull? rcHull = null;
+    try { if (game.Find(rcData.Coll) is { } rcFile) rcHull = Hull.Load(rcFile); } catch (Exception) { }
+    var still = new CarSim(rcData, rcHull);
+    for (int i = 0; i < 250; i++) still.Advance(1 / 60f);
+    Check(still.Touching.All(t => t) && still.SpeedMph < 0.5f, "stands still on its four wheels: " + still.SpeedMph);
+    var settled = still.Pos;
+    for (int i = 0; i < 300; i++) still.Advance(1 / 60f);
+    Check((still.Pos - settled).Length() < 3f, "practically still, under 0.01 mph: " + (still.Pos - settled));
+    var run = CarSim.RunAcceleration(rcData, rcHull);
+    if (rcData.TopEnd > 0) Check(Math.Abs(run.TopEnd - rcData.TopEnd) / rcData.TopEnd < 0.02, $"top speed like the real RC: {run.TopEnd:0} for {rcData.TopEnd:0}");
+    var turning = new CarSim(rcData, rcHull) { Throttle = 1 };
+    for (int i = 0; i < 180; i++) turning.Advance(1 / 60f);
+    turning.Steer = 1;
+    for (int i = 0; i < 60; i++) turning.Advance(1 / 60f);
+    var noseAfter = System.Numerics.Vector3.Transform(System.Numerics.Vector3.UnitZ, turning.Rot);
+    Check(noseAfter.X > 0.2f, "steering right turns it right: " + noseAfter);
+    NewTools(rcData, rcHull);
+}
 switch (mode)
 {
     case "read": ReadPass(); break;
     case "write": WritePass(); break;
     case "fit": Fit(); break;
+    case "curve":
+        {
+            // The schedule of the scripted RVGL run: throttle, coast, throttle, then full lock
+            var d = new Car(game, args.Length > 2 ? args[2] : "rc").Data;
+            Hull? h = null;
+            try { if (game.Find(d.Coll) is { } hf) h = Hull.Load(hf); } catch (Exception) { }
+            var s = new CarSim(d, h);
+            for (int i = 0; i < 125; i++) s.StepOnce();
+            var parts = (args.Length > 3 ? args[3] : "throttle:5,coast:2.2,throttle:1.5,turn:2.6").Split(',').Select(x =>
+            {
+                var bits = x.Split(':');
+                return (Name: bits[0], Seconds: float.Parse(bits[1], System.Globalization.CultureInfo.InvariantCulture), Throttle: bits[0] == "coast" ? 0f : 1f, Steer: bits[0] == "turn" ? 1f : 0f);
+            }).ToArray();
+            float clock = 0, yaw = 0;
+            foreach (var (name, seconds, throttle, steer) in parts)
+            {
+                s.Throttle = throttle;
+                s.Steer = steer;
+                for (float t = 0; t < seconds; t += 0.008f)
+                {
+                    s.StepOnce();
+                    clock += 0.008f;
+                    yaw += s.AngVel.Y * 0.008f;
+                    if ((int)(clock / 0.008f) % 25 == 0)
+                    {
+                        var (front, rear) = s.SideSlip();
+                        Console.WriteLine($"{name,-10} {clock:0.00} s  {s.SpeedMph,5:0.0} mph  turned {yaw * 57.3f,7:0} deg  slide {CarCalc.ToMph(rear),5:0.0} mph");
+                    }
+                }
+            }
+            break;
+        }
     case "launch":
         {
             // Starts the real game for some seconds, with a settings folder given here
@@ -244,16 +592,23 @@ switch (mode)
             Console.WriteLine(levels.Count + " levels, e.g. " + string.Join(", ", levels.Take(3).Select(l => l.Name)));
             Check(levels.Count > 0, "levels found");
             Check(run.FindExe() != null, "RVGL found: " + run.FindExe());
-            var pr = run.Start("adeon", "nhood1", false);
+            var track = levels.First(l => l.Folder.Equals("nhood1", StringComparison.OrdinalIgnoreCase));
+            Console.WriteLine("track: " + track.Name);
+            var pr = run.Start("adeon", track.Folder, false, 4, 1);
+            var reached = TestRun.DriveToRace(pr, new RaceSetup("Adeon", track.Name, 4, 1), Console.WriteLine).GetAwaiter().GetResult();
+            Check(reached, "went through the menus");
             Thread.Sleep(9000);
             pr.Refresh();
             Check(!pr.HasExited, "RVGL still running");
             Console.WriteLine("window: " + pr.MainWindowTitle);
+            TestRun.Screenshot(pr);
+            Thread.Sleep(1500);
             if (!pr.HasExited) pr.Kill();
+            var pics = Directory.GetFiles(Path.Combine(args[2], "profiles"), "*.png", SearchOption.AllDirectories);
+            Console.WriteLine("pictures: " + string.Join(" ", pics));
             var log = Path.Combine(args[2], "profiles", "re-volt.log");
             Check(File.Exists(Path.Combine(args[2], "profiles", TestRun.Profile, "profile.ini")), "own profile made");
             var ini = File.ReadAllText(Path.Combine(args[2], "profiles", TestRun.Profile, "profile.ini"));
-            Check(ini.Contains("CarDir1 = \"adeon\"") && ini.Contains("LevelDir = \"nhood1\""), "car and level picked");
             Check(ini.Contains("[Controller1]"), "your controls came along");
             break;
         }

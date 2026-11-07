@@ -28,6 +28,35 @@ The Corners buttons say what happens to the other corners:
 
 Crosses in the view are the centre of mass, weapon points, aerial, cameras and suspension mounts: they can be dragged too.
 
+## Guide
+
+The Guide tab (F1) shows the open car's numbers, worked out from the formulas of the original car physics and updated as you
+edit: real top speed, time to top speed, balance, how far the springs sit down, bounce and damping, grip, turning, what to look
+at. Try it shows what a change would do before you make it. There's a unit converter and a search through what each value does.
+
+## Race
+
+Race here (F7, or the Run tab) puts you against CPU cars on a built-in road: Oval, Park or Hairpins, with stock cars closest in
+speed to yours, or all copies of your own. Every car uses the same physics as Drive here. The CPU driver reads the road's bends
+and plans its speed; its corrections for sliding work as the game's do, from each car's own AI values, so you can watch them at
+work, also on your own car (I lets the AI drive). The driver, road and walls are this editor's own, not the game's: AI nodes,
+track polygons and materials aren't here, so times don't compare with RVGL.
+
+## Shading and normals
+
+Each polygon stores a colour per corner, so shading can look faceted or smooth on any model without changing it. Tools, Auto shade
+has Surface (the model's normals, smooth, by angle, by faces), sun direction, soft shadows, floor bounce, contrast, sky, sun and
+bounce colours, and the whole car blocking light. It all shows while you move it.
+
+Normals are separate: the game takes reflections and its moving lights from them. A vertex holds one normal, so sharp edges need
+two vertices in one place. Rewrite the normals offers smooth, by angle or by faces, and says how many vertices it took. Show has Vertex normals.
+
+## Packs
+
+RVGL stacks folders: the root, then the packs in `packs\default.txt`, later ones winning. Stock cars normally come from
+`packs\game_files`, so a file in `cars\<stock car>` is ignored by the game. The Studio reads files the way RVGL does and
+never writes into a read-only pack: a stock car's saved changes go to `packs\local`, on top. File has the way back.
+
 ## Starting a car
 
 **New car** asks what you're making. *Repaint*: new colours on a car that exists, opens on the Paint tab. *Remodel*: start
@@ -68,14 +97,19 @@ as they are. The first version of each file stays next to it as `.bak`.
 
 ## Trying the car
 
-**Test run** (F5) saves and starts RVGL in a window with the car picked. It has its own settings folder, so your profile
-and best times aren't touched. RVGL has no way to start a race from outside: pick Start Race. In dev mode, Ctrl+R in the game
-reloads the car after you save here, and Calc Car Stats gives the exact numbers.
+**Test run** (F5) saves, starts RVGL in a window and goes into a race with your car, with the cars, laps and track you
+chose in the Run tab. RVGL has no command for that, so it goes through the menus with key presses (Windows, for now), and only
+while RVGL's window is in front. It has its own settings folder, so your profile and best times aren't touched, and it enters
+the CARNIVAL code there so locked cars can be used. In dev mode it stays at the menu: Ctrl+R in the game reloads the car after you
+save here, and Calc Car Stats gives the exact numbers.
 
-**Drive here** (F6) is a quick simulation from the parameters, on a floor, bumps or a ramp. **Automatic runs** report
-acceleration, a hard turn and bumps. The game's car physics source isn't available, so this is not the game: forces come
-from what each parameter means, and two constants are fitted to the stock cars. Over 28 stock cars, top speed is off by
-4.5% on average and time to top speed by 14%. It's for feeling a change at once. For the truth, use Test run.
+**Drive here** (F6) is a simulation from the parameters, on a floor, bumps or a ramp. R restarts. **Automatic runs** report
+acceleration, a hard turn and bumps. It's a new implementation of the behaviour of the original game's car physics in Arcade mode, with nothing fitted:
+8 ms steps, the same tyre, spring and hull sphere impulses, spheres against polygons with the game's surfaces. Over 28 stock cars,
+top speed is off by 0.6% on average and time to top speed by about 5%. RC Bandit was also timed against real RVGL on a flat level, by
+its speedometer: acceleration, coasting and the steady full-lock circle (10 mph in both) agree within the speedometer's 1 mph steps.
+Not here: AI nodes, pickups, weapons, the game's reposition timing, and track files. Other cars haven't been timed against RVGL,
+so Test run stays the final check. Space flips the car when it's nearly upside down, as in the game.
 
 ## Other systems
 

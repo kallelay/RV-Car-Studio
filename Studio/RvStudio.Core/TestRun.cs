@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 namespace RvStudio.Core;
+
+public sealed record RaceSetup(string CarName, string? LevelName, int Cars = 8, int Laps = 3);
 
 /// <summary>
 /// Runs the car in the real game. RVGL gets its own preferences folder, so your profile, best times
@@ -32,20 +35,24 @@ public sealed class TestRun
 
     public IEnumerable<(string Folder, string Name)> Levels()
     {
-        var dir = Path.Combine(Game.Root, "levels");
-        if (!Directory.Exists(dir)) yield break;
-        foreach (var d in Directory.GetDirectories(dir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var layer in Game.Layers.Reverse())
         {
-            var folder = Path.GetFileName(d);
-            var inf = Path.Combine(d, folder + ".inf");
-            if (!File.Exists(inf)) continue;
-            string name = folder;
-            foreach (var l in File.ReadLines(inf, ParamFile.FileEncoding))
+            var dir = Path.Combine(layer, "levels");
+            if (!Directory.Exists(dir)) continue;
+            foreach (var d in Directory.GetDirectories(dir))
             {
-                var m = Regex.Match(l, "^\\s*NAME\\s+'([^']*)'", RegexOptions.IgnoreCase);
-                if (m.Success) { name = m.Groups[1].Value; break; }
+                var folder = Path.GetFileName(d);
+                var inf = Path.Combine(d, folder + ".inf");
+                if (!File.Exists(inf) || !seen.Add(folder)) continue;
+                string name = folder;
+                foreach (var l in File.ReadLines(inf, ParamFile.FileEncoding))
+                {
+                    var m = Regex.Match(l, "^\\s*NAME\\s+'([^']*)'", RegexOptions.IgnoreCase);
+                    if (m.Success) { name = m.Groups[1].Value; break; }
+                }
+                yield return (folder, name);
             }
-            yield return (folder, name);
         }
     }
 
@@ -60,7 +67,7 @@ public sealed class TestRun
     }
 
     /// <summary>The profile for the test: a copy of yours with this car and level picked</summary>
-    public string PrepareProfile(string carFolder, string? level)
+    public string PrepareProfile(string carFolder, string? level, int cars = 8, int laps = 3)
     {
         var profiles = Path.Combine(PrefPath, "profiles");
         var mine = Path.Combine(profiles, Profile);
@@ -74,6 +81,8 @@ public sealed class TestRun
 
         var text = File.Exists(ini) ? File.ReadAllText(ini) : "[Game]\r\n";
         text = SetIni(text, "CarDir1", "\"" + carFolder + "\"");
+        text = SetIni(text, "NCars", cars.ToString());
+        text = SetIni(text, "NLaps", laps.ToString());
         if (!string.IsNullOrEmpty(level)) text = SetIni(text, "LevelDir", "\"" + level + "\"");
         File.WriteAllText(ini, text);
         return ini;
@@ -96,9 +105,117 @@ public sealed class TestRun
         return info;
     }
 
-    public Process Start(string carFolder, string? level, bool dev)
+    public Process Start(string carFolder, string? level, bool dev, int cars = 8, int laps = 3)
     {
-        PrepareProfile(carFolder, level);
+        PrepareProfile(carFolder, level, cars, laps);
         return Process.Start(Command(dev)) ?? throw new InvalidOperationException("RVGL didn't start");
+    }
+
+    // --------------------------- Into the race ---------------------------
+
+    /// <summary>
+    /// RVGL has no command to start a race, so this goes through its menus with the keyboard, only while its window has
+    /// the focus: Start Race, Single Race, difficulty, the name (where the CARNIVAL code unlocks every car), then the
+    /// search that works by typing on the car and track screens. False means the focus went elsewhere and it stopped.
+    /// </summary>
+    public static async Task<bool> DriveToRace(Process game, RaceSetup race, Action<string>? progress = null)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            progress?.Invoke("Starting the race by itself only works on Windows so far: choose Start Race");
+            return false;
+        }
+        // The window comes up a little after the process
+        for (int i = 0; i < 100 && game.MainWindowHandle == IntPtr.Zero && !game.HasExited; i++)
+        {
+            await Task.Delay(200);
+            game.Refresh();
+        }
+        if (game.HasExited) return false;
+        var win = game.MainWindowHandle;
+        await Task.Delay(5500);
+        SetForegroundWindow(win);
+        await Task.Delay(800);
+
+        async Task<bool> Enter(int wait = 1800)
+        {
+            if (!Press(win, ScanEnter)) return false;
+            await Task.Delay(wait);
+            return true;
+        }
+        progress?.Invoke("Going through RVGL's menus. Please leave its window in front");
+        if (!await Enter() || !await Enter() || !await Enter()) return Lost(progress);
+        for (int i = 0; i < 12; i++) if (!Press(win, ScanBackspace)) return Lost(progress);
+        if (!Type(win, "CARNIVAL")) return Lost(progress);
+        await Task.Delay(400);
+        if (!await Enter()) return Lost(progress);
+        if (!Type(win, race.CarName)) return Lost(progress);
+        await Task.Delay(1300);
+        if (!await Enter() || !await Enter()) return Lost(progress);
+        if (!string.IsNullOrEmpty(race.LevelName))
+        {
+            if (!Type(win, race.LevelName)) return Lost(progress);
+            await Task.Delay(1300);
+        }
+        if (!await Enter() || !await Enter(500)) return Lost(progress);
+        progress?.Invoke("Race started");
+        return true;
+    }
+
+    static bool Lost(Action<string>? progress)
+    {
+        progress?.Invoke("RVGL lost the focus, so the menus stopped there: carry on by hand");
+        return false;
+    }
+
+    /// <summary>RVGL's own screenshot key: the picture goes in its profiles folder</summary>
+    public static bool Screenshot(Process game)
+    {
+        game.Refresh();
+        return OperatingSystem.IsWindows() && Press(game.MainWindowHandle, 0x42);
+    }
+
+    const ushort ScanEnter = 0x1C, ScanBackspace = 0x0E;
+
+    [StructLayout(LayoutKind.Sequential)] struct KeyInput { public ushort Vk, Scan; public uint Flags, Time; public IntPtr Extra; }
+    [StructLayout(LayoutKind.Sequential)] struct MouseFiller { public int A, B; public uint C, D, E; public IntPtr F; }
+    [StructLayout(LayoutKind.Explicit)] struct InputUnion { [FieldOffset(0)] public KeyInput Key; [FieldOffset(0)] public MouseFiller Mouse; }
+    [StructLayout(LayoutKind.Sequential)] struct Input { public uint Type; public InputUnion U; }
+    [DllImport("user32.dll")] static extern uint SendInput(uint n, Input[] i, int size);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+
+    static void Send(ushort code, uint flags)
+    {
+        var i = new Input[1];
+        i[0].Type = 1;
+        i[0].U.Key.Scan = code;
+        i[0].U.Key.Flags = flags;
+        SendInput(1, i, Marshal.SizeOf<Input>());
+    }
+
+    // Only ever to the game: anywhere else these keys would land in whatever you're doing
+    static bool Press(IntPtr win, ushort scan)
+    {
+        if (GetForegroundWindow() != win) return false;
+        Send(scan, 8);
+        Thread.Sleep(70);
+        Send(scan, 8 | 2);
+        Thread.Sleep(50);
+        return true;
+    }
+
+    // By character, so it doesn't matter which keyboard layout is on
+    static bool Type(IntPtr win, string text)
+    {
+        foreach (var c in text)
+        {
+            if (GetForegroundWindow() != win) return false;
+            Send(c, 4);
+            Thread.Sleep(50);
+            Send(c, 4 | 2);
+            Thread.Sleep(50);
+        }
+        return true;
     }
 }

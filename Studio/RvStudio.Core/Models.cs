@@ -41,6 +41,27 @@ public sealed class Prm
     public byte[]? OtherLods;
     public Vector3 Min, Max;
 
+    /// <summary>Which vertices the polygons use. Rewriting normals can change them</summary>
+    public short[] FaceIndices()
+    {
+        var r = new short[Faces.Length * 4];
+        for (int i = 0; i < Faces.Length; i++)
+        {
+            var f = Faces[i];
+            r[i * 4] = f.V0; r[i * 4 + 1] = f.V1; r[i * 4 + 2] = f.V2; r[i * 4 + 3] = f.V3;
+        }
+        return r;
+    }
+
+    public void SetFaceIndices(short[] r)
+    {
+        for (int i = 0; i < Faces.Length; i++)
+        {
+            var f = Faces[i];
+            f.V0 = r[i * 4]; f.V1 = r[i * 4 + 1]; f.V2 = r[i * 4 + 2]; f.V3 = r[i * 4 + 3];
+        }
+    }
+
     public static Prm Load(string path)
     {
         using var r = new BinaryReader(File.OpenRead(path));

@@ -32,6 +32,7 @@ public sealed class StudioApp : Application
     {
         RequestedThemeVariant = ThemeVariant.Dark;
         Styles.Add(new FluentTheme());
+        Styles.Add(new Style(x => x.OfType<ScrollViewer>()) { Setters = { new Setter(ScrollViewer.AllowAutoHideProperty, false) } });
         Styles.Add(new Style(x => x.OfType<TabItem>())
         {
             Setters = { new Setter(TabItem.FontSizeProperty, 13.0), new Setter(TabItem.MinHeightProperty, 30.0), new Setter(TabItem.PaddingProperty, new Thickness(8, 2)) }

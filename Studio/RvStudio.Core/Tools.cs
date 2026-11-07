@@ -186,14 +186,23 @@ public static class CarChecker
         if (Math.Abs(d.CoM.X) > 40) r.Warnings.Add($"Center of Mass is far to one side: {d.CoM.X:0.0}");
         r.Infos.Add($"Center of Mass {d.CoM.X:0.00} {d.CoM.Y:0.00} {d.CoM.Z:0.00}");
 
-        if (!GameFolder.IsStock(c.Folder) && Directory.Exists(c.Dir) &&
-            !Directory.GetFiles(c.Dir).Any(f => Path.GetFileName(f).Contains("read", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(f).Contains("me", StringComparison.OrdinalIgnoreCase)))
+        if (!GameFolder.IsStock(c.Folder) &&
+            !c.Game.CarFiles(c.Folder).Values.Any(f => Path.GetFileName(f).Contains("read", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(f).Contains("me", StringComparison.OrdinalIgnoreCase)))
             r.Warnings.Add("No readme (try the readme tool)");
         return r;
     }
 }
 
 /// <summary>Things people do by hand with a calculator, one click each</summary>
+public sealed record PaintOptions(
+    float Brightness = 0, float Saturation = 1, float Hue = 0, ICollection<int>? OnlyColours = null,
+    float Contrast = 1, float Warmth = 0, SKColor? Colourise = null, float ColouriseAmount = 0,
+    SKColor? From = null, SKColor? To = null, float Tolerance = 0.2f)
+{
+    public bool IsPlain => Brightness == 0 && Saturation == 1 && Hue == 0 && Contrast == 1 && Warmth == 0 &&
+                           (Colourise == null || ColouriseAmount == 0) && (From == null || To == null);
+}
+
 public static class CarTools
 {
     public static Prm? LoadModel(Car c, int slot)
@@ -285,20 +294,26 @@ public static class CarTools
         return true;
     }
 
+    /// <summary>All the car's models where they stand, without the thin aerial</summary>
+    public static IEnumerable<(Prm Model, Matrix4x4 World)> SolidParts(Car c)
+    {
+        foreach (var part in CarPose.Build(c.Data))
+        {
+            if (part.Kind is PartKind.AerialSection or PartKind.AerialTop) continue;
+            if (LoadModel(c, part.Slot) is { } m && m.Verts.Length > 0) yield return (m, part.World);
+        }
+    }
+
     public static (int W, int H, Vector3 Min, Vector3 Max)? CarBounds(Car c)
     {
-        var d = c.Data;
         var min = new Vector3(float.MaxValue); var max = new Vector3(float.MinValue);
         bool any = false;
-        if (LoadModel(c, d.BodyModel) is { } b && b.Verts.Length > 0)
-        {
-            min = b.Min + d.BodyOffset; max = b.Max + d.BodyOffset; any = true;
-        }
-        for (int i = 0; i < 4; i++)
-            if (d.Wheels[i].Present && LoadModel(c, d.Wheels[i].Model) is { } w && w.Verts.Length > 0)
+        foreach (var (m, world) in SolidParts(c))
+            foreach (var v in m.Verts)
             {
-                min = Vector3.Min(min, w.Min + d.Wheels[i].Offset1);
-                max = Vector3.Max(max, w.Max + d.Wheels[i].Offset1);
+                var p = Vector3.Transform(v.Pos, world);
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
                 any = true;
             }
         return any ? (0, 0, min, max) : null;
@@ -328,9 +343,8 @@ public static class CarTools
         cv.Clear(SKColors.Black);
         using var paint = new SKPaint { Color = SKColors.White, IsAntialias = true, Style = SKPaintStyle.Fill, MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, blur) };
 
-        void Draw(Prm? m, Vector3 off)
+        void Draw(Prm m, Matrix4x4 world)
         {
-            if (m == null) return;
             foreach (var f in m.Faces)
             {
                 using var path = new SKPath();
@@ -338,7 +352,7 @@ public static class CarTools
                 {
                     var i = f.Index(k);
                     if (i < 0 || i >= m.Verts.Length) continue;
-                    var p = m.Verts[i].Pos + off;
+                    var p = Vector3.Transform(m.Verts[i].Pos, world);
                     // texture up = front of the car
                     var pt = new SKPoint(2 + (p.X - bb.Min.X) * sx, 2 + (bb.Max.Z - p.Z) * sz);
                     if (k == 0) path.MoveTo(pt); else path.LineTo(pt);
@@ -347,15 +361,14 @@ public static class CarTools
                 cv.DrawPath(path, paint);
             }
         }
-        Draw(LoadModel(c, d.BodyModel), d.BodyOffset);
-        for (int i = 0; i < 4; i++) if (d.Wheels[i].Present) Draw(LoadModel(c, d.Wheels[i].Model), d.Wheels[i].Offset1);
+        foreach (var (m, world) in SolidParts(c)) Draw(m, world);
         return bmp;
     }
 
     /// <summary>Make shadow.bmp in the car's folder and point the car to it</summary>
     public static string MakeShadow(Car c)
     {
-        var path = Path.Combine(c.Dir, "shadow.bmp");
+        var path = c.Game.WritePath("cars\\" + c.Folder + "\\shadow.bmp");
         Files.Backup(path);
         using var b = RenderShadow(c);
         Images.SaveBmp24(b, path);
@@ -366,89 +379,8 @@ public static class CarTools
 
     // ---------------------------- Auto shade ----------------------------
 
-    public sealed record ShadeOptions(float Ambient = 0.45f, float Sun = 0.55f, float Occlusion = 1f, Vector3? SunDir = null, int Rays = 48);
-
-    static bool RayHits(Vector3 o, Vector3 d, Prm m, float maxDist)
-    {
-        foreach (var f in m.Faces)
-        {
-            if ((f.Flags & FaceFlags.Translucent) != 0) continue;
-            for (int t = 0; t < (f.IsQuad ? 2 : 1); t++)
-            {
-                int ia = f.V0, ib = t == 0 ? f.V1 : f.V2, ic = t == 0 ? f.V2 : f.V3;
-                if (ia >= m.Verts.Length || ib >= m.Verts.Length || ic >= m.Verts.Length) continue;
-                Vector3 a = m.Verts[ia].Pos, e1 = m.Verts[ib].Pos - a, e2 = m.Verts[ic].Pos - a;
-                var p = Vector3.Cross(d, e2);
-                var det = Vector3.Dot(e1, p);
-                if (Math.Abs(det) < 1e-7f) continue;
-                var inv = 1 / det;
-                var s = o - a;
-                var u = Vector3.Dot(s, p) * inv;
-                if (u < 0 || u > 1) continue;
-                var q = Vector3.Cross(s, e1);
-                var v = Vector3.Dot(d, q) * inv;
-                if (v < 0 || u + v > 1) continue;
-                var dist = Vector3.Dot(e2, q) * inv;
-                if (dist > 0.05f && dist < maxDist) return true;
-            }
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// Bake soft shading into the vertex colours: sky light that the car's own shape blocks, plus sun.
-    /// Keeps each polygon's alpha. Y goes down, so the sky is at -Y.
-    /// </summary>
-    public static void AutoShade(Prm m, ShadeOptions? options = null)
-    {
-        ShadeOne(m, options);
-        m.ForOtherLods(l => ShadeOne(l, options));
-    }
-
-    static void ShadeOne(Prm m, ShadeOptions? options)
-    {
-        var o = options ?? new ShadeOptions();
-        var sun = Vector3.Normalize(o.SunDir ?? new Vector3(0.35f, -1f, 0.25f));
-        var dirs = new Vector3[o.Rays];
-        // Fibonacci sphere: even directions, no randomness, same result each time
-        for (int i = 0; i < o.Rays; i++)
-        {
-            float y = 1 - (i + 0.5f) * 2f / o.Rays, r = MathF.Sqrt(Math.Max(0, 1 - y * y)), a = i * 2.3999632f;
-            dirs[i] = new Vector3(MathF.Cos(a) * r, y, MathF.Sin(a) * r);
-        }
-        var size = (m.Max - m.Min).Length();
-        var cache = new float[m.Verts.Length];
-        for (int v = 0; v < m.Verts.Length; v++)
-        {
-            var n = m.Verts[v].Normal;
-            if (n.LengthSquared() < 1e-4f) n = -Vector3.UnitY;
-            n = Vector3.Normalize(n);
-            var start = m.Verts[v].Pos + n * 0.1f;
-            float open = 0, total = 0;
-            foreach (var d in dirs)
-            {
-                var c = Vector3.Dot(d, n);
-                if (c <= 0) continue;
-                // ground hides what comes from below
-                var sky = 0.35f + 0.65f * Math.Max(0, -d.Y);
-                total += c * sky;
-                if (!RayHits(start, d, m, size)) open += c * sky;
-            }
-            float occl = total > 0 ? open / total : 1;
-            occl = 1 - (1 - occl) * o.Occlusion;
-            float lit = Math.Max(0, Vector3.Dot(n, sun));
-            if (lit > 0 && RayHits(start, sun, m, size)) lit *= 0.15f;
-            cache[v] = Math.Clamp(o.Ambient * occl * 1.4f + o.Sun * lit, 0.08f, 1f);
-        }
-        foreach (var f in m.Faces)
-            for (int k = 0; k < f.Corners; k++)
-            {
-                var i = f.Index(k);
-                if (i < 0 || i >= cache.Length) continue;
-                var g = (uint)Math.Clamp((int)(cache[i] * 255), 0, 255);
-                f.Colors[k] = (f.Colors[k] & 0xFF000000) | (g << 16) | (g << 8) | g;
-            }
-    }
+    /// <summary>Bake soft light into the vertex colours: see Shader</summary>
+    public static void AutoShade(Prm m, ShadeOptions? options = null, bool withLods = true) => Shader.Shade(m, options, withLods);
 
     // ---------------------------- Collision hull ----------------------------
 
@@ -622,7 +554,7 @@ public static class CarTools
 
     public static string SaveCarbox(Car c, SKBitmap box)
     {
-        var path = Path.Combine(c.Dir, "carbox.bmp");
+        var path = c.Game.WritePath("cars\\" + c.Folder + "\\carbox.bmp");
         Files.Backup(path);
         Images.SaveBmp24(box, path);
         c.Data.TCarBox = "cars\\" + c.Folder + "\\carbox.bmp";
@@ -632,26 +564,81 @@ public static class CarTools
     // ---------------------------- Texture ----------------------------
 
     /// <summary>Brightness (-1..1), saturation (0..2), hue shift (degrees). Pure black stays black, the game shows it as see-through</summary>
-    public static SKBitmap AdjustTexture(SKBitmap src, float brightness, float saturation, float hue, ICollection<int>? onlyColours = null)
+    public static SKBitmap AdjustTexture(SKBitmap src, float brightness, float saturation, float hue, ICollection<int>? onlyColours = null) =>
+        AdjustTexture(src, new PaintOptions(brightness, saturation, hue, onlyColours));
+
+    /// <summary>All the colour changes on a texture. Black stays black: the game shows it as see-through</summary>
+    public static SKBitmap AdjustTexture(SKBitmap src, PaintOptions p)
     {
-        var o = new SKBitmap(src.Width, src.Height, SKColorType.Bgra8888, SKAlphaType.Unpremul);
-        for (int y = 0; y < src.Height; y++)
-            for (int x = 0; x < src.Width; x++)
+        // Same kind of alpha as the source: without one, black has to stay what the game shows as see-through
+        var o = new SKBitmap(src.Width, src.Height, SKColorType.Bgra8888, src.AlphaType == SKAlphaType.Opaque ? SKAlphaType.Opaque : SKAlphaType.Unpremul);
+        var inPx = src.Pixels;
+        var outPx = new SKColor[inPx.Length];
+        var only = p.OnlyColours is { Count: > 0 } ? p.OnlyColours.ToHashSet() : null;
+        float toneHue = 0, toneSat = 0;
+        p.Colourise?.ToHsv(out toneHue, out toneSat, out _);
+        float fromHue = 0, fromSat = 0, fromVal = 0, toHue = 0, toSat = 0, toVal = 0;
+        p.From?.ToHsv(out fromHue, out fromSat, out fromVal);
+        p.To?.ToHsv(out toHue, out toSat, out toVal);
+        bool plainTone = p.Contrast == 1 && p.Warmth == 0;
+        Parallel.For(0, inPx.Length, i =>
+        {
+            var c = inPx[i];
+            if (c.Red == 0 && c.Green == 0 && c.Blue == 0) { outPx[i] = c; return; }
+            c.ToHsv(out var h, out var s, out var v);
+
+            // Swap one colour for another, keeping the light and dark of the painting
+            if (p.From is { } from && p.To != null)
             {
-                var c = src.GetPixel(x, y);
-                if (c.Red == 0 && c.Green == 0 && c.Blue == 0) { o.SetPixel(x, y, c); continue; }
-                c.ToHsv(out var h, out var s, out var v);
-                if (onlyColours != null && onlyColours.Count > 0 && (s < GreySaturation || !onlyColours.Contains(ColourBucket(h))))
+                float gap = ColourGap(c, from);
+                float reach = Math.Max(p.Tolerance, 0.001f);
+                if (gap < reach)
                 {
-                    o.SetPixel(x, y, c);
-                    continue;
+                    float w = gap < reach * 0.6f ? 1 : 1 - (gap - reach * 0.6f) / (reach * 0.4f);
+                    float dHue = MathF.IEEERemainder(toHue - h, 360);
+                    h = (h + dHue * w + 360) % 360;
+                    s += (toSat - s) * w;
+                    float vv = fromVal > 1 ? v / fromVal * toVal : toVal;
+                    v = Math.Clamp(v + (vv - v) * w, 1, 100);
                 }
-                h = (h + hue + 360) % 360;
-                s = Math.Clamp(s * saturation, 0, 100);
-                v = Math.Clamp(v * (1 + brightness), 1, 100);
-                o.SetPixel(x, y, SKColor.FromHsv(h, s, v, c.Alpha));
             }
+
+            if (only == null || (s >= GreySaturation && only.Contains(ColourBucket(h))))
+            {
+                h = (h + p.Hue + 360) % 360;
+                s = Math.Clamp(s * p.Saturation, 0, 100);
+                v = Math.Clamp(v * (1 + p.Brightness), 1, 100);
+                if (p.Colourise != null && p.ColouriseAmount > 0)
+                {
+                    float dHue = MathF.IEEERemainder(toneHue - h, 360);
+                    h = (h + dHue * p.ColouriseAmount + 360) % 360;
+                    s += (toneSat - s) * p.ColouriseAmount;
+                }
+            }
+            var result = SKColor.FromHsv(h, s, v, c.Alpha);
+            if (!plainTone && (only == null || only.Contains(ColourBucket(h))))
+            {
+                float T(byte b, float shift)
+                {
+                    float x = (b / 255f - 0.5f) * p.Contrast + 0.5f + shift;
+                    return Math.Clamp(x, 0, 1) * 255;
+                }
+                float warm = p.Warmth * 0.2f;
+                result = new SKColor((byte)T(result.Red, warm), (byte)T(result.Green, warm * 0.15f), (byte)T(result.Blue, -warm), c.Alpha);
+                // Tones must not turn into the see-through black
+                if (result.Red == 0 && result.Green == 0 && result.Blue == 0) result = new SKColor(1, 1, 1, c.Alpha);
+            }
+            outPx[i] = result;
+        });
+        o.Pixels = outPx;
         return o;
+    }
+
+    // 0 for the same colour, 1 for black against white
+    static float ColourGap(SKColor a, SKColor b)
+    {
+        float dr = a.Red - b.Red, dg = a.Green - b.Green, db = a.Blue - b.Blue;
+        return MathF.Sqrt((dr * dr + dg * dg + db * db) / 3) / 255;
     }
 
     const float GreySaturation = 18;

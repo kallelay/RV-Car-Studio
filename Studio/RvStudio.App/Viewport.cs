@@ -43,9 +43,12 @@ sealed class GpuTex { public uint Id; public int Version = -1; }
 /// <summary>What one frame draws. Made on the UI thread, read on the render thread, never changed in between</summary>
 sealed class Frame
 {
-    public readonly List<(Prm Mesh, Matrix4x4 World, int Tex, bool Env, bool Selected)> Items = new();
+    public readonly List<(Prm Mesh, Matrix4x4 World, int Tex, bool Env, bool Selected, string? TexFile)> Items = new();
     public readonly List<LineVertex> Lines = new();         // with depth
     public readonly List<LineVertex> Overlay = new();       // always on top
+    public readonly List<LineVertex> Solid = new();         // triangles in their own colours: the hull when shown solid
+    public List<LineVertex> Ground = new();                 // triangles on the floor, under everything: the race's road
+    public bool GroundDepth;                                // a road with hills has to hide itself
     public Vector3 Target, Eye;
     public float Distance, Yaw, Pitch;
     public bool Ortho;
@@ -56,6 +59,7 @@ sealed class Frame
     public (Vector3 A, Vector3 B, Vector3 C, Vector3 D, Vector4 Uv)? Shadow;
     public string? CarTexture, FxTexture, EnvTexture, ShadowTexture;
     public int TexVersion, ModelVersion;
+    public int ShadowVersion;
     public byte[]? Preview;
     public int PreviewW, PreviewH, PreviewVersion;
     public System.Numerics.Vector3 Background = new(0.17f, 0.19f, 0.22f);
@@ -82,6 +86,10 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
     public Vector3 Target = new(0, 0, 0);
     public float Yaw = 0.7f, Pitch = 0.42f, Distance = 260;
     public ViewMode View = ViewMode.Perspective;
+    public bool HullSolid, ShowNormals;
+    /// <summary>Below the floor there's no floor: you're looking at the car's underside</summary>
+    public bool FloorShown => doc.D == null || Eye().Y < FloorOf(doc.D);
+    float FloorOf(CarData d) => CarPose.FloorY(d, d.BodyModel >= 0 && doc.Model(d.BodyModel) is { } bm ? bm.Max.Y + d.BodyOffset.Y : 30);
 
     // What to show
     public ShadeMode Shade = ShadeMode.Textured;
@@ -125,7 +133,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             float h = dist * 0.8f;
             return Matrix4x4.CreateOrthographic(h * aspect, h, 1f, Math.Max(5000, dist * 8));
         }
-        return Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, aspect, Math.Max(1f, dist / 100), Math.Max(6000, dist * 20));
+        return Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 4, aspect, Math.Max(1f, dist / 100), Math.Max(doc.Race != null ? 40000 : 6000, dist * 20));
     }
 
     public void SetView(ViewMode v)
@@ -133,6 +141,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         View = v;
         switch (v)
         {
+            case ViewMode.Perspective: Yaw = 0.7f; Pitch = 0.42f; break;
             case ViewMode.Top: Yaw = 0; Pitch = 1.5707f; break;
             case ViewMode.Front: Yaw = 0; Pitch = 0; break;
             case ViewMode.Side: Yaw = 1.5708f; Pitch = 0; break;
@@ -448,7 +457,8 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         {
             case Drag.Orbit:
                 if (View != ViewMode.Perspective) View = ViewMode.Perspective;
-                Yaw -= dx * 0.008f;
+                // The car turns with the mouse, as in 3ds Max
+                Yaw += dx * 0.008f;
                 Pitch = Math.Clamp(Pitch + dy * 0.008f, -1.55f, 1.55f);
                 break;
             case Drag.Pan:
@@ -638,23 +648,25 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                 _ => false
             };
             // the game reflects the environment on the body
-            f.Items.Add((m, part.World, part.Tex, part.Kind == PartKind.Body, sel));
+            f.Items.Add((m, part.World, part.Tex, part.Kind == PartKind.Body, sel, null));
         }
 
         f.EnvColor = new Vector3(d.EnvR, d.EnvG, d.EnvB) / 255f;
         f.CarTexture = doc.SkinOverride ?? car.Game.Find(d.TPage);
         if (doc.PaintPreview != null) { f.Preview = doc.PaintPreview; f.PreviewW = doc.PaintW; f.PreviewH = doc.PaintH; f.PreviewVersion = doc.PaintVersion; }
         f.FxTexture = car.Game.Find("gfx\\fxpage1.bmp");
+        f.ShadowVersion = doc.TextureVersion;
         f.EnvTexture = car.Game.Find("gfx\\envstill.bmp");
 
-        float floor = CarPose.FloorY(d, car.Data.BodyModel >= 0 && doc.Model(d.BodyModel) is { } bm ? bm.Max.Y + d.BodyOffset.Y : 30);
+        float floor = FloorOf(d);
         f.FloorY = floor;
-        f.Floor = !clean;
+        bool fromAbove = sim != null || f.Eye.Y < floor;
+        f.Floor = !clean && fromAbove;
 
-        if (!clean && ShowShadow) AddShadow(f, d, car, floor, root);
+        if (!clean && ShowShadow && fromAbove) AddShadow(f, d, car, floor, root);
 
         var groundCenter = sim != null ? new Vector3(sim.Pos.X, floor, sim.Pos.Z) : new Vector3(0, floor, 0);
-        if (!clean && ShowGrid)
+        if (!clean && ShowGrid && fromAbove && doc.Race == null)
         {
             uint gc = Rgba(70, 76, 88, 255), g2 = Rgba(52, 58, 68, 255);
             float cell = 50;
@@ -674,7 +686,11 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             }
         }
 
+        if (doc.Race is { } race && !clean) AddRace(f, race, car);
+
         if (clean) return f;
+
+        if (ShowNormals && sim == null) AddNormals(f);
 
         if ((ShowHull || doc.Sel.IsHull) && doc.Hull is { } hull)
         {
@@ -683,6 +699,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             {
                 var c = hull.Convex[k];
                 var col = doc.Sel == new Selection(SelKind.HullPart, k) ? selc : hc;
+                if (HullSolid) SolidConvex(f.Solid, c, root, doc.Sel == new Selection(SelKind.HullPart, k) ? (byte)235 : (byte)90, col);
                 foreach (var (a, b) in c.Edges)
                     if (a < c.Points.Length && b < c.Points.Length) Line(f.Overlay, Vector3.Transform(c.Points[a], root), Vector3.Transform(c.Points[b], root), col);
             }
@@ -691,6 +708,11 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                 var (pos, r) = hull.Spheres[k];
                 var col = doc.Sel == new Selection(SelKind.HullSphere, k) ? selc : sc;
                 var at = Vector3.Transform(pos, root);
+                if (HullSolid)
+                {
+                    SolidSphere(f.Solid, at, r, doc.Sel == new Selection(SelKind.HullSphere, k) ? (byte)235 : (byte)190);
+                    continue;
+                }
                 Ring(f.Overlay, at, Vector3.UnitX, Vector3.UnitZ, r, col, 16);
                 if (col != selc) continue; // all three only on the selected one, or the car disappears behind them
                 Ring(f.Overlay, at, Vector3.UnitX, Vector3.UnitY, r, col, 16);
@@ -780,6 +802,166 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         return f;
     }
 
+    // Light from above and a little from the side: enough to read the shape
+    static float LightOf(Vector3 n) => 0.45f + 0.55f * Math.Max(0, Vector3.Dot(Vector3.Normalize(n), Vector3.Normalize(new Vector3(0.35f, -0.85f, 0.4f))));
+
+    static uint Tint(uint rgb, float light, byte alpha)
+    {
+        byte C(uint v) => (byte)Math.Clamp(v * light, 0, 255);
+        return Rgba(C(rgb & 255), C((rgb >> 8) & 255), C((rgb >> 16) & 255), alpha);
+    }
+
+    /// <summary>A smooth shaded ball</summary>
+    static void SolidSphere(List<LineVertex> tris, Vector3 c, float r, byte alpha)
+    {
+        const int Lat = 10, Lon = 16;
+        const uint Base = 0x50C8FF;
+        Vector3 N(int i, int j)
+        {
+            float t = i * MathF.PI / Lat, p = j * MathF.Tau / Lon;
+            return new Vector3(MathF.Sin(t) * MathF.Cos(p), MathF.Cos(t), MathF.Sin(t) * MathF.Sin(p));
+        }
+        void V(Vector3 n) => tris.Add(new LineVertex { Pos = c + n * r, Color = Tint(Base, LightOf(n), alpha) });
+        for (int i = 0; i < Lat; i++)
+            for (int j = 0; j < Lon; j++)
+            {
+                Vector3 a = N(i, j), b = N(i + 1, j), d = N(i, j + 1), e = N(i + 1, j + 1);
+                V(a); V(b); V(e);
+                V(a); V(e); V(d);
+            }
+    }
+
+    /// <summary>The faces of a convex part: the points on each plane, in order around it</summary>
+    static void SolidConvex(List<LineVertex> tris, ConvexHull c, Matrix4x4 root, byte alpha, uint color)
+    {
+        foreach (var (n, d) in c.Faces)
+        {
+            var on = c.Points.Where(p => Math.Abs(Vector3.Dot(n, p) + d) < 0.2f).ToList();
+            if (on.Count < 3) continue;
+            var mid = on.Aggregate(Vector3.Zero, (s, p) => s + p) / on.Count;
+            var u = Vector3.Normalize(on[0] - mid);
+            var v = Vector3.Cross(n, u);
+            on.Sort((a, b) => MathF.Atan2(Vector3.Dot(a - mid, v), Vector3.Dot(a - mid, u)).CompareTo(MathF.Atan2(Vector3.Dot(b - mid, v), Vector3.Dot(b - mid, u))));
+            var col = Tint(color & 0xFFFFFF, LightOf(n), alpha);
+            for (int i = 0; i < on.Count; i++)
+            {
+                tris.Add(new LineVertex { Pos = Vector3.Transform(mid, root), Color = col });
+                tris.Add(new LineVertex { Pos = Vector3.Transform(on[i], root), Color = col });
+                tris.Add(new LineVertex { Pos = Vector3.Transform(on[(i + 1) % on.Count], root), Color = col });
+            }
+        }
+    }
+
+    // Short lines where each vertex says it faces: reflections and the game's moving lights come from these
+    void AddNormals(Frame f)
+    {
+        uint col = Rgba(120, 255, 220);
+        float len = Distance * 0.03f;
+        var done = new HashSet<Prm>();
+        foreach (var it in f.Items)
+        {
+            if (!done.Add(it.Mesh) && it.Mesh.Verts.Length > 1500) continue;
+            foreach (var v in it.Mesh.Verts)
+            {
+                var p = Vector3.Transform(v.Pos, it.World);
+                Line(f.Lines, p, p + Vector3.Normalize(Vector3.TransformNormal(v.Normal, it.World) + new Vector3(1e-5f)) * len, col);
+            }
+        }
+    }
+
+    // ---- The race: other cars, the road, walls ----
+    RaceTrack? builtTrack;
+    readonly List<LineVertex> roadTris = new(), wallTris = new();
+
+    static void Quad(List<LineVertex> l, Vector3 a, Vector3 b, Vector3 c, Vector3 d, uint col)
+    {
+        foreach (var p in new[] { a, b, c, a, c, d }) l.Add(new LineVertex { Pos = p, Color = col });
+    }
+
+    void BuildTrack(RaceTrack t)
+    {
+        builtTrack = t;
+        roadTris.Clear();
+        wallTris.Clear();
+        const float RoadY = 0.1f, WallHeight = 34, Kerb = 44;
+        uint road = Rgba(66, 68, 74), road2 = Rgba(60, 62, 68), red = Rgba(205, 45, 40), white = Rgba(232, 232, 232);
+        uint wallA = Rgba(225, 225, 228), wallB = Rgba(40, 90, 200);
+        int n = t.Points.Length;
+        Vector3 At(int i, float off, float lift = 0)
+        {
+            var p = t.Points[i % n] + RaceTrack.Side(t.Tangents[i % n]) * off;
+            p.Y = t.Height(p.X, p.Z) + RoadY - lift;
+            return p;
+        }
+        float h = t.Width / 2;
+        // Hills need more points across the road to follow them
+        int across = t.Ground is RaceGround.Bumpy or RaceGround.Ramp ? 8 : 1;
+        for (int i = 0; i < n; i++)
+        {
+            int j = i + 1;
+            uint surface = i / 4 % 2 == 0 ? road : road2;
+            if (t.Band.Length > 0)
+            {
+                var m = Material.Track[t.Band[i]];
+                surface = Rgba(m.R, m.G, m.B);
+            }
+            for (int c = 0; c < across; c++)
+            {
+                float a = -h + 2 * h * c / across, b = -h + 2 * h * (c + 1) / across;
+                Quad(roadTris, At(i, a), At(j, a), At(j, b), At(i, b), surface);
+            }
+            uint kerb = i / 2 % 2 == 0 ? red : white;
+            const float Over = 0.6f;
+            Quad(roadTris, At(i, h - Kerb, Over), At(j, h - Kerb, Over), At(j, h, Over), At(i, h, Over), kerb);
+            Quad(roadTris, At(i, -h, Over), At(j, -h, Over), At(j, -h + Kerb, Over), At(i, -h + Kerb, Over), kerb);
+            uint wall = i / 3 % 2 == 0 ? wallA : wallB;
+            foreach (var side in new[] { h, -h })
+            {
+                var a = At(i, side);
+                var b = At(j, side);
+                Quad(wallTris, a, b, b - new Vector3(0, WallHeight, 0), a - new Vector3(0, WallHeight, 0), wall);
+            }
+        }
+        // The start line, in squares
+        const int Across = 14;
+        float cell = t.Width / Across;
+        var along = t.Tangents[0];
+        var side0 = RaceTrack.Side(along);
+        for (int row = 0; row < 2; row++)
+            for (int c = 0; c < Across; c++)
+            {
+                var o = t.Points[0] + side0 * (-h + c * cell) + along * (row * cell);
+                o.Y = RoadY - 0.6f;
+                Quad(roadTris, o, o + along * cell, o + along * cell + side0 * cell, o + side0 * cell, (row + c) % 2 == 0 ? white : Rgba(20, 20, 20));
+            }
+    }
+
+    void AddRace(Frame f, Race race, Car car)
+    {
+        if (builtTrack != race.Track) BuildTrack(race.Track);
+        f.Ground = roadTris;
+        f.GroundDepth = race.Track.Ground is RaceGround.Bumpy or RaceGround.Ramp;
+        f.Solid.AddRange(wallTris);
+        f.Background = new Vector3(0.50f, 0.66f, 0.86f);
+        foreach (var c in race.Cars)
+        {
+            // A soft dark patch keeps a car on the road
+            var nose = Vector3.Transform(Vector3.UnitZ, c.Sim.Rot);
+            nose.Y = 0;
+            if (nose.LengthSquared() > 1e-4f) nose = Vector3.Normalize(nose);
+            var side = new Vector3(nose.Z, 0, -nose.X);
+            var at = c.Sim.Pos with { Y = race.Track.Height(c.Sim.Pos.X, c.Sim.Pos.Z) - 0.9f };
+            if (!c.IsPlayer || f.Shadow == null)
+                Quad(f.Solid, at + side * c.HalfWidth + nose * c.HalfLength, at - side * c.HalfWidth + nose * c.HalfLength,
+                     at - side * c.HalfWidth - nose * c.HalfLength, at + side * c.HalfWidth - nose * c.HalfLength, Rgba(0, 0, 0, 110));
+            if (c.IsPlayer) continue;
+            string? tex = c.Folder.Equals(car.Folder, StringComparison.OrdinalIgnoreCase) ? f.CarTexture : car.Game.Find(c.Data.TPage);
+            foreach (var part in CarPose.Build(c.Data, c.Dyn))
+                if (doc.RaceModel(c, part.Slot) is { } m)
+                    f.Items.Add((m, part.World, part.Tex, false, false, part.Tex == 1 ? null : tex));
+        }
+    }
+
     IEnumerable<Vector3> Ghosts(int i, Vector3 p)
     {
         Vector3 MX(Vector3 v) => new(-v.X, v.Y, v.Z);
@@ -824,6 +1006,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             int cx = d.ShadowIndex % 8, cy = d.ShadowIndex / 8;
             uv = new Vector4(cx / 8f, cy / 4f, (cx + 1) / 8f, (cy + 1) / 4f);
         }
+        if (tex == null) return; // no picture of a shadow: a plain dark box would say nothing
         f.ShadowTexture = tex;
         float y = doc.Sim != null ? 0.1f : floor - 0.15f;
         Vector3 W(double x, double z)
@@ -1054,7 +1237,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
 
     unsafe void Mat(int loc, Matrix4x4 m) => gl!.UniformMatrix4(loc, 1, false, (float*)&m);
 
-    unsafe void DrawLines(List<LineVertex> l, Matrix4x4 vp)
+    unsafe void DrawLines(List<LineVertex> l, Matrix4x4 vp, PrimitiveType kind = PrimitiveType.Lines)
     {
         if (l.Count == 0) return;
         gl!.UseProgram(lineProg);
@@ -1064,7 +1247,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         var arr = l.ToArray();
         fixed (LineVertex* p = arr) gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(arr.Length * sizeof(LineVertex)), p, BufferUsageARB.StreamDraw);
         SetLineAttribs();
-        gl.DrawArrays(PrimitiveType.Lines, 0, (uint)arr.Length);
+        gl.DrawArrays(kind, 0, (uint)arr.Length);
     }
 
     unsafe void DrawQuad(Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector4 uv)
@@ -1125,14 +1308,27 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         {
             g.Disable(EnableCap.CullFace);
             g.Uniform1(uMode, 5);
-            g.Uniform4(uTint, 0.30f, 0.33f, 0.38f, 1f);
+            if (doc.Race != null) g.Uniform4(uTint, 0.27f, 0.42f, 0.22f, 1f);
+            else g.Uniform4(uTint, 0.30f, 0.33f, 0.38f, 1f);
             Mat(uMvp, vp);
             Mat(uModel, Matrix4x4.Identity);
             if (doc.Sim.Ground == SimGround.Flat)
             {
-                float s = 30000;
+                float s = doc.Race != null ? 60000 : 30000;
+                if (doc.Race != null) g.DepthMask(false); // the road lies on it and must never fight with it
                 DrawQuad(new(-s, 0.2f, s), new(s, 0.2f, s), new(s, 0.2f, -s), new(-s, 0.2f, -s), new(0, 0, 1, 1));
+                g.DepthMask(true);
             }
+            g.Enable(EnableCap.CullFace);
+        }
+
+        if (f.Ground.Count > 0)
+        {
+            g.Disable(EnableCap.CullFace);
+            g.Disable(EnableCap.Blend);
+            g.DepthMask(f.GroundDepth);
+            DrawLines(f.Ground, vp, PrimitiveType.Triangles);
+            g.DepthMask(true);
             g.Enable(EnableCap.CullFace);
         }
 
@@ -1149,7 +1345,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
             g.Uniform1(uMode, 4);
             Mat(uMvp, vp);
             Mat(uModel, Matrix4x4.Identity);
-            g.BindTexture(TextureTarget.Texture2D, Tex(f.ShadowTexture, 0));
+            g.BindTexture(TextureTarget.Texture2D, Tex(f.ShadowTexture, f.ShadowVersion));
             DrawQuad(s2.A, s2.B, s2.C, s2.D, s2.Uv);
             g.DepthMask(true);
             g.Enable(EnableCap.CullFace);
@@ -1175,7 +1371,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
                 foreach (var b in mesh.Batches)
                 {
                     if (b.Pass != pass) continue;
-                    g.BindTexture(TextureTarget.Texture2D, b.Textured && f.Shade == ShadeMode.Textured ? (it.Tex == 1 ? fxTex : carTex) : whiteTex);
+                    g.BindTexture(TextureTarget.Texture2D, b.Textured && f.Shade == ShadeMode.Textured ? (it.TexFile != null ? Tex(it.TexFile, 0) : it.Tex == 1 ? fxTex : carTex) : whiteTex);
                     g.DrawArrays(PrimitiveType.Triangles, b.First, (uint)b.Count);
                 }
             }
@@ -1227,6 +1423,13 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         }
         g.Uniform4(lOverride, 0f, 0f, 0f, 0f);
 
+        if (f.Solid.Count > 0)
+        {
+            g.Disable(EnableCap.CullFace);
+            g.Enable(EnableCap.Blend);
+            g.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            DrawLines(f.Solid, vp, PrimitiveType.Triangles);
+        }
         g.Disable(EnableCap.DepthTest);
         g.Disable(EnableCap.CullFace);
         DrawLines(f.Overlay, vp);
@@ -1299,7 +1502,6 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
     {
         var tcs = new TaskCompletionSource<SKBitmap>(TaskCreationOptions.RunContinuationsAsynchronously);
         captureFrame = Build(clean);
-        captureFrame.Floor = !clean;
         captureSize = size;
         captureClean = clean;
         captureDone = tcs;

@@ -41,6 +41,8 @@ public sealed partial class MainWindow
             rawTimer.Stop(); rawTimer.Start();
         };
         AddTab("File", rawHost);
+        GuideTab = GuidePage();
+        AddTab("Guide", GuideTab, "This car's numbers, worked out as you change them (F1)");
         Tabs.SelectionChanged += (_, _) =>
         {
             if (Tabs.SelectedItem is TabItem { Content: Page p }) p.Refresh();
@@ -52,6 +54,8 @@ public sealed partial class MainWindow
     {
         levelBox.ItemsSource = Doc.Game == null ? null : new TestRun(Doc.Game).Levels().Select(l => l.Name + "  (" + l.Folder + ")").ToList();
         levelFolders = Doc.Game == null ? new List<string>() : new TestRun(Doc.Game).Levels().Select(l => l.Folder).ToList();
+        stockAi = null;
+        if (aiFrom != null && Doc.Game != null) aiFrom.ItemsSource = Doc.Game.CarFolders().Where(GameFolder.IsStock).ToList();
     }
 
     // ---------------------------- The part you clicked ----------------------------
@@ -253,15 +257,24 @@ public sealed partial class MainWindow
             var skins = Doc.Car.FindSkins();
             return skins.Count > 1 ? "Skins: " + string.Join(", ", skins.Select(Path.GetFileNameWithoutExtension)) : "No other skins";
         });
+        p.Note("Stock cars come from packs. Saved changes to them go in packs\\local, on top: File has the way back.");
         p.Text("Hull", () => D().Coll, v => { D().Coll = v; Doc.LoadHull(); }, "Collision hull, .hul");
         p.Text("Carbox", () => D().TCarBox, v => D().TCarBox = v);
         p.Header("Model list");
         for (int i = 0; i < 19; i++)
         {
             int k = i;
-            p.Text("Model " + k, () => D().Models[k], v => { D().Models[k] = v; Doc.ReloadModels(); });
+            p.TextWithButton("Model " + k, () => D().Models[k], v => { D().Models[k] = v; Doc.ReloadModels(); }, "Pick", async () =>
+            {
+                var rel = await AskModel("Model " + k);
+                if (rel == null) return;
+                Doc.Edit("Model " + k, () => { D().Models[k] = rel == "" ? "NONE" : rel; Doc.ReloadModels(); });
+                Doc.EndGesture();
+            });
         }
         p.Header("Reflection");
+        p.ColourOf("Reflection colour", () => Avalonia.Media.Color.FromRgb((byte)Math.Clamp(D().EnvR, 0, 255), (byte)Math.Clamp(D().EnvG, 0, 255), (byte)Math.Clamp(D().EnvB, 0, 255)),
+            c => { D().EnvR = c.R; D().EnvG = c.G; D().EnvB = c.B; }, "Colour and strength of what the body reflects. Black: none");
         p.Int("EnvRGB red", () => D().EnvR, v => D().EnvR = v, "How much the body reflects the world", 0, 255);
         p.Int("Green", () => D().EnvG, v => D().EnvG = v, null, 0, 255);
         p.Int("Blue", () => D().EnvB, v => D().EnvB = v, null, 0, 255);
@@ -317,7 +330,7 @@ public sealed partial class MainWindow
         p.Num("Handling", () => D().Handling, v => D().Handling = v, "Your own opinion, 0 to 100");
         p.Int("Trans", () => D().Trans, v => D().Trans = v, "0 all wheels, 1 front, 2 back");
         p.Num("Max revs", () => D().MaxRevs, v => D().MaxRevs = v);
-        p.Button("Fill from a simulated run", () => Tool("Stats", () => CarSim.FillStats(Doc.D!)), "A close estimate. RVGL's dev mode has the exact Calc Car Stats");
+        p.Button("Fill from a simulated run", () => Tool("Stats", () => CarSim.FillStats(Doc.D!, Doc.Hull)), "A close estimate. RVGL's dev mode has the exact Calc Car Stats");
         return p;
     }
 
@@ -326,25 +339,61 @@ public sealed partial class MainWindow
         var p = NewPage();
         AiData A() { Doc.D!.Ai ??= new AiData(); return Doc.D!.Ai; }
         p.Check("CPU cars can pick it", () => Doc.D!.CpuSelectable, v => Doc.D!.CpuSelectable = v);
-        p.Header("Understeer");
-        p.Num("Threshold", () => A().UnderThresh, v => A().UnderThresh = v);
-        p.Num("Range", () => A().UnderRange, v => A().UnderRange = v);
-        p.Num("Front", () => A().UnderFront, v => A().UnderFront = v);
-        p.Num("Rear", () => A().UnderRear, v => A().UnderRear = v);
-        p.Num("Max", () => A().UnderMax, v => A().UnderMax = v);
-        p.Header("Oversteer");
-        p.Num("Threshold", () => A().OverThresh, v => A().OverThresh = v);
-        p.Num("Range", () => A().OverRange, v => A().OverRange = v);
-        p.Num("Max", () => A().OverMax, v => A().OverMax = v);
-        p.Num("Acc. threshold", () => A().OverAccThresh, v => A().OverAccThresh = v);
-        p.Num("Acc. range", () => A().OverAccRange, v => A().OverAccRange = v);
-        p.Header("Behaviour, 0 to 32767");
-        p.Num("Pickups", () => A().PickupBias, v => A().PickupBias = v, null, 0, 32767);
-        p.Num("Blocking", () => A().BlockBias, v => A().BlockBias = v, null, 0, 32767);
-        p.Num("Overtaking", () => A().OvertakeBias, v => A().OvertakeBias = v, null, 0, 32767);
-        p.Num("Suspension", () => A().Suspension, v => A().Suspension = v, null, 0, 32767);
-        p.Num("Aggression", () => A().Aggression, v => A().Aggression = v, null, 0, 32767);
+        p.Header("What this is");
+        p.Note("How the computer drives this car, from the original game's code. The Under and Over rows correct its steering and throttle when the car slides. Speeds are in game units per second, 89 is about 1 mph. RVGL may have changed some of this.");
+        void Row(string label, Func<AiData, double> f, Action<double> set, string guess, double min = double.MinValue, double max = double.MaxValue)
+        {
+            p.Num(label, () => f(A()), set, guess, min, max);
+            p.Hint(() => AiRange(f, Doc.D!.Ai == null ? 0 : f(Doc.D.Ai)));
+        }
+        p.Header("Understeer: the front won't turn");
+        Row("Threshold", a => a.UnderThresh, v => A().UnderThresh = v, "Sideways speed of front and rear axles added together. Above this the CPU steers harder");
+        Row("Range", a => a.UnderRange, v => A().UnderRange = v, "Speed over the threshold that makes a full correction of 1");
+        Row("Front", a => a.UnderFront, v => A().UnderFront = v, "If the front slides sideways faster than this, and the rear faster than Rear, it stays on the throttle. Otherwise it lifts by the correction");
+        Row("Rear", a => a.UnderRear, v => A().UnderRear = v, "The rear half of the Front test");
+        Row("Max", a => a.UnderMax, v => A().UnderMax = v, "Largest correction, as a share of full steering");
+        p.Header("Oversteer: the back slides out");
+        Row("Threshold", a => a.OverThresh, v => A().OverThresh = v, "How much faster the rear slides sideways than the front before the CPU countersteers");
+        Row("Range", a => a.OverRange, v => A().OverRange = v, "Speed over the threshold that makes a full correction of 1");
+        Row("Max", a => a.OverMax, v => A().OverMax = v, "Largest countersteer, added to the steering angle");
+        Row("Acc. threshold", a => a.OverAccThresh, v => A().OverAccThresh = v, "While countersteering: sideways speed above this makes it lift the throttle");
+        Row("Acc. range", a => a.OverAccRange, v => A().OverAccRange = v, "Speed above that for no throttle at all. At 1.5 times this it brakes");
+        p.Header("Choosing routes, 0 to 32767");
+        Row("Pickups", a => a.PickupBias, v => A().PickupBias = v, "At a fork with a pickup route: it takes it if this value minus a random 0 to 32767 beats the other way. 32767 nearly always", 0, 32767);
+        Row("Blocking", a => a.BlockBias, v => A().BlockBias = v, "Read but never used in the original code", 0, 32767);
+        Row("Overtaking", a => a.OvertakeBias, v => A().OvertakeBias = v, "Read but never used in the original code", 0, 32767);
+        Row("Suspension", a => a.Suspension, v => A().Suspension = v, "The same as Pickups, for bumpy and soft suspension routes", 0, 32767);
+        Row("Aggression", a => a.Aggression, v => A().Aggression = v, "The original code sets this to 0 when it loads", 0, 32767);
+        p.Header("Trying it");
+        p.Note("Take the values of a stock car that drives alike, then race against the CPU in Test run and watch. RVGL chooses the CPU cars itself, so your car shows up among them only if it's allowed and picked.");
+        var from = new ComboBox { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
+        p.Add(from);
+        aiFrom = from;
+        p.Button("Copy the AI values of that car", () =>
+        {
+            if (Doc.Game == null || from.SelectedItem is not string folder) return;
+            var other = new Car(Doc.Game, folder).Data.Ai;
+            if (other == null) { Say(folder + " has no AI values"); return; }
+            Tool("AI from " + folder, () => Doc.D!.Ai = other.Clone());
+        });
         return p;
+    }
+
+    ComboBox? aiFrom;
+    List<AiData>? stockAi;
+
+    // How a value stands against the stock cars
+    string AiRange(Func<AiData, double> f, double value)
+    {
+        if (Doc.Game == null) return "";
+        stockAi ??= Doc.Game.CarFolders().Where(GameFolder.IsStock)
+            .Select(x => { try { return new Car(Doc.Game, x).Data.Ai; } catch (Exception) { return null; } })
+            .Where(a => a != null).Select(a => a!).ToList();
+        if (stockAi.Count == 0) return "";
+        var v = stockAi.Select(f).OrderBy(x => x).ToList();
+        double lo = v[0], hi = v[^1], mid = v[v.Count / 2];
+        var word = value < lo ? "  ▲ below all stock cars" : value > hi ? "  ▲ above all stock cars" : "";
+        return $"Stock cars: {lo:0.##} to {hi:0.##}, middle {mid:0.##}{word}";
     }
 
     Page RvglPage()
@@ -389,13 +438,47 @@ public sealed partial class MainWindow
         var p = NewPage();
         p.Header("Auto shade");
         p.Note("Soft light with the shadows of the car's own shape, baked in the vertex colours, the way the game shows them.");
-        var amb = p.Slide("Sky light", 0, 1, 0.45);
-        var sun = p.Slide("Sun", 0, 1, 0.55);
-        var occ = p.Slide("Dark corners", 0, 1, 1);
-        p.Button("Shade the car", async () => await ShadeAsked((float)amb.Value, (float)sun.Value, (float)occ.Value), "See it, then Save. The first version of each model stays as .bak", true);
+        Slider amb = null!, sun = null!, occ = null!;
+        Action live = () => { if (amb != null && sun != null && occ != null) _ = ShadeLive((float)amb.Value, (float)sun.Value, (float)occ.Value); };
+        amb = p.Slide("Sky light", 0, 1, 0.45, _ => live());
+        sun = p.Slide("Sun", 0, 1, 0.55, _ => live());
+        occ = p.Slide("Dark corners", 0, 1, 1, _ => live());
+        ShadeSliderSun = sun;
+        p.Check("See the shading without the texture", () => View.Shade == ShadeMode.VertexColours, v => SetShadeView(v ? ShadeMode.VertexColours : ShadeMode.Textured), "Also on the toolbar: Texture, Shading, Clay");
+
+        ShadeSmoothBox = new ComboBox { FontSize = 12, MinHeight = 26, HorizontalAlignment = HorizontalAlignment.Stretch, SelectedIndex = 0,
+            ItemsSource = new[] { "As the model's normals", "Smooth, by vertices", "By angle: smooth with sharp edges", "By faces: faceted" } };
+        ShadeSmoothBox.SelectionChanged += (_, _) =>
+        {
+            ShadeSmoothing = (ShadeSmooth)Math.Max(ShadeSmoothBox.SelectedIndex, 0);
+            live();
+        };
+        p.Labeled("Surface", ShadeSmoothBox, "Colours sit on each polygon's corners, so this works on any model and adds no vertices");
+        p.Slide("Edge angle", 5, 120, 45, v => { ShadeAngle = (float)v; if (ShadeSmoothing == ShadeSmooth.ByAngle) live(); }, "With By angle: polygons meeting at less than this blend together");
+        p.Slide("Sun around", 0, 360, 54, v => { ShadeAround = (float)v; live(); }, "Direction of the sun, seen from above. 0 is the car's front");
+        p.Slide("Sun height", 5, 90, 66, v => { ShadeHeight = (float)v; live(); });
+        p.Slide("Soft shadows", 0, 1, 0, v => { ShadeSoft = (float)v; live(); }, "From the sharp edge of a small sun to a soft one");
+        p.Slide("Floor bounce", 0, 1, 0, v => { ShadeBounce = (float)v; live(); }, "Light coming back up from the floor to what faces down");
+        p.Slide("Contrast", 0.5, 2, 1, v => { ShadeContrast = (float)v; live(); });
+        p.Colour("Sky colour", Avalonia.Media.Colors.White, c => { ShadeSky = c; live(); }, "Tints the soft light from all around");
+        p.Colour("Sun colour", Avalonia.Media.Colors.White, c => { ShadeSunColour = c; live(); });
+        p.Colour("Bounce colour", Avalonia.Media.Colors.White, c => { ShadeBounceColour = c; live(); }, "Grass makes the underside green, a red floor red");
+        var whole = new CheckBox { Content = "The whole car blocks light", FontSize = 12, MinHeight = 24, IsChecked = true };
+        ToolTip.SetTip(whole, "Wheels shade the body and the body shades the wheels, as they stand. Off: each model alone");
+        whole.IsCheckedChanged += (_, _) => { ShadeWholeCar = whole.IsChecked == true; live(); };
+        p.Add(whole);
+        p.Button("Shade the car", async () => await ShadeAsked((float)amb.Value, (float)sun.Value, (float)occ.Value), "Same as moving a slider. It shows at once, Save keeps it. The first version of each model stays as .bak", true);
+        p.Button("Back to the shading it had", ShadeUndo);
+
+        p.Header("Vertex normals");
+        p.Note("The game takes reflections and its moving lights from these, not the shading above. A vertex has one normal, so a sharp edge needs two vertices in one place: By faces and By angle add vertices, Smooth doesn't. Show has Vertex normals, to see them.");
+        var normalMode = new ComboBox { FontSize = 12, MinHeight = 26, HorizontalAlignment = HorizontalAlignment.Stretch, SelectedIndex = 0, ItemsSource = new[] { "Smooth, by vertices", "By angle", "By faces" } };
+        p.Labeled("Make them", normalMode);
+        var normalAngle = p.Slide("Edge angle", 5, 120, 45);
+        p.Button("Rewrite the normals", async () => await RewriteNormals(normalMode.SelectedIndex switch { 1 => ShadeSmooth.ByAngle, 2 => ShadeSmooth.Faces, _ => ShadeSmooth.Smooth }, (float)normalAngle.Value), "Undo takes it back, Save keeps it. The first version of each model stays as .bak");
 
         p.Header("Shadow");
-        p.Button("Make shadow.bmp from the car", () => Tool("Shadow", () => Say("Shadow saved: " + CarTools.MakeShadow(Doc.Car!))), "Top view, white on black, and the shadow table around it");
+        p.Button("Make shadow.bmp from the car", () => Tool("Shadow", () => { Say("Shadow saved: " + CarTools.MakeShadow(Doc.Car!)); Doc.TextureVersion++; }), "Top view of body, wheels and suspension, white on black, and the shadow table around it");
 
         p.Header("Carbox");
         p.Button("Make carbox.bmp", async () => await MakeCarbox(), "A picture of the car with its name, on white");
@@ -422,7 +505,7 @@ public sealed partial class MainWindow
             if (!File.Exists(tpl)) { Say("Template not found"); return; }
             Settings.Author = author.Text ?? "";
             var text = CarTools.FillReadme(File.ReadAllText(tpl, ParamFile.FileEncoding), Doc.Car, new(author.Text ?? "", Comments: comments.Text ?? ""));
-            var file = Path.Combine(Doc.Car.Dir, "readme.txt");
+            var file = Doc.Car.Game.WritePath("cars\\" + Doc.Car.Folder + "\\readme.txt");
             Files.Backup(file);
             File.WriteAllText(file, text, ParamFile.FileEncoding);
             Say("Written: " + file);
@@ -434,7 +517,11 @@ public sealed partial class MainWindow
     // ---------------------------- Paint ----------------------------
 
     public int PaintTabIndex;
-    public Slider PaintHue = null!, PaintColour = null!, PaintBright = null!;
+    public Slider ShadeSliderSun = null!;
+    public Slider PaintHue = null!, PaintColour = null!, PaintBright = null!, PaintContrast = null!, PaintWarmth = null!, PaintToneAmount = null!, PaintTolerance = null!;
+    public ColourButton PaintTone = null!, PaintFrom = null!, PaintTo = null!;
+    public CheckBox PaintSwap = null!;
+    public ComboBox ShadeSmoothBox = null!;
     readonly WrapPanel swatches = new();
     public readonly HashSet<int> PaintOnly = new();
     SkiaSharp.SKBitmap? paintSrc;
@@ -450,6 +537,18 @@ public sealed partial class MainWindow
         PaintHue = p.Slide("Hue", -180, 180, 0, _ => PaintChanged(), "Turns the colours around the colour wheel");
         PaintColour = p.Slide("Colour", 0, 2, 1, _ => PaintChanged(), "From grey to very strong");
         PaintBright = p.Slide("Brightness", -0.6, 0.6, 0, _ => PaintChanged());
+        PaintContrast = p.Slide("Contrast", 0.5, 2, 1, _ => PaintChanged());
+        PaintWarmth = p.Slide("Warm or cool", -1, 1, 0, _ => PaintChanged(), "Towards orange or blue");
+        p.Header("All in one colour");
+        PaintTone = p.Colour("Colour", Avalonia.Media.Color.Parse("#D7263D"), _ => PaintChanged(), "Keeps the light and dark of the painting");
+        PaintToneAmount = p.Slide("Amount", 0, 1, 0, _ => PaintChanged());
+        p.Header("Swap a colour");
+        PaintSwap = new CheckBox { Content = "Swap this colour for that one", FontSize = 12, MinHeight = 24 };
+        PaintSwap.IsCheckedChanged += (_, _) => PaintChanged();
+        p.Add(PaintSwap);
+        PaintFrom = p.Colour("This", Avalonia.Media.Colors.Red, _ => PaintChanged(), "The texture's own colours are in the list when you click");
+        PaintTo = p.Colour("For that", Avalonia.Media.Color.Parse("#1B98E0"), _ => PaintChanged());
+        PaintTolerance = p.Slide("How close", 0.02, 0.6, 0.2, _ => PaintChanged(), "How close to This a colour has to be");
         p.Header("Only these colours");
         p.Note("Click colours of this texture to change only those. None clicked: all of them. Black and greys stay.");
         p.Add(swatches);
@@ -491,6 +590,9 @@ public sealed partial class MainWindow
         swatches.Children.Clear();
         PaintOnly.Clear();
         if (paintSrc == null) return;
+        var own = CarTools.MainColours(paintSrc).Take(10).Select(c => Avalonia.Media.Color.FromRgb(c.Sample.Red, c.Sample.Green, c.Sample.Blue)).ToList();
+        PaintFrom.SetOwn(own);
+        if (own.Count > 0) PaintFrom.SetValue(own[0]);
         foreach (var (bucket, _, sample) in CarTools.MainColours(paintSrc).Take(10))
         {
             var t = new Avalonia.Controls.Primitives.ToggleButton
@@ -512,6 +614,7 @@ public sealed partial class MainWindow
     {
         paintLoading = true;
         PaintHue.Value = 0; PaintColour.Value = 1; PaintBright.Value = 0;
+        PaintContrast.Value = 1; PaintWarmth.Value = 0; PaintToneAmount.Value = 0; PaintSwap.IsChecked = false;
         paintLoading = false;
         Doc.PaintPreview = null;
         ReloadPaintSource();
@@ -527,16 +630,21 @@ public sealed partial class MainWindow
         ResetPaintKeepSkin();
     }
 
-    bool PaintIsPlain => PaintHue.Value == 0 && PaintColour.Value == 1 && PaintBright.Value == 0;
+    static SkiaSharp.SKColor Sk(Avalonia.Media.Color c) => new(c.R, c.G, c.B);
 
-    SkiaSharp.SKBitmap PaintResult(SkiaSharp.SKBitmap src) =>
-        CarTools.AdjustTexture(src, (float)PaintBright.Value, (float)PaintColour.Value, (float)PaintHue.Value, PaintOnly.ToArray());
+    public PaintOptions PaintNow() => new(
+        (float)PaintBright.Value, (float)PaintColour.Value, (float)PaintHue.Value, PaintOnly.ToArray(),
+        (float)PaintContrast.Value, (float)PaintWarmth.Value, Sk(PaintTone.Value), (float)PaintToneAmount.Value,
+        PaintSwap.IsChecked == true ? Sk(PaintFrom.Value) : null, PaintSwap.IsChecked == true ? Sk(PaintTo.Value) : null, (float)PaintTolerance.Value);
+
+    SkiaSharp.SKBitmap PaintResult(SkiaSharp.SKBitmap src) => CarTools.AdjustTexture(src, PaintNow());
 
     /// <summary>Work out the look in the background: the newest one wins, the sliders never wait</summary>
     public void PaintChanged()
     {
         if (paintLoading || paintSrc == null) return;
-        if (PaintIsPlain)
+        var look = PaintNow();
+        if (look.IsPlain)
         {
             Doc.PaintPreview = null;
             View.Redraw();
@@ -544,11 +652,9 @@ public sealed partial class MainWindow
         }
         int run = ++paintRun;
         var src = paintSrc;
-        float b = (float)PaintBright.Value, c = (float)PaintColour.Value, h = (float)PaintHue.Value;
-        var only = PaintOnly.ToArray();
         Task.Run(() =>
         {
-            using var o = CarTools.AdjustTexture(src, b, c, h, only);
+            using var o = CarTools.AdjustTexture(src, look);
             var rgba = Doc.ToRgba(o, out int w, out int ht);
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
@@ -565,12 +671,15 @@ public sealed partial class MainWindow
     {
         if (paintSrc == null || PaintFile() is not { } tex) { Say("No texture"); return null; }
         using var o = PaintResult(paintSrc);
-        var main = Doc.Car!.Game.Find(Doc.D!.TPage) ?? tex;
-        var stem = Path.GetFileNameWithoutExtension(main);
-        var dir = Path.GetDirectoryName(main)!;
+        var game = Doc.Car!.Game;
+        var mainRel = Doc.D!.TPage.Replace('/', '\\');
+        var cut = mainRel.LastIndexOf('\\');
+        var relDir = cut >= 0 ? mainRel[..cut] : "";
+        var stem = Path.GetFileNameWithoutExtension(mainRel);
         int n = 1;
-        string path;
-        do path = Path.Combine(dir, stem + "-alt" + n++ + ".bmp"); while (File.Exists(path));
+        string rel;
+        do rel = relDir + "\\" + stem + "-alt" + n++ + ".bmp"; while (game.Find(rel) != null);
+        var path = game.WritePath(rel);
         CarTools.SaveTexture(o, path, paintSrc.AlphaType != SkiaSharp.SKAlphaType.Opaque);
         Doc.SkinOverride = path;
         ResetPaintKeepSkin();
@@ -600,15 +709,19 @@ public sealed partial class MainWindow
     public void WritePaint(string tex)
     {
         using var o = PaintResult(paintSrc!);
-        Files.Backup(tex);
-        CarTools.SaveTexture(o, tex, paintSrc!.AlphaType != SkiaSharp.SKAlphaType.Opaque);
+        var game = Doc.Car!.Game;
+        var target = game.RelOf(tex) is { } rel ? game.WritePath(rel) : tex;
+        Files.Backup(target);
+        CarTools.SaveTexture(o, target, paintSrc!.AlphaType != SkiaSharp.SKAlphaType.Opaque);
         ResetPaintKeepSkin();
         Say("Texture changed: " + Path.GetFileName(tex) + ". The first version stays as .bak");
     }
 
     void OpenTextureEditor()
     {
-        if (PaintFile() is not { } tex) { Say("No texture"); return; }
+        if (PaintFile() is not { } tex0) { Say("No texture"); return; }
+        // A pack's file is left alone: you paint on a copy the game reads instead
+        var tex = Doc.Car!.Game.RelOf(tex0) is { } texRel ? Doc.Car.Game.EnsureWritable(texRel) : tex0;
         WatchTexture(tex);
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(tex) { UseShellExecute = true }); }
         catch (Exception ex) { Say("Couldn't open it: " + ex.Message + ". It's still being watched: " + tex); return; }
@@ -667,15 +780,45 @@ public sealed partial class MainWindow
     {
         var p = NewPage();
         p.Header("In the real game");
-        p.Note("Saves the car and starts RVGL in a window with this car picked. It uses its own settings folder, your profile and best times stay as they are.");
+        p.Note("Saves the car and starts RVGL in a window, with this car in a race. It uses its own settings folder, your profile and best times stay as they are.");
         levelBox.SelectionChanged += (_, _) => SelectedLevel = levelBox.SelectedIndex >= 0 && levelBox.SelectedIndex < levelFolders.Count ? levelFolders[levelBox.SelectedIndex] : null;
         p.Add(new TextBlock { Text = "Track", FontSize = 12 });
         p.Add(levelBox);
+        p.Check("Go straight into the race", () => RaceByItself, v => RaceByItself = v, "Goes through RVGL's menus with key presses, only while its window is in front. Unlocks all cars on the test profile with the CARNIVAL code");
+        p.Int("Cars in the race", () => RaceCars, v => RaceCars = v, "1 is you alone", 1, 16);
+        p.Int("Laps", () => RaceLaps, v => RaceLaps = v, null, 1, 20);
         p.Button("▶  Test run (F5)", () => TestRunGame(false), null, true);
         p.Button("Test run, dev mode", () => TestRunGame(true), "Ctrl+R in the game reloads the car after you save here. Start Race has Calc Car Stats");
 
+        p.Header("Race, here");
+        p.Note("You against CPU cars on a built-in road. Cars use the same physics as Drive here. The CPU driver, road and walls are this editor's own, so times won't match RVGL. Its corrections for sliding work as the game's do, from each car's AI values.");
+        var trackBox = new ComboBox { FontSize = 12, MinHeight = 26, HorizontalAlignment = HorizontalAlignment.Stretch, SelectedIndex = 0, ItemsSource = RaceTrack.Names };
+        trackBox.SelectionChanged += (_, _) => RaceTrackIndex = Math.Max(trackBox.SelectedIndex, 0);
+        p.Labeled("Road", trackBox);
+        var groundBox = new ComboBox { FontSize = 12, MinHeight = 26, HorizontalAlignment = HorizontalAlignment.Stretch, SelectedIndex = 0, ItemsSource = RaceTrack.GroundNames };
+        groundBox.SelectionChanged += (_, _) => RaceGroundIndex = Math.Max(groundBox.SelectedIndex, 0);
+        p.Labeled("Ground", groundBox, "Plain, bumps all the way, or a jump after the start");
+        var opponents = new NumberBox(0, 9, true);
+        opponents.Show(RaceOpponents);
+        opponents.Edited += v => RaceOpponents = (int)v;
+        p.Labeled("CPU cars", opponents);
+        var laps = new NumberBox(1, 20, true);
+        laps.Show(RaceLapsHere);
+        laps.Edited += v => RaceLapsHere = (int)v;
+        p.Labeled("Laps", laps);
+        p.Slide("CPU skill", 0.6, 1.05, RaceSkill, v => RaceSkill = (float)v, "How close to the limit of grip they take bends and brake");
+        var sameCar = new CheckBox { Content = "All CPU cars are this car", FontSize = 12, MinHeight = 24 };
+        ToolTip.SetTip(sameCar, "Off: stock cars closest to it in speed");
+        sameCar.IsCheckedChanged += (_, _) => RaceSameCar = sameCar.IsChecked == true;
+        p.Add(sameCar);
+        var aiDrives = new CheckBox { Content = "The AI drives my car", FontSize = 12, MinHeight = 24 };
+        ToolTip.SetTip(aiDrives, "Watch your car's AI values at work. The I key switches during a race");
+        aiDrives.IsCheckedChanged += (_, _) => RaceAiDrives = aiDrives.IsChecked == true;
+        p.Add(aiDrives);
+        p.Button("▶  Race (F7)", () => StartRace(), null, true);
+
         p.Header("Quick drive, here");
-        p.Note("A simulation from the parameters: good to feel a change at once, not the same as the game. Arrows or WASD, R restarts, Esc leaves.");
+        p.Note("The original game's car physics on a plain floor. Arrows or WASD, Space flips a car on its roof, R restarts, Esc leaves.");
         p.Button("Drive on a flat floor (F6)", () => StartDrive(SimGround.Flat));
         p.Button("Drive on bumps", () => StartDrive(SimGround.Bumps));
         p.Button("Drive to a ramp", () => StartDrive(SimGround.Ramp));
@@ -685,8 +828,8 @@ public sealed partial class MainWindow
         {
             if (Doc.D == null) return;
             var d = Doc.D.Clone();
-            var a = CarSim.RunAcceleration(d);
-            runReport.Text = $"{a.Note}\nIn the file: TopEnd {d.TopEnd:0}, Acc {d.Acc:0.0}\nSimulated: TopEnd {a.TopEnd:0}, Acc {a.Acc:0.0}\n{CarSim.RunCircle(d).Note}\n{CarSim.RunBumps(d).Note}";
+            var a = CarSim.RunAcceleration(d, Doc.Hull);
+            runReport.Text = $"{a.Note}\nIn the file: TopEnd {d.TopEnd:0}, Acc {d.Acc:0.0}\nSimulated: TopEnd {a.TopEnd:0}, Acc {a.Acc:0.0}\n{CarSim.RunCircle(d, Doc.Hull).Note}\n{CarSim.RunBumps(d, Doc.Hull).Note}";
         }, "Full throttle, hard turn, bumps");
         p.Add(runReport);
         return p;

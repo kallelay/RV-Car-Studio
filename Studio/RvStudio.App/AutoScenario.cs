@@ -133,9 +133,11 @@ public static class AutoScenario
         w.SetTool(GizmoTool.Move);
         await Wait(60);
         var pz = w.View.AxisTip(wheelPos, 2);
-        await DragWith(w, LDOWN, LUP, 1, w.View.ScreenOf(pz)!.Value, w.View.ScreenOf(pz + new Vector3(0, 0, 8))!.Value);
+        var aimed = w.View.ScreenOf(pz)!.Value;
+        var aimedView = (w.View.Yaw, w.View.Pitch, w.View.Distance, w.View.Bounds.Size, w.View.TranslatePoint(aimed, w));
+        await DragWith(w, LDOWN, LUP, 1, aimed, w.View.ScreenOf(pz + new Vector3(0, 0, 8))!.Value);
         var moved = d.D.Wheels[0].Offset1 - wheelPos;
-        Check(Math.Abs(moved.Z - 8) < 1.5f, "the Z arrow moves the wheel: " + moved + " | " + w.View.HandleDebug(pz) + " | window " + w.Position + " " + w.ClientSize + " " + w.WindowState);
+        Check(Math.Abs(moved.Z - 8) < 1.5f, "the Z arrow moves the wheel: " + moved + " | aimed " + aimed + " " + aimedView + " | " + w.View.HandleDebug(pz) + " | window " + w.Position + " " + w.ClientSize + " " + w.WindowState);
         d.Undo();
         Check(d.D!.Wheels[0].Offset1 == wheelPos, "one undo takes back a whole drag: " + d.D.Wheels[0].Offset1);
 
@@ -562,6 +564,286 @@ public static class AutoScenario
         }
     }
 
+    // The things from the last round of feedback
+    static async Task ViewAndToolsTest(MainWindow w)
+    {
+        var d = w.Doc;
+        w.PickCar("rc");
+        w.View.SetView(ViewMode.Perspective);
+        w.View.Yaw = 0.3f; w.View.Pitch = 0.35f; w.View.FrameCar();
+        await Wait(150);
+
+        // Space flips the car while driving, through the real key
+        w.StartDrive(SimGround.Flat);
+        await Wait(100);
+        d.Sim!.Rot = System.Numerics.Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI);
+        Check(d.Sim.Up.Y > 0.9f, "driving, on its roof");
+        PostMessage(w.TryGetPlatformHandle()!.Handle, 0x100, (IntPtr)0x20, (IntPtr)0x00390001);
+        await Wait(30);
+        PostMessage(w.TryGetPlatformHandle()!.Handle, 0x101, (IntPtr)0x20, unchecked((IntPtr)0xC0390001));
+        await Wait(700);
+        Check(d.Sim.Up.Y < -0.9f, "Space flips it: " + d.Sim.Up);
+        w.StopDrive();
+        await Wait(50);
+
+        // The 3D button is a view from an angle, also after a flat one
+        w.View.SetView(ViewMode.Side);
+        w.View.SetView(ViewMode.Perspective);
+        Check(w.View.Yaw > 0.1f && w.View.Yaw < 1.4f && w.View.Pitch > 0.1f, "3D after Side looks from an angle");
+        w.View.Yaw = 0.3f; w.View.Pitch = 0.35f;
+        await Wait(60);
+
+        // Camera: the car turns with the mouse
+        var nose = d.D!.Wheels[0].Offset1;
+        var noseBefore = w.View.ScreenOf(nose)!.Value.X;
+        var mid = new Point(w.View.Bounds.Width / 2, w.View.Bounds.Height / 2);
+        await DragWith(w, RDOWN, RUP, 2, mid, mid + new Point(40, 0));
+        Check(w.View.ScreenOf(nose)!.Value.X > noseBefore, "dragging right moves the near side of the car right");
+
+        // From below
+        w.View.Pitch = 0.35f;
+        Check(w.View.FloorShown, "floor from above");
+        w.View.Pitch = -1f; w.View.Redraw();
+        d.Select(new Selection(SelKind.None));
+        Check(!w.View.FloorShown, "no floor from below");
+        await Wait(60);
+        await GlShot(w, "from_below", 500);
+        using (var shot = await w.View.Capture(200, false))
+        {
+            int car = 0, x0 = 50;
+            for (int y = 50; y < 150; y += 4)
+                for (int x = x0; x < 150; x += 4)
+                {
+                    var c = shot.GetPixel(x, y);
+                    if (Math.Abs(c.Red - 0.17 * 255) + Math.Abs(c.Green - 0.19 * 255) + Math.Abs(c.Blue - 0.22 * 255) > 25) car++;
+                }
+            Check(car > 20, "the underside can be seen: " + car);
+        }
+        w.View.Pitch = 0.35f;
+
+        // Pages scroll
+        w.Tabs.SelectedIndex = w.PaintTabIndex + 1; // Car
+        await Wait(300);
+        var page = ((TabItem)w.Tabs.Items[w.Tabs.SelectedIndex]!).Content as ScrollViewer;
+        Check(page != null && page.Extent.Height > page.Viewport.Height && page.Viewport.Height > 50, $"a long page scrolls: {page?.Extent.Height} in {page?.Viewport.Height}");
+        WindowShot(w, "tab_car_scroll");
+        w.Tabs.SelectedIndex = 0;
+
+        // Picture lists
+        var picker = new ModelPicker(d.Game!, "rc", "Test");
+        _ = picker.ShowDialog(w);
+        await Wait(1200);
+        Check(picker.TileCount > 4, "models of this car to pick from: " + picker.TileCount);
+        using (var rtb = new RenderTargetBitmap(new PixelSize((int)picker.Bounds.Width, (int)picker.Bounds.Height)))
+        {
+            rtb.Render(picker);
+            rtb.Save(Path.Combine(shots, "model_picker.png"));
+        }
+        picker.Close();
+        await Wait(100);
+        Check(picker.Result == null, "closing the picker chooses nothing");
+        using (var thumb = Thumbnail.OfCar(d.Car!, 96)) SavePng(thumb, "thumb_rc");
+
+        // Shadow takes every part
+        using (var all = CarTools.RenderShadow(d.Car!))
+        {
+            var only = new Car(d.Game!, "rc");
+            for (int i = 0; i < 4; i++) { only.Data.Springs[i].Model = -1; only.Data.Axles[i].Model = -1; only.Data.Pins[i].Model = -1; }
+            using var some = CarTools.RenderShadow(only);
+            SavePng(all, "shadow_all");
+            Func<SKBitmap, long> ink = b => { long s = 0; for (int y = 0; y < b.Height; y++) for (int x = 0; x < b.Width; x++) s += b.GetPixel(x, y).Red; return s; };
+            Check(ink(all) > ink(some), "suspension casts shadow too");
+        }
+
+        // Shading while the slider moves, with the texture off
+        var body = d.Model(d.D!.BodyModel)!;
+        var c0 = body.Faces.Select(f => f.Colors[0]).ToArray();
+        w.SetShadeView(ShadeMode.VertexColours);
+        Check(w.View.Shade == ShadeMode.VertexColours, "texture off");
+        int runs = w.ShadeRuns;
+        w.Tabs.SelectedIndex = w.PaintTabIndex + 6;
+        await Wait(100);
+        w.ShadeSliderSun.Value = 0.9;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (w.ShadeRuns == runs && sw.ElapsedMilliseconds < 3000) await Wait(10);
+        Log($"first live shade after {sw.ElapsedMilliseconds} ms");
+        Check(sw.ElapsedMilliseconds < 1000, "moving a slider shades at once: " + sw.ElapsedMilliseconds + " ms");
+        Check(!body.Faces.Select(f => f.Colors[0]).SequenceEqual(c0), "the colours changed");
+        Check(d.DirtyModels.Contains(body), "waiting for Save");
+        await Wait(900);
+        Check(w.ShadeRuns >= runs + 2, "the full quality follows");
+        await GlShot(w, "shade_live", 500);
+        w.ShadeUndo();
+        Check(body.Faces.Select(f => f.Colors[0]).SequenceEqual(c0) && !d.DirtyModels.Contains(body), "and back");
+        w.ShadeSliderSun.Value = 0.55;
+        await Wait(30);
+        w.ShadeUndo();
+        w.SetShadeView(ShadeMode.Textured);
+        w.Tabs.SelectedIndex = 0;
+
+        // Solid hull
+        w.View.ShowHull = true;
+        w.View.HullSolid = true;
+        d.Select(new Selection(SelKind.HullSphere, 0));
+        w.View.Redraw();
+        await Wait(60);
+        await GlShot(w, "hull_solid", 500);
+        w.View.HullSolid = false;
+        w.View.ShowHull = false;
+        d.Select(new Selection(SelKind.Body));
+        d.EndGesture();
+        w.PickCar("rc");
+    }
+
+    // Guide, shading, normals, colours, race
+    static async Task NewToolsTest(MainWindow w)
+    {
+        var d = w.Doc;
+        w.PickCar("rc");
+        await Wait(200);
+
+        w.ShowGuide();
+        await Wait(300);
+        Check(((TabItem)w.Tabs.SelectedItem!).Content == w.GuideTab, "F1's Guide tab opens");
+        w.GuideTab.Refresh();
+        var speed = w.GuideSpeed.Text ?? "";
+        Check(speed.Contains("mph"), "the Guide works out top speed: " + speed);
+        WindowShot(w, "guide");
+        var top = d.D!.TopSpeed;
+        d.Edit("Guide test", () => d.D!.TopSpeed = top * 0.5);
+        d.EndGesture();
+        await Wait(80);
+        Check((w.GuideSpeed.Text ?? "") != speed, "and follows the car: " + w.GuideSpeed.Text);
+        d.Undo();
+        var ratio = d.D!.Wheels[2].EngineRatio;
+        w.TryEngine.Value = 2;
+        await Wait(30);
+        Check((w.GuideTryResult.Text ?? "").Contains("Then"), "Try it shows the result: " + w.GuideTryResult.Text);
+        Check(d.D!.Wheels[2].EngineRatio == ratio, "without changing the car");
+        w.ApplyTry();
+        Check(Math.Abs(d.D!.Wheels[2].EngineRatio - ratio * 2) < 1e-6, "Use these numbers does");
+        d.Undo();
+        Check(d.D!.Wheels[2].EngineRatio == ratio, "and undo takes it back");
+
+        // Shading by faces, as the slider moves
+        var body = d.Model(d.D!.BodyModel)!;
+        var old = body.Faces.Select(f => f.Colors[0]).ToArray();
+        w.Tabs.SelectedIndex = w.PaintTabIndex + 6;
+        await Wait(100);
+        w.ShadeSmoothBox.SelectedIndex = 3;
+        await Wait(1500);
+        Check(body.Faces.All(f => Enumerable.Range(0, f.Corners).All(k => f.Colors[k] == f.Colors[0])), "shading by faces: flat polygons");
+        WindowShot(w, "tools_shading");
+        w.SetShadeView(ShadeMode.VertexColours);
+        await GlShot(w, "shade_faces", 500);
+        w.ShadeSmoothBox.SelectedIndex = 2;
+        await Wait(1500);
+        Check(body.Faces.Any(f => Enumerable.Range(0, f.Corners).Any(k => f.Colors[k] != f.Colors[0])), "by angle: blended where it's smooth");
+        await GlShot(w, "shade_angle", 500);
+        w.ShadeSky = Avalonia.Media.Color.Parse("#FF7030");
+        w.ShadeSunColour = Avalonia.Media.Color.Parse("#FFC080");
+        w.ShadeSmoothBox.SelectedIndex = 1;
+        await Wait(1500);
+        uint coloured = body.Faces[0].Colors[0];
+        Check(((coloured >> 16) & 255) > (coloured & 255), $"sky and sun colours: {coloured:X8}");
+        await GlShot(w, "shade_colour", 500);
+        w.ShadeUndo();
+        w.ShadeSky = w.ShadeSunColour = Avalonia.Media.Colors.White;
+        w.ShadeSmoothBox.SelectedIndex = 0;
+        await Wait(60);
+        w.ShadeUndo();
+        Check(body.Faces.Select(f => f.Colors[0]).SequenceEqual(old), "and back to the old shading");
+        w.SetShadeView(ShadeMode.Textured);
+
+        // Normals change vertices: undo must bring them back
+        int verts = body.Verts.Length;
+        w.DoRewriteNormals(ShadeSmooth.Faces, 45);
+        Check(body.Verts.Length > verts, $"normals by faces: {verts} vertices became {body.Verts.Length}");
+        Check(body.Faces.All(f => Enumerable.Range(0, f.Corners).All(k => f.Index(k) < body.Verts.Length)), "polygons fit them");
+        w.View.ShowNormals = true;
+        w.View.Redraw();
+        await Wait(60);
+        await GlShot(w, "normals", 500);
+        w.View.ShowNormals = false;
+        d.Undo();
+        Check(body.Verts.Length == verts && body.Faces.All(f => Enumerable.Range(0, f.Corners).All(k => f.Index(k) < verts)), "undo brings the vertices back");
+        d.DirtyModels.Remove(body);
+
+        // Colours
+        w.Tabs.SelectedIndex = w.PaintTabIndex;
+        await Wait(100);
+        w.PaintToneAmount.Value = 0.8;
+        await Wait(250);
+        Check(d.PaintPreview != null, "one colour over everything shows at once");
+        await GlShot(w, "paint_tone", 500);
+        w.PaintToneAmount.Value = 0;
+        w.PaintSwap.IsChecked = true;
+        w.PaintTo.SetValue(Avalonia.Media.Color.Parse("#2EC4B6"));
+        w.PaintChanged();
+        await Wait(250);
+        Check(d.PaintPreview != null, "swapping a colour too");
+        await GlShot(w, "paint_swap", 500);
+        WindowShot(w, "tab_paint");
+        w.PaintSwap.IsChecked = false;
+        w.ResetPaint();
+        await Wait(50);
+        Check(d.PaintPreview == null, "and back");
+
+        // A race, with the AI driving everyone
+        w.RaceOpponents = 3;
+        w.RaceLapsHere = 1;
+        w.RaceAiDrives = true;
+        w.StartRace();
+        Check(d.Race != null && d.Race.Cars.Count == 4, "race: 3 CPU cars and you: " + d.Race?.Cars.Count);
+        Check(d.Race!.Cars.Where(c => !c.IsPlayer).Select(c => c.Folder).Distinct().Count() == 3, "stock cars: " + string.Join(", ", d.Race.Cars.Select(c => c.Folder)));
+        await Wait(300);
+        await GlShot(w, "race_grid", 900);
+        await Wait(3200);
+        Check(d.Race.Started, "the countdown ends");
+        float raceFrom = d.Race.Time;
+        var raceClock = System.Diagnostics.Stopwatch.StartNew();
+        await Wait(3500);
+        float pace = (d.Race.Time - raceFrom) / (float)raceClock.Elapsed.TotalSeconds;
+        Log($"race runs at {pace:0.00} of real time");
+        Check(pace > 0.9f, $"the race runs at real speed: {pace:0.00}");
+        Check(d.Sim!.SpeedMph > 5, "the race is on: " + d.Sim.SpeedMph);
+        Check(w.HudText.Contains("Lap"), "with lap and place: " + w.HudText.Replace('\n', '|'));
+        Check(w.View.DrawnParts > 20, "all the cars drawn: " + w.View.DrawnParts);
+        await GlShot(w, "race_on", 900);
+        w.StopDrive();
+        await Wait(50);
+
+        // The other grounds, and the one that isn't in the list
+        w.RaceGroundIndex = 2;
+        w.RaceOpponents = 1;
+        w.StartRace();
+        Check(d.Race!.Track.Ground == RaceGround.Ramp, "Ramp in the list");
+        await Wait(4400);
+        await GlShot(w, "race_ramp", 700);
+        w.StopDrive();
+        w.RaceGroundIndex = 1;
+        w.StartRace();
+        Check(d.Race!.Track.Ground == RaceGround.Bumpy, "Bumpy in the list");
+        await Wait(4400);
+        await GlShot(w, "race_bumpy", 700);
+        w.StopDrive();
+        w.RaceGroundIndex = 0;
+        w.StartRace(true);
+        Check(d.Race!.Track.Ground == RaceGround.Materials, "the secret surfaces track");
+        await Wait(5500);
+        Check(w.HudText.Contains("On: "), "says what you drive on: " + w.HudText.Replace('\n', '|'));
+        await GlShot(w, "race_materials", 700);
+        w.StopDrive();
+        w.RaceOpponents = 3;
+        w.StartRace();
+        await Wait(4000);
+        WindowShot(w, "race_window");
+        w.StopDrive();
+        Check(d.Race == null && d.Sim == null, "leaving the race");
+        w.RaceAiDrives = false;
+        w.PickCar("rc");
+    }
+
     static void LockTest(MainWindow w)
     {
         w.PickCar("adeon");
@@ -584,8 +866,17 @@ public static class AutoScenario
         try
         {
             await Wait(1500);
-            Check(d.Car != null, "a car opened");
+            Check(d.Car == null && !w.CarLocked, "it starts on the list of cars, nothing open");
+            for (int i = 0; i < w.Tabs.ItemCount; i++)
+            {
+                w.Tabs.SelectedIndex = i;
+                await Wait(30);
+            }
+            w.Tabs.SelectedIndex = 0;
+            WindowShot(w, "start_screen");
             LockTest(w);
+            await ViewAndToolsTest(w);
+            await NewToolsTest(w);
             await FadeTest(w);
             await PartsTest(w);
             await CopyAndHullTest(w);

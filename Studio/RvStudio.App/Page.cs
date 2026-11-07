@@ -16,15 +16,21 @@ public sealed class Page : ScrollViewer
     readonly Doc doc;
     bool loading;
 
+    // Without this a class derived from ScrollViewer has no look, and so no scrollbar and no scrolling
+    protected override Type StyleKeyOverride => typeof(ScrollViewer);
+
     public Page(Doc d)
     {
         doc = d;
         Content = stack;
         HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled;
+        VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
+        AllowAutoHide = false;
     }
 
     public void Refresh()
     {
+        if (doc.Car == null) return;
         loading = true;
         foreach (var l in loaders) l();
         loading = false;
@@ -39,6 +45,32 @@ public sealed class Page : ScrollViewer
         {
             Text = text, FontWeight = FontWeight.SemiBold, FontSize = 13, Foreground = Accent, Margin = new Thickness(0, 10, 0, 2)
         });
+    }
+
+    public void Hint(Func<string> text)
+    {
+        var t = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = Faint, Margin = new Thickness(112, -3, 0, 2) };
+        loaders.Add(() => t.Text = text());
+        stack.Children.Add(t);
+    }
+
+    /// <summary>A path with a button beside it</summary>
+    public void TextWithButton(string label, Func<string> get, Action<string> set, string button, Action click, string? tip = null)
+    {
+        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("*,3,Auto") };
+        var b = new TextBox { MinHeight = 26, Height = 26, Padding = new Thickness(5, 2), FontSize = 12 };
+        loaders.Add(() => { if (!b.IsFocused) b.Text = get(); });
+        b.TextChanged += (_, _) =>
+        {
+            if (loading || b.Text == get()) return;
+            doc.Edit(label, () => set(b.Text ?? ""));
+        };
+        var pick = new Button { Content = button, FontSize = 12, Padding = new Thickness(7, 3), VerticalAlignment = VerticalAlignment.Stretch };
+        pick.Click += (_, _) => click();
+        g.Children.Add(b);
+        Grid.SetColumn(pick, 2);
+        g.Children.Add(pick);
+        Row(label, g, tip);
     }
 
     public void Note(string text) =>
@@ -163,13 +195,151 @@ public sealed class Page : ScrollViewer
     public Slider Slide(string label, double min, double max, double start, Action<double>? changed = null, string? tip = null)
     {
         var s = new Slider { Minimum = min, Maximum = max, Value = start, Margin = new Thickness(0, -8, 0, -8) };
-        if (changed != null) s.PropertyChanged += (_, e) => { if (e.Property == RangeBaseValue) changed(s.Value); };
-        Row(label, s, tip);
+        var shown = new TextBlock { FontSize = 11, Foreground = Faint, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Right, Text = Show(Math.Round(start, 2)) };
+        s.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != RangeBaseValue) return;
+            shown.Text = Show(Math.Round(s.Value, 2));
+            changed?.Invoke(s.Value);
+        };
+        var g = new Grid { ColumnDefinitions = new ColumnDefinitions("*,38") };
+        g.Children.Add(s);
+        Grid.SetColumn(shown, 1);
+        g.Children.Add(shown);
+        Row(label, g, tip);
         return s;
     }
     static readonly AvaloniaProperty RangeBaseValue = Avalonia.Controls.Primitives.RangeBase.ValueProperty;
 
     public void Add(Control c) => stack.Children.Add(c);
+
+    /// <summary>Any control beside a label, not connected to the car</summary>
+    public void Labeled(string label, Control c, string? tip = null) => Row(label, c, tip);
+
+    /// <summary>Something else to bring up to date when the car changes</summary>
+    public void Live(Action load) => loaders.Add(load);
+
+    /// <summary>A worked out value: label, result, and what it means when you point at it</summary>
+    public TextBlock Value(string label, Func<string> text, string? tip = null)
+    {
+        var t = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        loaders.Add(() => t.Text = text());
+        Row(label, t, tip);
+        return t;
+    }
+
+    public ColourButton Colour(string label, Color start, Action<Color> changed, string? tip = null)
+    {
+        var b = new ColourButton(start);
+        b.Changed += changed;
+        Row(label, b, tip);
+        return b;
+    }
+
+    /// <summary>A colour on the car, with undo</summary>
+    public ColourButton ColourOf(string label, Func<Color> get, Action<Color> set, string? tip = null)
+    {
+        var b = new ColourButton(Colors.Black);
+        loaders.Add(() => b.SetValue(get()));
+        b.Changed += c =>
+        {
+            if (loading || c == get()) return;
+            doc.Edit(label, () => set(c));
+        };
+        Row(label, b, tip);
+        return b;
+    }
+}
+
+/// <summary>A colour: click for a palette, the colours of this texture, sliders and hex</summary>
+public sealed class ColourButton : Button
+{
+    protected override Type StyleKeyOverride => typeof(Button);
+
+    static readonly string[] Palette =
+    {
+        "#000000", "#FFFFFF", "#808080", "#C0C0C0", "#D7263D", "#FF5A1F", "#FF9F1C", "#FFD60A", "#A2D729", "#2EC4B6", "#1B98E0", "#3A5BFF",
+        "#7B2CBF", "#E0219C", "#6B3E26", "#F2D0A4", "#0B3D2E", "#14213D", "#8A0F1E", "#FFB3C1", "#BDE0FE", "#CAFFBF", "#FDFFB6", "#FFD6A5",
+        "#FFF4E0", "#FFE0B3", "#C7D6FF", "#9DB8FF"
+    };
+
+    public Color Value { get; private set; }
+    public event Action<Color>? Changed;
+    readonly Border swatch = new() { Height = 18, MinWidth = 60, CornerRadius = new CornerRadius(3), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1) };
+    readonly WrapPanel own = new();
+    readonly Slider red = Part(), green = Part(), blue = Part();
+    readonly TextBox hex = new() { FontSize = 12, Width = 90, MinHeight = 26, Height = 26, Padding = new Thickness(5, 2), Watermark = "#RRGGBB" };
+    bool filling;
+    string? shownHex;
+
+    static Slider Part() => new() { Minimum = 0, Maximum = 255, Width = 170, Margin = new Thickness(0, -10, 0, -10) };
+
+    public ColourButton(Color start)
+    {
+        Padding = new Thickness(4);
+        HorizontalAlignment = HorizontalAlignment.Stretch;
+        HorizontalContentAlignment = HorizontalAlignment.Stretch;
+        Content = swatch;
+
+        var palette = new WrapPanel { Width = 196 };
+        foreach (var c in Palette) palette.Children.Add(Chip(Color.Parse(c)));
+        var panel = new StackPanel { Spacing = 6, Width = 200 };
+        panel.Children.Add(palette);
+        panel.Children.Add(own);
+        foreach (var s in new[] { red, green, blue })
+        {
+            s.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty && !filling)
+                    Pick(Color.FromRgb((byte)red.Value, (byte)green.Value, (byte)blue.Value));
+            };
+            panel.Children.Add(s);
+        }
+        panel.Children.Add(hex);
+        hex.TextChanged += (_, _) =>
+        {
+            // TextChanged arrives late: what we put there ourselves isn't typing
+            if (hex.Text != shownHex && hex.Text is { Length: 7 } t && Color.TryParse(t, out var c)) Pick(c);
+        };
+        Flyout = new Flyout { Content = panel };
+        SetValue(start);
+    }
+
+    Button Chip(Color c)
+    {
+        var b = new Button
+        {
+            Width = 24, Height = 22, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), Margin = new Thickness(0, 0, 4, 4), Focusable = false,
+            Background = new SolidColorBrush(c), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1)
+        };
+        ToolTip.SetTip(b, $"#{c.R:X2}{c.G:X2}{c.B:X2}");
+        b.Click += (_, _) => Pick(c);
+        return b;
+    }
+
+    /// <summary>More colours to choose from, the texture's own for example</summary>
+    public void SetOwn(IEnumerable<Color> colours)
+    {
+        own.Children.Clear();
+        foreach (var c in colours) own.Children.Add(Chip(c));
+    }
+
+    void Pick(Color c)
+    {
+        SetValue(c);
+        Changed?.Invoke(c);
+    }
+
+    public void SetValue(Color c)
+    {
+        Value = c;
+        swatch.Background = new SolidColorBrush(c);
+        filling = true;
+        red.Value = c.R; green.Value = c.G; blue.Value = c.B;
+        shownHex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+        hex.Text = shownHex;
+        filling = false;
+    }
 }
 
 /// <summary>A number with decimals. Type it, or use the arrows, the Up and Down keys or the wheel. Shift: bigger steps, Ctrl: finer</summary>

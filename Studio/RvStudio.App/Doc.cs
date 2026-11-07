@@ -51,7 +51,7 @@ public sealed class Doc
     public float Snap = 0.5f;
     public GizmoTool Tool = GizmoTool.Move;
 
-    sealed record UndoState(string Label, CarData Data, List<(Prm Model, PrmVertex[] Verts, byte[]? Lods)> Models, Hull? Hull, bool HullDirty);
+    sealed record UndoState(string Label, CarData Data, List<(Prm Model, PrmVertex[] Verts, byte[]? Lods, short[] Faces)> Models, Hull? Hull, bool HullDirty);
 
     /// <summary>The collision hull, as it will be saved</summary>
     public Hull? Hull;
@@ -151,22 +151,22 @@ public sealed class Doc
         // Files changed in memory go to the copy's files, the original's aren't touched
         foreach (var m in dirty)
         {
-            var rel = old.Models.FirstOrDefault(r => string.Equals(c.Game.Find(r), m.FilePath, StringComparison.OrdinalIgnoreCase));
+            var rel = Models.FirstOrDefault(kv => kv.Value == m).Key;
             if (rel == null) continue;
             var target = rel;
-            if (fork.IsForeign(rel) && c.IsForeign(rel))
+            if (c.IsForeign(rel))
             {
                 target = fork.CopyToOwn(rel);
                 for (int i = 0; i < 19; i++) if (string.Equals(fork.Data.Models[i], rel, StringComparison.OrdinalIgnoreCase)) fork.Data.Models[i] = target;
             }
-            else target = "cars\\" + folder + "\\" + Path.GetRelativePath(c.Dir, m.FilePath!).Replace('/', '\\');
+            else target = "cars\\" + folder + "\\" + rel.Replace('/', '\\')[("cars\\" + c.Folder + "\\").Length..];
             if (fork.Game.Find(target) is { } file) m.Save(file);
         }
         if (hull != null)
         {
             var rel = fork.Data.Coll;
             if (fork.IsForeign(rel)) { rel = "cars\\" + folder + "\\hull.hul"; fork.Data.Coll = rel; }
-            hull.Save(Path.Combine(fork.Game.Root, rel.Replace('\\', Path.DirectorySeparatorChar)));
+            hull.Save(fork.Game.WritePath(rel));
         }
         fork.Save();
         if (File.Exists(fork.ParamPath + ".bak")) File.Delete(fork.ParamPath + ".bak");
@@ -284,14 +284,15 @@ public sealed class Doc
     void Step(Stack<UndoState> from, Stack<UndoState> to)
     {
         var s = from.Pop();
-        to.Push(new UndoState(s.Label, Car!.Data, s.Models.Select(m => (m.Model, m.Model.Verts, m.Model.OtherLods)).ToList(), HullCopy(), HullDirty));
+        to.Push(new UndoState(s.Label, Car!.Data, s.Models.Select(m => (m.Model, m.Model.Verts, m.Model.OtherLods, m.Model.FaceIndices())).ToList(), HullCopy(), HullDirty));
         Car.Data = s.Data;
         Hull = s.Hull;
         HullDirty = s.HullDirty;
-        foreach (var (m, v, l) in s.Models)
+        foreach (var (m, v, l, faces) in s.Models)
         {
             m.Verts = v;
             m.OtherLods = l;
+            m.SetFaceIndices(faces);
             m.ComputeBounds();
         }
         if (s.Models.Count > 0) ModelVersion++;
@@ -313,21 +314,23 @@ public sealed class Doc
         if (Car == null) return;
         Car.Save();
         foreach (var m in DirtyModels)
-            if (m.FilePath != null)
-            {
-                Files.Backup(m.FilePath);
-                m.Save(m.FilePath);
-            }
+        {
+            var rel = Models.FirstOrDefault(kv => kv.Value == m).Key;
+            if (rel == null) continue;
+            var target = Car.Game.WritePath(rel);
+            Files.Backup(target);
+            m.Save(target);
+            m.FilePath = target;
+        }
         DirtyModels.Clear();
         if (HullDirty && Hull != null)
         {
-            var path = Car.Game.Find(Car.Data.Coll);
-            if (path == null)
+            if (Car.Game.Find(Car.Data.Coll) == null)
             {
                 Car.Data.Coll = "cars\\" + Car.Folder + "\\hull.hul";
-                path = Path.Combine(Car.Dir, "hull.hul");
                 Car.Save();
             }
+            var path = Car.Game.WritePath(Car.Data.Coll);
             Files.Backup(path);
             Hull.Save(path);
         }
@@ -559,10 +562,8 @@ public sealed class Doc
     /// <summary>The file as the game wants it: from the Re-Volt folder. A file from elsewhere is copied into the car's folder</summary>
     public string BringIn(string file)
     {
-        var game = Car!.Game.Root;
-        var full = Path.GetFullPath(file);
-        if (full.StartsWith(game + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            return Path.GetRelativePath(game, full).Replace('/', '\\');
+        if (Car!.Game.RelOf(file) is { } rel) return rel;
+        Directory.CreateDirectory(Car.Dir);
         var dest = Path.Combine(Car.Dir, Path.GetFileName(file));
         if (!File.Exists(dest)) File.Copy(file, dest);
         return "cars\\" + Car.Folder + "\\" + Path.GetFileName(file);
@@ -703,12 +704,28 @@ public sealed class Doc
         if (MoveMode == MoveMode.All) yield return (i ^ 3, true, true);
     }
 
+    /// <summary>A change to whole models that undo can take back</summary>
+    public void EditModels(string label, IEnumerable<Prm> models, Action change)
+    {
+        Edit(label, () =>
+        {
+            foreach (var m in models)
+            {
+                Remember(label, m);
+                DirtyModels.Add(m);
+            }
+            change();
+            ModelVersion++;
+        });
+        EndGesture();
+    }
+
     // Vertices are shared by the parts that use a model: keep what undo needs, once per gesture
     void Remember(string label, Prm m)
     {
         var top = undo.Count > 0 ? undo.Peek() : null;
         if (top == null || top.Label != label) return;
-        if (!top.Models.Any(x => x.Model == m)) top.Models.Add((m, m.Verts, m.OtherLods));
+        if (!top.Models.Any(x => x.Model == m)) top.Models.Add((m, m.Verts, m.OtherLods, m.FaceIndices()));
     }
 
     /// <summary>Turn the model of what's selected around its origin. Stays in memory until Save</summary>
@@ -837,13 +854,64 @@ public sealed class Doc
     public void StartSim(SimGround ground)
     {
         if (D == null) return;
-        Sim = new CarSim(D.Clone()) { Ground = ground };
+        Sim = new CarSim(D.Clone(), Hull?.Clone()) { Ground = ground };
         Sim.Reset();
         AerialBend = AerialBendVel = Vector3.Zero;
     }
+    // ---- A race: the player's car is the Sim above, everyone else's parts come from here ----
+
+    public Race? Race;
+    readonly Dictionary<(string Folder, int Slot), Prm?> raceModels = new();
+
+    public void StartRace(int track, RaceGround ground, int opponents, int laps, float skill, bool sameCar, bool aiDrives)
+    {
+        if (D == null || Car == null) return;
+        var race = new Race(RaceTrack.Make(track, ground), laps) { AiDrivesPlayer = aiDrives };
+        var clean = D.Clone();
+        race.Add(D.Name, Car.Folder, clean, Hull?.Clone(), true);
+        raceModels.Clear();
+        if (sameCar)
+        {
+            for (int i = 0; i < opponents; i++)
+                race.Add(D.Name + " " + (i + 2), Car.Folder, D.Clone(), Hull?.Clone(), false, skill * (1 - i * 0.012f));
+        }
+        else if (Game != null)
+        {
+            var picks = RvStudio.Core.Race.PickOpponents(Game, D, Car.Folder, opponents);
+            for (int i = 0; i < picks.Count; i++)
+            {
+                var other = new Car(Game, picks[i]);
+                Hull? hull = null;
+                try { if (Game.Find(other.Data.Coll) is { } file) hull = Hull.Load(file); }
+                catch (Exception) { }
+                race.Add(other.Data.Name, picks[i], other.Data, hull, false, skill * (1 - i * 0.012f));
+            }
+        }
+        race.Grid();
+        Race = race;
+        Sim = race.Player.Sim;
+        AerialBend = AerialBendVel = Vector3.Zero;
+    }
+
+    /// <summary>A model of a car in the race, without touching the open one's models</summary>
+    public Prm? RaceModel(RaceCar car, int slot)
+    {
+        if (Car != null && car.Folder.Equals(Car.Folder, StringComparison.OrdinalIgnoreCase)) return Model(slot);
+        if (Game == null) return null;
+        if (!raceModels.TryGetValue((car.Folder, slot), out var m))
+        {
+            try { m = CarTools.LoadModel(new Car(Game, car.Folder), slot); }
+            catch (Exception) { m = null; }
+            raceModels[(car.Folder, slot)] = m;
+        }
+        return m;
+    }
+
     public void StopSim()
     {
         Sim = null;
+        Race = null;
+        raceModels.Clear();
         Array.Clear(Dyn.Compression);
         Array.Clear(Dyn.Spin);
         Array.Clear(Dyn.Steer);
@@ -855,7 +923,18 @@ public sealed class Doc
     public void TickSim(float dt)
     {
         if (Sim is not { } s) return;
-        s.Advance(dt);
+        if (Race is { } race)
+        {
+            race.Advance(dt);
+            foreach (var car in race.Cars)
+            {
+                if (car.IsPlayer) continue;
+                Array.Copy(car.Sim.Compression, car.Dyn.Compression, 4);
+                for (int i = 0; i < 4; i++) { car.Dyn.Spin[i] = car.Sim.WheelSpin[i]; car.Dyn.Steer[i] = car.Sim.SteerAngle[i]; }
+                car.Dyn.Root = car.Sim.Matrix;
+            }
+        }
+        else s.Advance(dt);
         Array.Copy(s.Compression, Dyn.Compression, 4);
         for (int i = 0; i < 4; i++) { Dyn.Spin[i] = s.WheelSpin[i]; Dyn.Steer[i] = s.SteerAngle[i]; }
         Dyn.SpinnerAngle += (float)s.Car.Spinner.AngVel * dt;
