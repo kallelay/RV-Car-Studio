@@ -30,6 +30,228 @@ void Parser()
     Check(s2.Section("WHEEL 0")!.Num("Radius") == 2 && s2.Text == lf, "LF only");
 }
 
+// Installing downloaded cars: sample zips made here, into game folders made here
+void Installer()
+{
+    var tmp = Path.Combine(Path.GetTempPath(), "rvs_install_" + Guid.NewGuid().ToString("N"));
+    var gdir = Path.Combine(tmp, "outer", "game");
+    var zips = Path.Combine(tmp, "zips");
+    Directory.CreateDirectory(zips);
+    void Put(string rel, string text)
+    {
+        var p = Path.Combine(gdir, rel.Replace('\\', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+        File.WriteAllText(p, text, ParamFile.FileEncoding);
+    }
+    string Params(string name, string folder, string extra = "") =>
+        "{\r\n; made by hand \u00e9\r\nName \"" + name + "\"\r\nMODEL 0 \"cars\\" + folder + "\\body.prm\"\r\nMODEL 1 \"cars/" + folder + "/wheel.prm\" ; the wheel\r\nMODEL 17 \"cars\\misc\\Aerial.m\"\r\nTPAGE \"cars\\" + folder + "\\car.bmp\"\r\n" + extra +
+        ";)TCARBOX \"cars\\" + folder + "\\carbox.bmp\"\r\nBODY {\r\nModelNum 0\r\nMass 1.5\r\n}\r\n}\r\nA1B2C3";
+    string Zip(string name, params (string Path, string Text)[] entries)
+    {
+        var z = Path.Combine(zips, name);
+        using var zip = System.IO.Compression.ZipFile.Open(z, System.IO.Compression.ZipArchiveMode.Create);
+        foreach (var (path, text) in entries)
+        {
+            using var s = zip.CreateEntry(path).Open();
+            s.Write(ParamFile.FileEncoding.GetBytes(text));
+        }
+        return z;
+    }
+    (string, string)[] CarAt(string dir, string name, string folder, string extra = "") => new[]
+    {
+        (dir + "parameters.txt", Params(name, folder, extra)), (dir + "body.prm", "body of " + name), (dir + "wheel.prm", "wheel"),
+        (dir + "car.bmp", "bmp"), (dir + "carbox.bmp", "box")
+    };
+    Dictionary<string, string> Snap(string dir) => !Directory.Exists(dir) ? new() : Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
+        .ToDictionary(f => Path.GetRelativePath(dir, f), f => Convert.ToHexString(File.ReadAllBytes(f)));
+    bool Same(Dictionary<string, string> a, Dictionary<string, string> b) => a.Count == b.Count && a.All(kv => b.TryGetValue(kv.Key, out var v) && v == kv.Value);
+    // Everything under the test folder except the zips: the game folder and what's around it
+    Dictionary<string, string> World() => Snap(tmp).Where(kv => !kv.Key.StartsWith("zips")).ToDictionary(kv => kv.Key, kv => kv.Value);
+
+    Put("cars\\toyeca\\parameters.txt", Params("Toyeca", "toyeca"));
+    Put("cars\\toyeca\\body.prm", "the real toyeca");
+    Put("cars\\mine\\parameters.txt", Params("Mine", "mine"));
+    Put("cars\\mine\\body.prm", "my body");
+    Put("cars\\misc\\Aerial.m", "aerial");
+    var g = new GameFolder(gdir);
+    var clean = World();
+    try
+    {
+        // ---- a normal car, with a readme and a track next to it
+        var z1 = Zip("speedy.zip", CarAt("cars/speedy/", "Speedy", "speedy", "COLL \"cars\\speedy\\hull.hul\"\r\n")
+            .Concat(new[] { ("readme.txt", "hello"), ("levels/mytrack/mytrack.w", "w"), ("__MACOSX/cars/speedy/._body.prm", "junk") }).ToArray());
+        using (var p = CarInstaller.Inspect(g, z1))
+        {
+            Check(p.Cars.Count == 1 && p.Cars[0].Folder == "speedy" && p.Cars[0].Name == "Speedy" && !p.Cars[0].Clash, "install: a normal car is found");
+            var c = p.Cars[0];
+            Check(c.Files.Count == 5 && c.Rewrites.Count == 0 && c.CanInstall, "install: its files, no path changes: " + c.Files.Count + " " + c.Rewrites.Count);
+            Check(c.Issues.Any(i => i.Level == InstallLevel.Warning && i.Text.Contains("hull.hul")), "install: the missing hull is reported");
+            Check(c.Issues.Any(i => i.Text.Contains("cars\\misc") && i.Text.Contains("Aerial.m")), "install: shared models from cars\\misc are reported");
+            Check(p.Loose.Count == 2 && p.Issues.Any(i => i.Text.Contains("readme.txt") && i.Text.Contains("levels\\")), "install: files outside the car are reported: " + p.Describe());
+            Check(Same(World(), clean), "install: looking writes nothing");
+            var rec = CarInstaller.Install(g, p);
+            Check(rec.Files.Count == 5 && rec.Cars.SequenceEqual(new[] { "speedy" }), "install: 5 files written");
+            Check(File.ReadAllBytes(Path.Combine(gdir, "cars", "speedy", "parameters.txt")).SequenceEqual(ParamFile.FileEncoding.GetBytes(c.ParamText)), "install: parameters.txt byte for byte");
+            Check(!File.Exists(Path.Combine(gdir, "readme.txt")) && !Directory.Exists(Path.Combine(gdir, "levels")) && !Directory.Exists(Path.Combine(gdir, "__MACOSX")), "install: nothing but the car");
+            var car = new Car(g, "speedy");
+            Check(car.Data.Name == "Speedy" && g.Find(car.Data.Models[0]) != null && g.Find(car.Data.TPage) != null, "install: the car opens and finds its files");
+            Check(g.ListCars().Any(e => e.Folder == "speedy"), "install: it's in the car list");
+        }
+        // The same zip again: the folder is taken now, so it gets another, and nothing is replaced
+        using (var p = CarInstaller.Inspect(g, z1))
+        {
+            Check(p.Cars[0].Clash && p.Cars[0].Folder == "speedy2", "install: twice gives speedy2: " + p.Cars[0].Folder);
+            CarInstaller.SetFolder(g, p, p.Cars[0], "speedy");
+            var before = Snap(gdir);
+            bool threw = false;
+            try { CarInstaller.Install(g, p); } catch (InvalidOperationException) { threw = true; }
+            Check(threw && !p.Cars[0].CanInstall && Same(Snap(gdir), before), "install: onto an existing car is refused, nothing written");
+        }
+        var undo1 = CarInstaller.UndoLast(g);
+        Check(undo1 != null && undo1.Deleted == 5 && undo1.Changed.Count == 0 && Same(World(), clean), "undo: the game folder is as before: " + undo1?.Deleted);
+        Check(CarInstaller.LastInstall(g) == null && CarInstaller.UndoLast(g) == null, "undo: nothing left to undo");
+
+        // ---- a wrapping folder, a car at the top of the zip, and a wrapper around cars\name
+        var z2 = Zip("Fast Car v1.0.zip", CarAt("Fast Car v1.0/", "Fast", "fastcar"));
+        using (var p = CarInstaller.Inspect(g, z2))
+        {
+            Check(p.Cars.Count == 1 && p.Cars[0].Folder == "fastcar" && p.Cars[0].Rewrites.Count == 0, "install: wrapping folder, named by its own paths: " + p.Cars.FirstOrDefault()?.Folder);
+            CarInstaller.Install(g, p);
+            Check(File.Exists(Path.Combine(gdir, "cars", "fastcar", "body.prm")) && !Directory.Exists(Path.Combine(gdir, "Fast Car v1.0")), "install: wrapping folder lands in cars\\fastcar");
+        }
+        var z2b = Zip("rooty.zip", CarAt("", "Rooty", "rootcar"));
+        using (var p = CarInstaller.Inspect(g, z2b))
+            Check(p.Cars.Count == 1 && p.Cars[0].SourceDir == "" && p.Cars[0].Folder == "rootcar" && p.Cars[0].Files.Count == 5, "install: a car at the top of the zip: " + p.Cars.FirstOrDefault()?.Folder);
+        var z2c = Zip("deep.zip", CarAt("pack/Re-Volt/cars/deepcar/", "Deep", "deepcar").Append(("pack/Re-Volt/cars/misc/NewAerial.m", "x")).ToArray());
+        using (var p = CarInstaller.Inspect(g, z2c))
+            Check(p.Cars.Count == 1 && p.Cars[0].Folder == "deepcar" && p.Loose.Count == 1, "install: cars\\name under wrappers");
+        // Paths that name another folder than the one it comes in
+        var z2d = Zip("alpha.zip", CarAt("cars/alpha/", "Alpha", "beta"));
+        using (var p = CarInstaller.Inspect(g, z2d))
+        {
+            var c = p.Cars[0];
+            Check(c.Folder == "alpha" && c.Rewrites.Count == 4 && c.Issues.Any(i => i.Level == InstallLevel.Warning && i.Text.Contains("cars\\beta")), "install: paths to another folder are reported: " + p.Describe());
+            CarInstaller.Install(g, p);
+            var car = new Car(g, "alpha");
+            Check(car.Data.Models[0] == "cars\\alpha\\body.prm" && car.Data.TCarBox == "cars\\alpha\\carbox.bmp" && g.Find(car.Data.Models[1]) != null, "install: and put right: " + car.Data.Models[1]);
+        }
+        // A file the game lacks, brought along outside the car folder
+        var z2e = Zip("extra.zip", CarAt("cars/extra/", "Extra", "extra", "MODEL 5 \"cars\\misc\\Spoiler.m\"\r\n").Append(("cars/misc/Spoiler.m", "spoiler")).Append(("cars/misc/Aerial.m", "another aerial")).ToArray());
+        using (var p = CarInstaller.Inspect(g, z2e))
+        {
+            Check(p.Cars[0].Extras.Count == 1 && p.Cars[0].Extras.ContainsKey("cars\\misc\\Spoiler.m"), "install: a shared file the game lacks comes along");
+            var rec = CarInstaller.Install(g, p);
+            Check(File.ReadAllText(Path.Combine(gdir, "cars", "misc", "Spoiler.m")) == "spoiler" && File.ReadAllText(Path.Combine(gdir, "cars", "misc", "Aerial.m")) == "aerial", "install: and the game's own shared files stay");
+            var u = CarInstaller.UndoLast(g);
+            Check(u!.Deleted == 6 && !File.Exists(Path.Combine(gdir, "cars", "misc", "Spoiler.m")) && File.Exists(Path.Combine(gdir, "cars", "misc", "Aerial.m")) && !Directory.Exists(Path.Combine(gdir, "cars", "extra")), "undo: only what the install made");
+        }
+        CarInstaller.UndoLast(g); CarInstaller.UndoLast(g);
+        Check(Same(World(), clean), "undo: one install after the other, back to the start");
+
+        // ---- two cars in one zip, and two that want the same folder
+        var z3 = Zip("two.zip", CarAt("cars/one/", "One", "one").Concat(CarAt("cars/two/", "Two", "two")).Concat(CarAt("other/cars/one/", "One again", "one")).ToArray());
+        using (var p = CarInstaller.Inspect(g, z3))
+        {
+            Check(p.Cars.Count == 3 && p.Cars.Select(c => c.Folder).OrderBy(f => f).SequenceEqual(new[] { "one", "one2", "two" }), "install: two cars and a double: " + string.Join(" ", p.Cars.Select(c => c.Folder)));
+            var rec = CarInstaller.Install(g, p);
+            Check(rec.Files.Count == 15 && new Car(g, "one").Data.Name == "One" && new Car(g, "two").Data.Name == "Two", "install: all of them in one go");
+            var again = new Car(g, "one2");
+            Check(again.Data.Name == "One again" && again.Data.Models[0] == "cars\\one2\\body.prm", "install: the double points to its own folder");
+            var u = CarInstaller.UndoLast(g);
+            Check(u!.Deleted == 15 && Same(World(), clean), "undo: all cars of one install");
+        }
+
+        // ---- a name that's taken: by a car of the game, and by a stock car that isn't even there
+        var z4 = Zip("toyeca.zip", CarAt("cars/toyeca/", "Toyeca EVO", "toyeca"));
+        using (var p = CarInstaller.Inspect(g, z4))
+        {
+            var c = p.Cars[0];
+            Check(c.Clash && c.OriginalFolder == "toyeca" && c.Folder == "toyeca2" && c.CanInstall, "clash: a new folder is offered: " + c.Folder);
+            Check(c.Issues.Any(i => i.Level == InstallLevel.Warning && i.Text.Contains("stock car")), "clash: said so");
+            var before = Snap(Path.Combine(gdir, "cars", "toyeca"));
+            CarInstaller.SetFolder(g, p, c, "mine");
+            Check(!c.CanInstall, "clash: a taken name can't be picked");
+            CarInstaller.SetFolder(g, p, c, "evo");
+            Check(c.CanInstall && c.Rewrites.Count == 4, "clash: a free one can");
+            CarInstaller.Install(g, p);
+            Check(Same(Snap(Path.Combine(gdir, "cars", "toyeca")), before), "clash: the car that was there is untouched");
+            var text = File.ReadAllText(Path.Combine(gdir, "cars", "evo", "parameters.txt"), ParamFile.FileEncoding);
+            var want = c.ParamText.Replace("cars\\toyeca\\", "cars\\evo\\").Replace("\"cars/toyeca/wheel.prm\"", "\"cars\\evo\\wheel.prm\"");
+            Check(text == want, "clash: only the paths changed:\n" + text);
+            Check(text.Contains("; the wheel") && text.Contains("\u00e9") && text.EndsWith("A1B2C3") && text.Contains("\"cars\\misc\\Aerial.m\""), "clash: comments, shared paths and the end stay");
+            Check(File.ReadAllText(Path.Combine(gdir, "cars", "evo", "body.prm")) == "body of Toyeca EVO", "clash: its own files came along");
+            // Edited after the install: undo leaves that file unless told otherwise
+            File.AppendAllText(Path.Combine(gdir, "cars", "evo", "parameters.txt"), "\r\n");
+            Check(CarInstaller.ChangedSince(g, CarInstaller.LastInstall(g)!).SequenceEqual(new[] { "cars\\evo\\parameters.txt" }), "undo: knows what changed since");
+            var u = CarInstaller.UndoLast(g);
+            Check(u!.Deleted == 4 && u.Changed.Count == 1 && File.Exists(Path.Combine(gdir, "cars", "evo", "parameters.txt")) && u.DirsKept.Contains("cars\\evo"), "undo: a changed file stays");
+            File.Delete(Path.Combine(gdir, "cars", "evo", "parameters.txt"));
+            Directory.Delete(Path.Combine(gdir, "cars", "evo"));
+        }
+        var z4b = Zip("rc.zip", CarAt("cars/RC/", "Fake RC", "rc"));
+        using (var p = CarInstaller.Inspect(g, z4b))
+            Check(p.Cars[0].Clash && p.Cars[0].Folder == "RC2", "clash: stock names are taken even when the car isn't there: " + p.Cars[0].Folder);
+
+        // ---- a zip that tries to write outside
+        var z5 = Zip("evil.zip", CarAt("cars/bad/", "Bad", "bad", "COLL \"..\\..\\secret.hul\"\r\n").Concat(new[]
+        {
+            ("..\\..\\evil1.txt", "x"), ("../evil2.txt", "x"), ("cars/bad/../../../evil3.txt", "x"), ("/evil4.txt", "x"),
+            ("C:\\evil5.txt", "x"), ("cars/bad/sub/..\\..\\..\\..\\evil6.txt", "x"), ("cars/bad/con.txt", "x"), ("cars/bad/stream.txt:evil", "x")
+        }).ToArray());
+        using (var p = CarInstaller.Inspect(g, z5))
+        {
+            Check(p.Rejected.Count == 8 && p.Cars.Count == 1 && p.Cars[0].Files.Count == 5, "evil zip: 8 entries rejected: " + string.Join(" | ", p.Rejected));
+            Check(p.Issues.Any(i => i.Level == InstallLevel.Error && i.Text.Contains("evil1.txt")), "evil zip: and reported");
+            Check(p.Cars[0].Issues.Any(i => i.Text.Contains("secret.hul")), "evil zip: a path out of the game in parameters.txt is reported");
+            CarInstaller.Install(g, p);
+            var now = World().Keys.ToList();
+            var carDir = Path.Combine("outer", "game", "cars", "bad") + Path.DirectorySeparatorChar;
+            var recDir = Path.Combine("outer", "game", ".rvcarstudio") + Path.DirectorySeparatorChar;
+            Check(now.Count == clean.Count + 5 + 1 && !now.Any(k => k.Contains("evil")) && now.All(k => clean.ContainsKey(k) || k.StartsWith(carDir) || k.StartsWith(recDir)),
+                "evil zip: only the car folder and the record were written: " + string.Join(" ", now.Where(k => !clean.ContainsKey(k))));
+            Check(!Directory.GetFiles(Path.GetTempPath(), "evil*.txt").Any() && !File.Exists(Path.Combine(tmp, "evil2.txt")) && !File.Exists("C:\\evil5.txt"), "evil zip: nothing outside");
+            CarInstaller.UndoLast(g);
+        }
+        Check(CarInstaller.SafeRel("a/b\\c.txt") == "a\\b\\c.txt" && CarInstaller.SafeRel("a/../b") == null && CarInstaller.SafeRel("\\\\server\\x") == null && CarInstaller.SafeRel("a/./b") == null, "evil zip: path rules");
+        Check(Same(World(), clean), "undo: after all that, back to the start");
+
+        // ---- a folder instead of a zip, into a game that keeps its cars in packs
+        var loose = Path.Combine(tmp, "unpacked", "My Download");
+        foreach (var (path, text) in CarAt("cars/foldercar/", "From a folder", "foldercar"))
+        {
+            var f = Path.Combine(loose, path);
+            Directory.CreateDirectory(Path.GetDirectoryName(f)!);
+            File.WriteAllText(f, text, ParamFile.FileEncoding);
+        }
+        var looseBefore = Snap(loose);
+        Put("packs\\default.txt", "\"default\"\n\"game_files\"\n\"local\" *\n");
+        Put("packs\\game_files\\cars\\packed\\parameters.txt", Params("Packed", "packed"));
+        var g2 = new GameFolder(gdir);
+        var packsBefore = Snap(Path.Combine(gdir, "packs"));
+        using (var p = CarInstaller.Inspect(g2, loose))
+        {
+            Check(p.Cars.Count == 1 && p.Cars[0].Folder == "foldercar", "install: from a folder");
+            CarInstaller.Install(g2, p);
+            Check(File.Exists(Path.Combine(gdir, "cars", "foldercar", "body.prm")) && Same(Snap(Path.Combine(gdir, "packs")), packsBefore), "install: goes to the root's cars folder, packs untouched");
+            Check(new Car(g2, "foldercar").Data.Name == "From a folder", "install: the game sees it");
+        }
+        var z6 = Zip("packed.zip", CarAt("cars/packed/", "Packed too", "packed"));
+        using (var p = CarInstaller.Inspect(g2, z6))
+            Check(p.Cars[0].Clash && p.Cars[0].Folder == "packed2", "clash: with a car that lives in a pack");
+        CarInstaller.UndoLast(g2);
+        Check(!Directory.Exists(Path.Combine(gdir, "cars", "foldercar")) && !Directory.Exists(Path.Combine(gdir, ".rvcarstudio")) && Same(Snap(loose), looseBefore), "undo: the folder it came from stays");
+
+        // ---- not a car, not a zip
+        using (var p = CarInstaller.Inspect(g, Zip("track.zip", ("levels/x/x.w", "w"), ("readme.txt", "r"))))
+            Check(p.Cars.Count == 0 && p.Issues.Any(i => i.Level == InstallLevel.Error), "install: a zip without a car says so");
+        File.WriteAllText(Path.Combine(zips, "fake.zip"), "this is not a zip");
+        using (var p = CarInstaller.Inspect(g, Path.Combine(zips, "fake.zip")))
+            Check(p.Cars.Count == 0 && p.Issues.Any(i => i.Level == InstallLevel.Error && i.Text.StartsWith("Can't read")), "install: a broken zip says so");
+    }
+    catch (Exception ex) { Check(false, "installer: " + ex); }
+    finally { try { Directory.Delete(tmp, true); } catch (IOException) { } }
+}
+
 void ReadPass()
 {
     foreach (var e in game.ListCars())
@@ -549,7 +771,7 @@ if (game.Find("cars\\rc\\parameters.txt") != null)
 }
 switch (mode)
 {
-    case "read": ReadPass(); break;
+    case "read": ReadPass(); Installer(); break;
     case "write": WritePass(); break;
     case "fit": Fit(); break;
     case "curve":
