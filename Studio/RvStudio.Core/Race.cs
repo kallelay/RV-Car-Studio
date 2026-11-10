@@ -212,18 +212,23 @@ public sealed class RaceCar
     public int Hits;
     internal bool OnWall;
 
-    internal float[] Speeds = Array.Empty<float>();
-    internal float Lane, StuckFor, UpsideFor, BackUp, BackSteer;
+    /// <summary>What the CPU driver knows and wants. It also follows your car, to know where a reposition puts it</summary>
+    public readonly CpuBrain Brain = new();
+    /// <summary>Counts down the two seconds of a reposition. The car is put back when it passes one</summary>
+    public float ReposTimer;
+    public bool Repositioning => ReposTimer > 0;
+    internal bool ReposHalf, Moves = true;
+    internal float ReposClock;
     public float HalfWidth, HalfLength;
 }
 
 /// <summary>
-/// A race in the editor: all cars use the same physics as Drive here. The CPU driver is simpler than the game's, which
-/// follows the AI nodes of a real track: it reads this road's bends and plans its speed. Steering and throttle
-/// corrections for sliding work as the game's do, from the car's own AI values, so those can be seen at work.
+/// A race in the editor: all cars use the same physics as Drive here. The CPU cars are driven as the original game
+/// drives them, see CpuDriver.cs, over AI nodes made for the road, see AiNodes.cs. The game's countdown, catch-up and
+/// two-second reposition are here too. Pickups, weapons and forks aren't: these roads have none.
 /// Road and walls are collision polygons, and cars meet the way they do in Arcade mode.
 /// </summary>
-public sealed class Race
+public sealed partial class Race
 {
     public readonly RaceTrack Track;
     public readonly List<RaceCar> Cars = new();
@@ -231,11 +236,18 @@ public sealed class Race
     public RaceCar Player = null!;
     public float PlayerThrottle, PlayerSteer;
     public bool AiDrivesPlayer;
-    public float Time, Countdown = 3;
+    public float Time;
     float overlap;
     const float Dt = 0.008f;
 
-    public bool Started => Countdown <= 0;
+    /// <summary>The game counts five seconds down, and shows the last three</summary>
+    public const float CountdownTime = 5, CountdownShown = 3;
+    int countdownSteps = (int)MathF.Round(CountdownTime / Dt);
+    public float Countdown => countdownSteps * Dt;
+    public bool Started => countdownSteps <= 0;
+    /// <summary>What the game's screen says: nothing, then 3, 2, 1, and GO for the first second of the race</summary>
+    public string CountdownLabel =>
+        !Started ? (Countdown < CountdownShown ? ((int)(Countdown) + 1).ToString() : "") : Time < 1 ? "GO" : "";
     public bool AllDone => Cars.All(c => c.Finished);
     public bool PlayerDone => Player.Finished;
     public IEnumerable<RaceCar> Standings =>
@@ -246,6 +258,7 @@ public sealed class Race
     {
         Track = track;
         Laps = Math.Max(laps, 1);
+        Net = new AiNet(track);
     }
 
     public RaceCar Add(string name, string folder, CarData data, Hull? hull, bool player, float skill = 1)
@@ -261,51 +274,28 @@ public sealed class Race
         return car;
     }
 
-    /// <summary>Line up on the grid behind the start, you at the back, and work out each driver's speeds</summary>
+    /// <summary>
+    /// Line up behind the start as on the game's usual grid: two columns 256 apart, a row every 300, the right column
+    /// 40 further back, you at the back. The difficulty comes from the skill the CPU cars were given
+    /// </summary>
     public void Grid()
     {
         var order = Cars.OrderBy(c => c.IsPlayer ? 1 : 0).ToList();
+        if (order.Count > 0 && !order[0].IsPlayer) Difficulty = DifficultyFor(order[0].Skill);
         for (int i = 0; i < order.Count; i++)
         {
             var car = order[i];
-            float back = 280 + (i / 2) * 340;
-            float along = -back;
+            float along = -(280 + (i / 2) * 300 + (i % 2) * 40);
             int idx = Track.Index(along);
             var side = RaceTrack.Side(Track.Tangents[idx]);
-            float lane = (i % 2 == 0 ? -1 : 1) * Track.Width * 0.2f;
-            car.Sim.Place(Track.Points[idx] + side * lane, MathF.Atan2(Track.Tangents[idx].X, Track.Tangents[idx].Z));
+            float across = (i % 2 == 0 ? -128 : 128);
+            car.Sim.Place(Track.Points[idx] + side * across, MathF.Atan2(Track.Tangents[idx].X, Track.Tangents[idx].Z));
             car.Hint = idx;
             car.Run = along;
             car.Lap = 0;
-            car.Lane = lane;
-            car.Speeds = PlanSpeeds(car);
+            PrepareDriver(car);
         }
     }
-
-    float[] PlanSpeeds(RaceCar car)
-    {
-        var d = car.Data;
-        var wheels = d.Wheels.Where(w => w.Present).ToArray();
-        float mu = wheels.Length > 0 ? (float)wheels.Average(w => Math.Min(w.StaticFriction, w.KineticFriction * 1.3)) : 1;
-        // Downhill from the grip: stays a margin under it, keeps some for the throttle
-        float corner = mu * CarCalc.Gravity * 0.62f * car.Skill;
-        float brake = mu * CarCalc.Gravity * 0.42f * car.Skill;
-        int n = Track.Points.Length;
-        var v = new float[n];
-        float top = Math.Max((float)d.TopSpeed * CarSim.MphToUnits, 300);
-        for (int i = 0; i < n; i++) v[i] = Math.Min(top, MathF.Sqrt(corner * Rough(i) * Track.Radius[i]));
-        for (int pass = 0; pass < 2; pass++)
-            for (int k = n - 1; k >= 0; k--)
-            {
-                int next = (k + 1) % n;
-                float ds = (Track.Points[next] - Track.Points[k]).Length();
-                v[k] = Math.Min(v[k], MathF.Sqrt(v[next] * v[next] + 2 * brake * Rough(k) * ds));
-            }
-        return v;
-    }
-
-    // A driver knows the surfaces of the road ahead
-    float Rough(int i) => Track.Band.Length > 0 ? Material.Track[Track.Band[i]].Roughness : 1;
 
     public void Advance(float seconds)
     {
@@ -317,37 +307,47 @@ public sealed class Race
 
     public void Step()
     {
-        if (Countdown > 0) Countdown -= Dt;
+        if (countdownSteps > 0) countdownSteps--;
         else Time += Dt;
+        bool think = AiTick();
+        Places();
 
         foreach (var car in Cars)
         {
-            if (!Started)
+            bool cpu = !car.IsPlayer || AiDrivesPlayer;
+            bool free = Started && !car.Finished;
+            // Through the countdown the throttle works, on wheels that can't push the car anywhere
+            car.Sim.Held = !Started;
+            if (cpu)
             {
-                car.Sim.Throttle = 0;
-                car.Sim.Steer = 0;
+                if (think) Think(car);
+                ApplyControls(car);
+                Helper(car);
             }
-            else if (car.Finished)
+            else
             {
-                car.Sim.Throttle = 0;
-                Drive(car, true);
-                car.Sim.Throttle = Math.Min(car.Sim.Throttle, 0);
-            }
-            else if (car.IsPlayer && !AiDrivesPlayer)
-            {
-                car.Sim.Throttle = PlayerThrottle;
+                if (think)
+                {
+                    UpdateNode(car);
+                    car.Brain.Look = FlatLook(car);
+                }
+                car.Sim.Throttle = car.Finished ? 0 : PlayerThrottle;
                 car.Sim.Steer = PlayerSteer;
             }
-            else Drive(car, false);
-            car.Sim.StepMove();
+            ApplyCatchUp(car, cpu);
+            // Fallen out of the world
+            if (free && (car.Sim.Pos.Y > 2500 || float.IsNaN(car.Sim.Pos.Y))) StartReposition(car);
+            car.Moves = StepReposition(car);
+            if (car.Moves) car.Sim.StepMove();
         }
 
         // As the game: everyone moves, then contacts are found, then everyone answers them
         for (int a = 0; a < Cars.Count; a++)
             for (int b = a + 1; b < Cars.Count; b++)
-                Touch(Cars[a], Cars[b]);
+                if (Meets(Cars[a]) && Meets(Cars[b])) Touch(Cars[a], Cars[b]);
         foreach (var car in Cars)
         {
+            if (!car.Moves) continue;
             car.Sim.StepCollide();
             if (car.Sim.TouchesWall && !car.OnWall) car.Hits++;
             car.OnWall = car.Sim.TouchesWall;
@@ -355,119 +355,8 @@ public sealed class Race
         foreach (var car in Cars) Follow(car);
     }
 
-    // ---------------------------- The CPU driver ----------------------------
-
-    void Drive(RaceCar car, bool easing)
-    {
-        var s = car.Sim;
-        float speed = s.Vel.Length();
-        var nose = Vector3.Transform(Vector3.UnitZ, s.Rot);
-        var right = Vector3.Transform(Vector3.UnitX, s.Rot);
-
-        // On its roof: right it, as a player would
-        if (s.Up.Y > -0.3f)
-        {
-            car.UpsideFor += Dt;
-            if (car.UpsideFor > 0.6f) s.Flip();
-        }
-        else car.UpsideFor = 0;
-
-        // Stuck against something: back out with the wheels turned
-        if (car.BackUp > 0)
-        {
-            car.BackUp -= Dt;
-            s.Throttle = -1;
-            s.Steer = car.BackSteer;
-            return;
-        }
-        if (speed < 60 && !easing) car.StuckFor += Dt;
-        else car.StuckFor = 0;
-        if (car.StuckFor > 1.2f)
-        {
-            car.StuckFor = 0;
-            var ahead = Track.Tangents[car.Hint];
-            float wrong = Vector3.Dot(right, ahead);
-            car.BackSteer = wrong > 0 ? -1 : 1;
-            car.BackUp = 1.1f;
-            return;
-        }
-
-        // Pick a place on the road a little ahead, in a lane that keeps clear of the car in front
-        car.Lane += (LaneFor(car) - car.Lane) * Math.Min(1, Dt * 2.5f);
-        float look = 170 + speed * 0.22f;
-        int i = Track.Index(Track.Distance[car.Hint] + look);
-        var target = Track.Points[i] + RaceTrack.Side(Track.Tangents[i]) * car.Lane;
-        var to = target - s.Pos;
-        float angle = MathF.Atan2(Vector3.Dot(to, right), Vector3.Dot(to, nose));
-        float lockAngle = Math.Max(s.SteerLock, 0.05f);
-        float steer = Math.Clamp(angle / lockAngle, -1, 1);
-
-        // Slow for what's coming
-        int soon = Track.Index(Track.Distance[car.Hint] + speed * 0.1f);
-        float wanted = car.Speeds[soon];
-        float throttle = speed > wanted * 1.03f ? -1 : speed > wanted * 0.97f ? 0.3f : 1;
-        if (Vector3.Dot(s.Vel, nose) < -40) throttle = 1; // rolling backwards: the engine stops that first
-
-        (steer, throttle) = CorrectSlide(car, steer, throttle);
-        s.Steer = steer;
-        s.Throttle = easing ? Math.Min(throttle, speed > 200 ? -1 : 0) : throttle;
-    }
-
-    float LaneFor(RaceCar car)
-    {
-        float keep = Track.Width * 0.22f;
-        foreach (var other in Cars)
-        {
-            if (other == car) continue;
-            float gap = other.Run - car.Run;
-            if (gap < 0 || gap > 420) continue;
-            var side = RaceTrack.Side(Track.Tangents[car.Hint]);
-            float theirs = Vector3.Dot(other.Sim.Pos - Track.Points[other.Hint], side);
-            return theirs > 0 ? -keep : keep;
-        }
-        return Math.Clamp(car.Lane * 0.995f, -keep, keep);
-    }
-
-    /// <summary>The game's correction for sliding, from the car's AI values</summary>
-    (float Steer, float Throttle) CorrectSlide(RaceCar car, float steer, float throttle)
-    {
-        if (car.Data.Ai is not { } ai) return (steer, throttle);
-        var (front, rear) = car.Sim.SideSlip();
-        float amount = 0;
-        if (MathF.Sign(front) == MathF.Sign(rear))
-        {
-            float over = Math.Abs(rear) - Math.Abs(front) - (float)ai.OverThresh;
-            if (over > 0 && ai.OverRange > 0)
-                amount = Math.Min(over / (float)ai.OverRange, (float)ai.OverMax);
-            else
-            {
-                float under = Math.Abs(front + rear) - (float)ai.UnderThresh;
-                if (under > 0 && ai.UnderRange > 0)
-                    amount = -Math.Min(under / (float)ai.UnderRange, (float)ai.UnderMax);
-            }
-        }
-        else
-        {
-            float snap = Math.Abs(front - rear) - (float)ai.OverThresh;
-            if (snap > 0 && ai.OverRange > 0)
-                amount = Math.Min(snap / (float)ai.OverRange, (float)ai.OverMax);
-        }
-
-        if (amount < 0)
-        {
-            float a = -amount;
-            steer = Math.Clamp(steer + (steer < 0 ? -a : a), -1, 1);
-            if (!(Math.Abs(front) > ai.UnderFront && Math.Abs(rear) > ai.UnderRear)) throttle = Math.Min(throttle, 1 - a);
-        }
-        else if (amount > 0)
-        {
-            steer = Math.Clamp(car.Sim.SteerNow + (front < 0 ? -amount : amount), -1, 1);
-            float most = Math.Max(Math.Abs(front), Math.Abs(rear)) - (float)ai.OverAccThresh;
-            if (most > 0 && ai.OverAccRange > 0)
-                throttle = Math.Min(throttle, 1 - Math.Min(most / (float)ai.OverAccRange, 1.5f));
-        }
-        return (steer, throttle);
-    }
+    // A car being put back touches no other car until it's on the road again
+    static bool Meets(RaceCar car) => car.Moves && (car.ReposTimer <= 0 || car.ReposHalf);
 
     // ---------------------------- Contact ----------------------------
 
@@ -522,12 +411,10 @@ public sealed class Race
         if (lap > Laps) car.FinishTime = Time;
     }
 
-    /// <summary>The game's reposition: back on the road, facing the way of the race</summary>
+    /// <summary>The game's reposition: two seconds, and at the half the car is back on the racing line, facing the way of the race</summary>
     public void Reposition(RaceCar car)
     {
-        int i = car.Hint;
-        car.Sim.Place(Track.Points[i], MathF.Atan2(Track.Tangents[i].X, Track.Tangents[i].Z));
-        car.Lane = 0;
+        if (Started && !car.Finished) StartReposition(car);
     }
 
     /// <summary>Cars to race against: stock cars closest in speed to this one, the odd ones left out</summary>

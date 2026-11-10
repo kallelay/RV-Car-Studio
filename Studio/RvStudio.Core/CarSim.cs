@@ -87,13 +87,14 @@ public sealed class CarSim
     bool righting;
     Vector3 rightPos;
     Quaternion rightRot;
-    int wheelContacts, bodyContacts, worldContacts, wheelFloorContacts;
+    int wheelContacts, wheelContactsKept, bodyContacts, worldContacts, wheelFloorContacts;
     float noMoveTime;
     Vector3 movedBy;
     readonly List<CollPoly> nearby = new();
     readonly List<BodyHit> carHits = new();
 
-    readonly float mass, invMass, topSpeed;
+    readonly float mass, invMass;
+    float topSpeed;
     readonly Matrix4x4 bodyInvInertia;
     readonly Vector3 comShift;
     readonly (Vector3 Pos, float Radius)[] spheres;
@@ -225,6 +226,29 @@ public sealed class CarSim
     public float Mass => mass;
     public float SteerNow => steerNow;
     public Vector3 Centre => centre;
+
+    // What the game's CPU driver reads about the car's contacts
+    public int WheelColls => wheelContactsKept;
+    public int BodyColls => bodyContacts;
+    public int WorldContacts => worldContacts;
+    public int FloorContacts => wheelFloorContacts;
+    public int WheelsTouching => wheels.Count(w => w.Contact);
+    public float NoContactTime => noContactTime;
+    /// <summary>Per wheel: touching with its side, touching something upright</summary>
+    public readonly bool[] WheelSide = new bool[4], WheelWall = new bool[4];
+
+    /// <summary>On the grid a car settles but can't drive off, whatever the throttle says: the game's countdown</summary>
+    public bool Held;
+
+    /// <summary>The game's catch-up changes a CPU car's top speed and tyre grip</summary>
+    public void SetCatchUp(float offsetMph, float friction)
+    {
+        topSpeed = Math.Max(((float)Car.TopSpeed + offsetMph) * MphToUnits, 1);
+        CatchFriction = friction;
+    }
+
+    public float CatchFriction { get; private set; } = 1;
+    public float TopSpeedMph => topSpeed / MphToUnits;
 
     /// <summary>How far the steering wheels can turn, in radians</summary>
     public float SteerLock => wheels.Where(w => w.Data.Present && w.Data.Turnable).Select(w => Math.Abs((float)w.Data.SteerRatio)).DefaultIfEmpty(0).Max();
@@ -364,6 +388,12 @@ public sealed class CarSim
 
     void MoveBody()
     {
+        if (Held)
+        {
+            impulse.X = impulse.Z = 0;
+            var upAxis = Vector3.Transform(Vector3.UnitY, Rot);
+            angImpulse -= upAxis * Vector3.Dot(angImpulse, upAxis);
+        }
         movedBy = shift;
         centre += shift;
         shift = Vector3.Zero;
@@ -499,6 +529,8 @@ public sealed class CarSim
 
         // Close contacts of a wheel count as one, the deepest, facing the way its polygon does. Then what each wheel
         // needs to get out of the ground adds up
+        Array.Clear(WheelSide);
+        Array.Clear(WheelWall);
         var wheelShift = new Vector3[4];
         for (int a = 0; a < hits.Count; a++)
         {
@@ -522,6 +554,7 @@ public sealed class CarSim
             if (kept && hits[a].Depth < 0)
                 wheelShift[Array.IndexOf(wheels, hits[a].W)] += -hits[a].Depth * hits[a].Normal;
         }
+        wheelContactsKept = hits.Count; // the game counts them after close ones have become one
         if (!Stacked)
             for (int i = 0; i < 4; i++)
             {
@@ -590,6 +623,9 @@ public sealed class CarSim
         if (lookLen > 0.7f) look /= lookLen;
         else if (Math.Abs(h.Normal.Y) <= 0.5f) wallGrip = 0.1f + lookLen / 4;
         w.Contact = true;
+        int slot = Array.IndexOf(wheels, w);
+        if (lookLen <= 0.7f) WheelSide[slot] = true;
+        if (Math.Abs(h.Normal.Y) <= 0.5f) WheelWall[slot] = true;
 
         // The bump: what stops this point moving into the ground, kept by the damper's Restitution
         float normal = 0;
@@ -627,7 +663,7 @@ public sealed class CarSim
         if (Math.Abs(engineNow) < 0.01f || Sign(engineNow) == -Sign(w.Spin))
             torque -= (float)d.AxleFriction * w.Spin * w.Radius * timeScale;
 
-        float staticF = (float)d.StaticFriction * h.Mat.Roughness, kinetic = (float)d.KineticFriction * h.Mat.Roughness;
+        float staticF = (float)d.StaticFriction * h.Mat.Roughness * CatchFriction, kinetic = (float)d.KineticFriction * h.Mat.Roughness * CatchFriction;
         if (Math.Abs(torque) > Math.Abs(w.Radius * wallGrip * staticF * normal)) w.Spinning = true;
 
         tangent += torque / w.Radius * look;
