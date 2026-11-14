@@ -33,7 +33,7 @@ public sealed class ModelPicker : Window
         Width = 860; Height = 620;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
-        Background = new SolidColorBrush(Color.Parse("#23262D"));
+        Background = Look.Panel;
 
         var fromFile = new Button { Content = "From a file...", FontSize = 12 };
         fromFile.Click += async (_, _) =>
@@ -118,6 +118,7 @@ public sealed class ModelPicker : Window
 
     async Task LoadThumb(int run, string rel, Image image, TextBlock info)
     {
+        var back = Look.ThumbBack;
         var made = await Task.Run(() =>
         {
             try
@@ -127,7 +128,7 @@ public sealed class ModelPicker : Window
                 var m = Prm.Load(file);
                 var dir = rel[..rel.LastIndexOf('\\')];
                 var tex = game.Find(dir + "\\car.bmp") ?? (dir.EndsWith("misc", StringComparison.OrdinalIgnoreCase) ? game.Find("gfx\\fxpage1.bmp") : null);
-                using var b = Thumbnail.OfModel(m, tex, 112);
+                using var b = Thumbnail.OfModel(m, tex, 112, back);
                 return (Thumbnail.Png(b), m.Faces.Length);
             }
             catch (Exception) { return ((byte[]?)null, 0); }

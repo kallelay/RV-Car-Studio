@@ -20,7 +20,7 @@ public sealed class NewCarWizard : Window
     readonly ComboBox baseBox = new() { HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 12 };
     readonly TextBox nameBox = new() { FontSize = 12, Watermark = "The name shown in the game" };
     readonly TextBox folderBox = new() { FontSize = 12, Watermark = "A folder inside cars" };
-    readonly TextBlock problem = new() { Foreground = Brushes.OrangeRed, FontSize = 12, TextWrapping = TextWrapping.Wrap };
+    readonly TextBlock problem = new() { Foreground = Look.Bad, FontSize = 12, TextWrapping = TextWrapping.Wrap };
     readonly TextBlock kindNote = new() { FontSize = 12, Foreground = Page.Faint, TextWrapping = TextWrapping.Wrap };
     readonly StackPanel ownFiles = new() { Spacing = 5, IsVisible = false };
     readonly TextBox bodyBox = new() { FontSize = 12, Watermark = "Body model, .prm" };
@@ -52,7 +52,7 @@ public sealed class NewCarWizard : Window
         Width = 540; Height = 640;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
-        Background = new SolidColorBrush(Color.Parse("#23262D"));
+        Background = Look.Panel;
 
         cars = game.ListCars().OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
         baseBox.ItemsSource = cars.Select(c => c.Name + "  (" + c.Folder + ")").ToList();
@@ -72,7 +72,7 @@ public sealed class NewCarWizard : Window
         ownFiles.Children.Add(FileRow("Wheel", wheelBox));
         ownFiles.Children.Add(FileRow("Texture", textureBox));
 
-        var ok = new Button { Content = "Make the car", Background = Page.Accent, MinWidth = 110, HorizontalContentAlignment = HorizontalAlignment.Center, IsDefault = true };
+        var ok = Look.Primary(new Button { Content = "Make the car", MinWidth = 110, HorizontalContentAlignment = HorizontalAlignment.Center, IsDefault = true });
         var cancel = new Button { Content = "Cancel", MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center, IsCancel = true };
         ok.Click += (_, _) =>
         {

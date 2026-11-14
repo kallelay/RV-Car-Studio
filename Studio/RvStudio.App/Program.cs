@@ -31,12 +31,9 @@ public sealed class StudioApp : Application
     public override void Initialize()
     {
         RequestedThemeVariant = ThemeVariant.Dark;
-        Styles.Add(new FluentTheme());
-        Styles.Add(new Style(x => x.OfType<ScrollViewer>()) { Setters = { new Setter(ScrollViewer.AllowAutoHideProperty, false) } });
-        Styles.Add(new Style(x => x.OfType<TabItem>())
-        {
-            Setters = { new Setter(TabItem.FontSizeProperty, 13.0), new Setter(TabItem.MinHeightProperty, 30.0), new Setter(TabItem.PaddingProperty, new Thickness(8, 2)) }
-        });
+        // Fluent's own styles come with the look: Look.Apply puts them first
+        foreach (var s in Look.Styles()) Styles.Add(s);
+        Look.Resources(Resources);
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -44,17 +41,21 @@ public sealed class StudioApp : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d)
         {
             string? path = null;
-            string? auto = null;
+            string? auto = null, look = null;
             var a = Program.Args;
             for (int i = 0; i < a.Length; i++)
             {
                 if (a[i] == "-rvpath" && i + 1 < a.Length) path = a[++i];
                 else if (a[i] == "--auto" && i + 1 < a.Length) auto = a[++i];
+                else if (a[i] == "--look" && i + 1 < a.Length) look = a[++i];
             }
-            AutoScenario.Running = auto != null;
+            AutoScenario.Running = auto != null || look != null;
+            // A test run starts as it always looked, whatever you chose
+            Look.Apply(AutoScenario.Running ? ThemeKind.Classic : Settings.Theme);
             var w = new MainWindow(path);
             d.MainWindow = w;
             if (auto != null) w.Opened += async (_, _) => await AutoScenario.Run(w, auto);
+            if (look != null) w.Opened += async (_, _) => await AutoScenario.RunLook(w, look);
         }
         base.OnFrameworkInitializationCompleted();
     }
@@ -87,6 +88,12 @@ public static class Settings
     }
     public static string? RvPath { get => V.GetValueOrDefault("rvpath"); set => Set("rvpath", value ?? ""); }
     public static string? LastCar { get => V.GetValueOrDefault("lastcar"); set => Set("lastcar", value ?? ""); }
+    /// <summary>The look: Dark unless you chose another</summary>
+    public static ThemeKind Theme
+    {
+        get => Enum.TryParse<ThemeKind>(V.GetValueOrDefault("theme"), out var t) ? t : ThemeKind.Dark;
+        set => Set("theme", value.ToString());
+    }
     public static string Author { get => V.GetValueOrDefault("author") ?? ""; set => Set("author", value); }
 }
 
@@ -95,7 +102,7 @@ public static class Dialogs
     static Window Frame(string title, double w, double h) => new()
     {
         Title = title, Width = w, Height = h, WindowStartupLocation = WindowStartupLocation.CenterOwner,
-        CanResize = false, ShowInTaskbar = false, Background = new SolidColorBrush(Color.Parse("#23262D"))
+        CanResize = false, ShowInTaskbar = false, Background = Look.Panel, Foreground = Look.Text
     };
 
     /// <summary>Index of the button pressed. Closing the window counts as the last one</summary>
@@ -108,7 +115,7 @@ public static class Dialogs
         {
             int k = i;
             var b = new Button { Content = buttons[i], MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center };
-            if (i == 0) b.Background = Page.Accent;
+            if (i == 0) Look.Primary(b);
             b.Click += (_, _) => { result = k; d.Close(); };
             row.Children.Add(b);
         }
@@ -128,7 +135,7 @@ public static class Dialogs
         var d = Frame("RV Car Studio", 440, 170);
         string? result = null;
         var box = new TextBox { Text = start, Margin = new Thickness(0, 8) };
-        var ok = new Button { Content = "OK", MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center, Background = Page.Accent, IsDefault = true };
+        var ok = Look.Primary(new Button { Content = "OK", MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center, IsDefault = true });
         var cancel = new Button { Content = "Cancel", MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center, IsCancel = true };
         ok.Click += (_, _) => { result = box.Text; d.Close(); };
         cancel.Click += (_, _) => d.Close();

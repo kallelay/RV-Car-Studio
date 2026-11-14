@@ -602,7 +602,7 @@ public sealed partial class MainWindow
             };
             t.IsCheckedChanged += (_, _) =>
             {
-                if (t.IsChecked == true) { PaintOnly.Add(bucket); t.BorderBrush = Brushes.White; }
+                if (t.IsChecked == true) { PaintOnly.Add(bucket); t.BorderBrush = Look.Text; }
                 else { PaintOnly.Remove(bucket); t.BorderBrush = null; }
                 PaintChanged();
             };

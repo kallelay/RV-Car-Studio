@@ -275,6 +275,20 @@ public sealed class Doc
     public bool InGesture;
     public void EndGesture() { openLabel = null; InGesture = false; }
 
+    /// <summary>How many steps undo holds: note it before a gesture to be able to take the gesture back</summary>
+    public int UndoDepth => undo.Count;
+
+    /// <summary>Take back what was done since undo held this many steps, leaving nothing to redo: Esc during a drag</summary>
+    public void CancelTo(int depth)
+    {
+        EndGesture();
+        while (Car != null && undo.Count > depth)
+        {
+            Step(undo, redo);
+            redo.Pop();
+        }
+    }
+
     public void Undo()
     {
         if (Car == null || undo.Count == 0) return;
