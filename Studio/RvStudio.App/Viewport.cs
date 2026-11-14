@@ -953,10 +953,14 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
 
     // --------------------------- Building a frame ---------------------------
 
+    /// <summary>A new frame was asked for: the view may have turned (the view cube follows)</summary>
+    public event Action? Redrawn;
+
     public void Redraw()
     {
         frame = Build(false);
         RequestNextFrameRendering();
+        Redrawn?.Invoke();
     }
 
     static uint Rgba(byte r, byte g, byte b, byte a = 255) => (uint)(r | g << 8 | b << 16 | a << 24);

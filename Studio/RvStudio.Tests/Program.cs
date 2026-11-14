@@ -307,7 +307,9 @@ void WritePass()
     foreach (var e in game.ListCars())
     {
         var c = new Car(game, e.Folder);
-        var bytes = File.ReadAllBytes(c.ParamPath);
+        var src = c.ParamPath;
+        var bytes = File.ReadAllBytes(src);
+        string? saved = null;
         try
         {
             if (bytes.Length == 0)
@@ -342,14 +344,19 @@ void WritePass()
             Check(old.Distinct().Count() - old.Intersect(neu).Count() <= 7, e.Folder + ": other lines kept");
             Check(old[^1] == neu[^1], e.Folder + ": tail kept");
             c.Save();
-            Check(File.ReadAllBytes(c.ParamPath + ".bak").SequenceEqual(bytes), e.Folder + ": backup");
-            Check(ParamFile.FileEncoding.GetString(File.ReadAllBytes(c.ParamPath)) == text, e.Folder + ": saved");
+            saved = c.ParamPath;
+            if (string.Equals(saved, src, StringComparison.OrdinalIgnoreCase))
+                Check(File.ReadAllBytes(saved + ".bak").SequenceEqual(bytes), e.Folder + ": backup");
+            else // a car from a pack is saved as a new copy in the writable pack: the pack's file stays as it was
+                Check(File.ReadAllBytes(src).SequenceEqual(bytes) && !File.Exists(saved + ".bak"), e.Folder + ": pack file untouched, copy in " + Path.GetDirectoryName(saved));
+            Check(ParamFile.FileEncoding.GetString(File.ReadAllBytes(saved)) == text, e.Folder + ": saved");
         }
         catch (Exception ex) { Check(false, e.Folder + ": " + ex); }
         finally
         {
-            File.WriteAllBytes(c.ParamPath, bytes);
-            if (File.Exists(c.ParamPath + ".bak")) File.Delete(c.ParamPath + ".bak");
+            if (saved != null && !string.Equals(saved, src, StringComparison.OrdinalIgnoreCase)) File.Delete(saved);
+            else File.WriteAllBytes(src, bytes);
+            if (File.Exists(src + ".bak")) File.Delete(src + ".bak");
         }
     }
 

@@ -94,6 +94,8 @@ public static class Settings
         get => Enum.TryParse<ThemeKind>(V.GetValueOrDefault("theme"), out var t) ? t : ThemeKind.Dark;
         set => Set("theme", value.ToString());
     }
+    /// <summary>The small view cube in the corner of the 3D view: on unless you hid it</summary>
+    public static bool ViewCube { get => V.GetValueOrDefault("viewcube") != "0"; set => Set("viewcube", value ? "1" : "0"); }
     public static string Author { get => V.GetValueOrDefault("author") ?? ""; set => Set("author", value); }
 }
 

@@ -33,6 +33,7 @@ public sealed partial class MainWindow
     void OnThemeChanged()
     {
         themeBtn.Content = ThemeButtonText;
+        Cube.InvalidateVisual();
         foreach (var i in themeItems) i.IsChecked = Equals(i.Tag, Look.Kind);
         View.Redraw();
         raceMap.InvalidateVisual();

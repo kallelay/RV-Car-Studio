@@ -17,6 +17,7 @@ public sealed partial class MainWindow : Window
 {
     public readonly Doc Doc = new();
     public readonly Viewport View;
+    public readonly ViewCube Cube = new() { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 8, 10, 0) };
     readonly TextBox search = new() { Watermark = "Search cars   (#stock  #custom)", FontSize = 12, Margin = new Thickness(8, 8, 8, 4) };
     readonly ListBox carList = new() { FontSize = 12 };
     readonly Control pickerPanel;
@@ -133,6 +134,10 @@ public sealed partial class MainWindow : Window
         main.Children.Add(mid);
         var overlay = new Grid();
         overlay.Children.Add(View);
+        Cube.View = View;
+        View.Redrawn += () => { if (Cube.IsVisible) Cube.InvalidateVisual(); };
+        Cube.IsVisible = Settings.ViewCube;
+        overlay.Children.Add(Cube);
         hudBox.Child = hud;
         overlay.Children.Add(hudBox);
         overlay.Children.Add(viewTip);
@@ -613,6 +618,7 @@ public sealed partial class MainWindow : Window
         Toggle("Markers", true, v => View.ShowMarkers = v);
         Toggle("Grid", true, v => View.ShowGrid = v);
         Toggle("Soft light", false, v => View.Lit = v);
+        Toggle("View cube", Settings.ViewCube, v => { Cube.IsVisible = v; Settings.ViewCube = v; });
         var showBtn = new Button { Content = "Show ▾", FontSize = 12, Padding = new Thickness(10, 5), Margin = new Thickness(2, 0), Flyout = viewMenu };
         p.Children.Add(showBtn);
         seg.Clear();
@@ -945,7 +951,7 @@ public sealed partial class MainWindow : Window
         simLast = DateTime.UtcNow;
         simTimer.Start();
         View.Focus();
-        Say("Race: arrows or WASD, or a gamepad. Space or X flips a car on its roof, R puts you back on the road, I lets the AI drive, Esc leaves. The car physics follows the game's. The CPU driver, road and walls are this editor's own.");
+        Say("Race: arrows or WASD, or a gamepad. Space or X flips a car on its roof, R puts you back on the road, I lets the AI drive, Esc leaves. The car physics and the CPU driver follow the game's; the road and walls are this editor's own.");
     }
 
     static string Clock(float seconds) => float.IsInfinity(seconds) ? "-" : $"{(int)(seconds / 60)}:{seconds % 60:00.00}";
@@ -953,7 +959,7 @@ public sealed partial class MainWindow : Window
     string RaceHud(Race r)
     {
         var me = r.Player;
-        if (!r.Started) return Math.Ceiling(r.Countdown).ToString("0");
+        if (!r.Started) return r.CountdownLabel;
         var lines = new List<string>();
         int lap = Math.Clamp(me.Lap, 1, r.Laps);
         if (me.Finished) lines.Add($"FINISHED {Place(r.PlaceOf(me))} in {Clock(me.FinishTime)}");

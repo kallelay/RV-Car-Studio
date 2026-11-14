@@ -16,12 +16,12 @@ public sealed partial class MainWindow
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, (_, e) =>
         {
-            e.DragEffects = e.Data.Contains(DataFormats.Files) ? DragDropEffects.Copy : DragDropEffects.None;
+            e.DragEffects = e.DataTransfer.Contains(DataFormat.File) ? DragDropEffects.Copy : DragDropEffects.None;
             e.Handled = true;
         });
         AddHandler(DragDrop.DropEvent, async (_, e) =>
         {
-            var path = e.Data.GetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p != null);
+            var path = e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p != null);
             e.Handled = true;
             if (path == null) return;
             if (!Directory.Exists(path) && !path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) { Say("To install a car, drop a .zip or a folder"); return; }

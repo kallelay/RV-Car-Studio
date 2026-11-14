@@ -806,7 +806,7 @@ public sealed partial class MainWindow
         laps.Show(RaceLapsHere);
         laps.Edited += v => RaceLapsHere = (int)v;
         p.Labeled("Laps", laps);
-        p.Slide("CPU skill", 0.6, 1.05, RaceSkill, v => RaceSkill = (float)v, "How close to the limit of grip they take bends and brake");
+        p.Slide("CPU skill", 0.6, 1.05, RaceSkill, v => RaceSkill = (float)v, "The CPU cars' level, as in the game: below 0.75 Very easy, below 0.9 Easy, below 1 Medium, 1 and up Hard");
         var sameCar = new CheckBox { Content = "All CPU cars are this car", FontSize = 12, MinHeight = 24 };
         ToolTip.SetTip(sameCar, "Off: stock cars closest to it in speed");
         sameCar.IsCheckedChanged += (_, _) => RaceSameCar = sameCar.IsChecked == true;

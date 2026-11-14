@@ -90,6 +90,25 @@ public static partial class AutoScenario
         w.View.FrameCar();
         await Wait(200);
 
+        // The view cube: a click looks from a face, from the flat views too; it can be hidden
+        Check(w.Cube.IsVisible && w.Cube.Bounds.Width > 40 && w.Cube.Bounds.Width < 120, "view cube shown, small: " + w.Cube.Bounds.Width);
+        w.View.SetView(ViewMode.Top);
+        w.Cube.LookFrom(System.Numerics.Vector3.UnitZ);
+        await Wait(450);
+        Check(w.View.View == ViewMode.Perspective && w.Cube.Facing() == "front" && MathF.Abs(w.View.Yaw) < 0.01f && MathF.Abs(w.View.Pitch) < 0.01f, $"view cube: front ({w.Cube.Facing()}, {w.View.Yaw}, {w.View.Pitch})");
+        w.Cube.LookFrom(System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(1, -1, 1)));
+        await Wait(450);
+        Check(w.Cube.Facing() == "top front right", "view cube: corner " + w.Cube.Facing());
+        WindowShot(w, "view_cube");
+        w.Cube.IsVisible = false;
+        await Wait(100);
+        Check(!w.Cube.IsVisible, "view cube hidden");
+        w.Cube.IsVisible = true;
+        w.View.SetView(ViewMode.Perspective);
+        w.View.Yaw = 0.8f; w.View.Pitch = 0.35f;
+        w.View.FrameCar();
+        await Wait(200);
+
         var middle = new Point(w.View.Bounds.Width / 2, w.View.Bounds.Height / 2);
         var hit = w.InputHitTest(w.View.TranslatePoint(middle, w)!.Value);
         Check(hit == w.View, "the mouse reaches the 3D view: " + hit);
