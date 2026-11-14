@@ -964,8 +964,6 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
 
     IEnumerable<Vector3> Ghosts(int i, Vector3 p)
     {
-        Vector3 MX(Vector3 v) => new(-v.X, v.Y, v.Z);
-        Vector3 MZ(Vector3 v) => new(v.X, v.Y, -v.Z);
         if (doc.D is not { } d) yield break;
         Vector3 At(int k) => doc.Sel.Kind switch
         {

@@ -55,6 +55,7 @@ public sealed partial class MainWindow : Window
     public MainWindow(string? rvPath)
     {
         Title = "RV Car Studio";
+        try { using var icon = typeof(MainWindow).Assembly.GetManifestResourceStream("app.ico"); if (icon != null) Icon = new WindowIcon(icon); } catch { }
         Width = 1500; Height = 900;
         MinWidth = 1000; MinHeight = 600;
         Background = BarBrush;
