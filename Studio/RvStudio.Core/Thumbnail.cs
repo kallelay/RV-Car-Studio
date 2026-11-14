@@ -104,7 +104,7 @@ public static class Thumbnail
     }
 
     /// <summary>The car as it stands, without its aerial</summary>
-    public static SKBitmap OfCar(Car c, int size)
+    public static SKBitmap OfCar(Car c, int size, SKColor? background = null)
     {
         var tex = KeyedTexture(c.Game.Find(c.Data.TPage));
         var parts = new List<Part>();
@@ -113,16 +113,16 @@ public static class Thumbnail
             if (p.Kind is PartKind.AerialSection or PartKind.AerialTop) continue;
             if (CarTools.LoadModel(c, p.Slot) is { } m) parts.Add(new Part(m, p.World, tex));
         }
-        var r = Render(parts, size);
+        var r = Render(parts, size, background);
         tex?.Dispose();
         return r;
     }
 
     /// <summary>A model on its own. The texture is the car.bmp next to it, if there is one</summary>
-    public static SKBitmap OfModel(Prm m, string? texturePath, int size)
+    public static SKBitmap OfModel(Prm m, string? texturePath, int size, SKColor? background = null)
     {
         using var tex = KeyedTexture(texturePath);
-        return Render(new[] { new Part(m, Matrix4x4.Identity, tex) }, size);
+        return Render(new[] { new Part(m, Matrix4x4.Identity, tex) }, size, background);
     }
 
     public static byte[] Png(SKBitmap b)

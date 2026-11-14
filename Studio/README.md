@@ -28,6 +28,12 @@ The Corners buttons say what happens to the other corners:
 
 Crosses in the view are the centre of mass, weapon points, aerial, cameras and suspension mounts: they can be dragged too.
 
+## Look
+
+View, Theme (or the button at the end of the toolbar) has Dark, Light and Classic. Dark is what a new install starts with: black,
+with the orange of the icon. Light is ghost white. Classic keeps the blue on slate it had before. The 3D view, the dialogs and
+the small pictures follow, and the choice is remembered.
+
 ## Guide
 
 The Guide tab (F1) shows the open car's numbers, worked out from the formulas of the original car physics and updated as you
@@ -128,3 +134,4 @@ Saving tests write: use a copy of the Re-Volt folder.
     dotnet run --project RvStudio.Tests -- write <copy>          saving, new car, rename, tools
     dotnet run --project RvStudio.Tests -- fit   "D:\ReVolt"     the simulator against stock cars
     RvCarStudio -rvpath <copy> --auto <folder for pictures>      the real window: every car, tab, tool, mouse on the view, drive
+    RvCarStudio -rvpath <folder> --look <folder for pictures>    only the looks: every page, dialog and menu in Dark and Light

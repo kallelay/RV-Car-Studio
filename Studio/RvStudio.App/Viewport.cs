@@ -43,7 +43,7 @@ sealed class GpuTex { public uint Id; public int Version = -1; }
 /// <summary>What one frame draws. Made on the UI thread, read on the render thread, never changed in between</summary>
 sealed class Frame
 {
-    public readonly List<(Prm Mesh, Matrix4x4 World, int Tex, bool Env, bool Selected, string? TexFile)> Items = new();
+    public readonly List<(Prm Mesh, Matrix4x4 World, int Tex, bool Env, bool Selected, string? TexFile, bool Hover)> Items = new();
     public readonly List<LineVertex> Lines = new();         // with depth
     public readonly List<LineVertex> Overlay = new();       // always on top
     public readonly List<LineVertex> Solid = new();         // triangles in their own colours: the hull when shown solid
@@ -62,7 +62,9 @@ sealed class Frame
     public int ShadowVersion;
     public byte[]? Preview;
     public int PreviewW, PreviewH, PreviewVersion;
-    public System.Numerics.Vector3 Background = new(0.17f, 0.19f, 0.22f);
+    // The look, as it was when the frame was made
+    public Vector3 Background = Look.ViewBack, FloorTint = Look.Floor;
+    public Vector4 SelectLine = Look.SelectLine, HoverLine = Look.HoverLine;
 }
 
 /// <summary>The 3D view, its camera and the mouse tools on it. Works in the game's coordinates: Y down, Z forward</summary>
@@ -79,7 +81,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
 
     volatile Frame? frame;
     TaskCompletionSource<SKBitmap>? captureDone;
-    int captureSize;
+    int captureSize, captureHeight;
     bool captureClean;
 
     // Camera
@@ -98,6 +100,8 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
     public event Action<string>? Status;
     public event Action? Picked;   // a click on the view chose something
     public event Action<Selection>? NeedsPermission;  // this edit would change files other cars need
+    public event Action<string?, Point>? TipChanged;  // the small label beside the mouse: a name, or the amount of a drag
+    public event Action<Selection, Point>? ContextAsked;  // right click on a part
     public int DrawnParts => Build(false).Items.Count;
 
     // GL draws nothing Avalonia knows of, so without this the mouse goes right through the view
@@ -362,18 +366,70 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         var props = pt.Properties;
         e.Pointer.Capture(this);
         BeginGesture(pt.Position);
+        rightPress = props.IsRightButtonPressed;
 
         if (props.IsRightButtonPressed) { drag = Drag.Orbit; return; }
         if (props.IsMiddleButtonPressed) { drag = Drag.Pan; return; }
         if (!props.IsLeftButtonPressed) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) { drag = Drag.Orbit; return; }
+        if (e.ClickCount == 2 && doc.Sim == null) { DoubleClickAt(pt.Position); return; }
         PressLeft(pt.Position);
     }
 
+    bool rightPress;
+
     void BeginGesture(Point p)
     {
+        // A press ends what the keyboard was doing: an amount typed so far stays
+        if (entering) ConfirmTyped();
+        armed = false;
+        SetHover(new Selection(SelKind.None));
+        ShowTip(null);
         dragLast = dragStart = p;
         movedOnce = false;
+    }
+
+    /// <summary>Double click: the part under the mouse fills the view. On nothing: the whole car</summary>
+    public void DoubleClickAt(Point pos)
+    {
+        drag = Drag.None;
+        var s = HitGizmo(pos) >= 0 ? doc.Sel : PickPart(pos);
+        if (s.Kind == SelKind.None) { FrameCar(); return; }
+        doc.Select(s);
+        Picked?.Invoke();
+        FramePart(s);
+    }
+
+    /// <summary>Fill the view with one part. A point, like the centre of mass, is looked at from closer</summary>
+    public bool FramePart(Selection s)
+    {
+        if (doc.D is not { } d) return false;
+        Vector3 min = new(float.MaxValue), max = new(float.MinValue);
+        bool any = false;
+        foreach (var part in CarPose.Build(d, null))
+        {
+            if (SelOf(part) != s || doc.Model(part.Slot) is not { } m) continue;
+            for (int i = 0; i < 8; i++)
+            {
+                var p = Vector3.Transform(new Vector3((i & 1) == 0 ? m.Min.X : m.Max.X, (i & 2) == 0 ? m.Min.Y : m.Max.Y, (i & 4) == 0 ? m.Min.Z : m.Max.Z), part.World);
+                min = Vector3.Min(min, p); max = Vector3.Max(max, p);
+                any = true;
+            }
+        }
+        if (any)
+        {
+            Target = (min + max) / 2;
+            Distance = Math.Clamp((max - min).Length() * 1.9f, 25, 4000);
+        }
+        else if (doc.Anchor(s) is { } a)
+        {
+            Target = a;
+            Distance = Math.Clamp(Distance * 0.5f, 40, 4000);
+        }
+        else return false;
+        Redraw();
+        Status?.Invoke("Framed: " + s.Label + ". F frames the whole car");
+        return true;
     }
 
     /// <summary>Left button: a handle if there's one under it, else a click or a turn of the view</summary>
@@ -398,6 +454,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             doc.InGesture = true;
             dragIndex = g;
             turned = 0;
+            StartAmounts();
             if (doc.Tool == GizmoTool.Rotate)
             {
                 drag = Drag.Turn;
@@ -452,6 +509,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         var dy = (float)(p.Y - dragLast.Y);
         if (Math.Abs(p.X - dragStart.X) + Math.Abs(p.Y - dragStart.Y) > 3) movedOnce = true;
         dragLast = p;
+        if (entering) return; // a typed amount stands, whatever the mouse does
 
         switch (drag)
         {
@@ -482,6 +540,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                     if (amount != 0)
                     {
                         turned -= amount;
+                        turnTotal += amount;
                         doc.Rotate(doc.Sel, dragAxis, amount);
                     }
                     break;
@@ -490,13 +549,15 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                 {
                     float f = 1 + Vec2.Dot(new Vec2(dx, dy), dragAxisScreen) / dragPxPerUnit;
                     f = Math.Clamp(f, 0.5f, 2f);
-                    doc.Scale(doc.Sel, dragIndex switch
+                    var by = dragIndex switch
                     {
                         0 => new Vector3(f, 1, 1),
                         1 => new Vector3(1, f, 1),
                         2 => new Vector3(1, 1, f),
                         _ => new Vector3(f)
-                    });
+                    };
+                    scaleTotal *= by;
+                    doc.Scale(doc.Sel, by);
                     break;
                 }
             case Drag.Free:
@@ -507,6 +568,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                     break;
                 }
         }
+        if (Dragging) ShowTip(AmountText(), p);
         Redraw();
     }
 
@@ -519,6 +581,286 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         Cursor = handle || over.Kind != SelKind.None ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
         var text = handle ? "Drag to " + doc.Tool.ToString().ToLowerInvariant() + ": " + doc.Sel.Label : over.Kind != SelKind.None ? "Click to select: " + over.Label : "";
         if (text != lastHover) { lastHover = text; if (text != "") Status?.Invoke(text); }
+        if (entering || armed) return; // the label is busy with an amount
+        SetHover(handle ? new Selection(SelKind.None) : over);
+        ShowTip(handle ? doc.Tool + ": " + doc.Sel.Label : over.Kind != SelKind.None ? over.Label : null, p);
+    }
+
+    /// <summary>The part under the mouse: it's outlined, and named beside the mouse</summary>
+    public Selection Hovered { get; private set; }
+
+    void SetHover(Selection s)
+    {
+        if (s == Hovered) return;
+        Hovered = s;
+        Redraw();
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+        if (drag != Drag.None || entering || armed) return;
+        SetHover(new Selection(SelKind.None));
+        ShowTip(null);
+    }
+
+    // --------------------------- Amounts: shown during a drag, or typed ---------------------------
+
+    /// <summary>What the label beside the mouse says. Empty when it's not there</summary>
+    public string TipText { get; private set; } = "";
+    Point tipAt;
+
+    void ShowTip(string? text, Point? at = null)
+    {
+        if (at is { } p) tipAt = p;
+        TipText = text ?? "";
+        TipChanged?.Invoke(text, tipAt);
+    }
+
+    Vector3 moveTotal, scaleTotal = Vector3.One;
+    float turnTotal;
+    int gestureDepth;          // undo steps before the gesture: back to here takes it all back
+    bool entering, armed;      // typing an amount; W, E or R pressed and waiting for one
+    string typed = "";
+    int typedAxis;             // 0 1 2, or 3: all of them (scale)
+    Selection typedSel;
+    DateTime armedAt;
+    Avalonia.Threading.DispatcherTimer? armTimer;
+
+    /// <summary>Is an amount being typed?</summary>
+    public bool Entering => entering;
+
+    void StartAmounts()
+    {
+        moveTotal = Vector3.Zero;
+        scaleTotal = Vector3.One;
+        turnTotal = 0;
+        gestureDepth = doc.UndoDepth;
+    }
+
+    bool Dragging => drag is Drag.Axis or Drag.Free or Drag.Turn or Drag.Size;
+
+    static readonly System.Globalization.CultureInfo Plain = System.Globalization.CultureInfo.InvariantCulture;
+    static string AxisName(int i) => i switch { 0 => "X", 1 => "Y", 2 => "Z", _ => "" };
+    static string Signed(float v) => (v >= 0 ? "+" : "") + v.ToString("0.##", Plain);
+    static string Cm(float units) => (units * CarCalc.CmPerUnit).ToString("0.##", Plain) + " cm";
+
+    // How far the gesture has gone, in the game's units and in centimetres, degrees, or times the size
+    string AmountText()
+    {
+        string hint = entering ? "    Enter: apply, Esc: cancel" : "";
+        string shown = entering ? typed + "|" : "";
+        int axis = entering || armed ? typedAxis : drag == Drag.Free ? -1 : dragIndex;
+        var tool = Dragging ? drag switch { Drag.Turn => GizmoTool.Rotate, Drag.Size => GizmoTool.Scale, _ => GizmoTool.Move } : doc.Tool;
+        switch (tool)
+        {
+            case GizmoTool.Rotate:
+                return "Rotate " + AxisName(axis) + ": " + (entering ? shown : Signed(turnTotal * 180 / MathF.PI)) + "°" + hint;
+            case GizmoTool.Scale:
+                {
+                    float f = axis == 1 ? scaleTotal.Y : axis == 2 ? scaleTotal.Z : scaleTotal.X;
+                    return "Scale " + (axis is >= 0 and <= 2 ? AxisName(axis) : "all") + ": ×" + (entering ? shown : f.ToString("0.###", Plain)) + "  (" + (f * 100).ToString("0.#", Plain) + "%)" + hint;
+                }
+            default:
+                if (axis is >= 0 and <= 2)
+                {
+                    float v = axis == 0 ? moveTotal.X : axis == 1 ? moveTotal.Y : moveTotal.Z;
+                    return "Move " + AxisName(axis) + ": " + (entering ? shown : Signed(v)) + " units  (" + Cm(v) + ")" + hint;
+                }
+                return $"Move: X {Signed(moveTotal.X)}  Y {Signed(moveTotal.Y)}  Z {Signed(moveTotal.Z)} units  ({Cm(moveTotal.Length())})";
+        }
+    }
+
+    /// <summary>W, E or R was pressed: numbers typed next are an exact amount for what's selected</summary>
+    public void Arm()
+    {
+        if (doc.Sim != null || doc.Anchor(doc.Sel) == null || Dragging || entering) return;
+        if (doc.Tool != GizmoTool.Move && !doc.CanTransform(doc.Sel)) return;
+        armed = true;
+        armedAt = DateTime.UtcNow;
+        typedAxis = doc.Tool switch { GizmoTool.Move => 0, GizmoTool.Rotate => 1, _ => 3 };
+        typedSel = doc.Sel;
+        SetHover(new Selection(SelKind.None));
+        ShowArmed();
+        Status?.Invoke(doc.Tool + " " + doc.Sel.Label + ": type an amount, X Y Z for the axis, Enter to apply, Esc to cancel");
+        // Not for ever: a 1 pressed later is the 3D view again
+        armTimer ??= new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        armTimer.Tick -= ArmTick;
+        armTimer.Tick += ArmTick;
+        armTimer.Start();
+    }
+
+    const double ArmSeconds = 6;
+
+    void ArmTick(object? sender, EventArgs e)
+    {
+        if (armed && !entering && (DateTime.UtcNow - armedAt).TotalSeconds < ArmSeconds) return;
+        armTimer?.Stop();
+        if (armed && !entering) { armed = false; ShowTip(null); }
+    }
+
+    void ShowArmed()
+    {
+        var at = doc.Anchor(doc.Sel) is { } a && ScreenOf(a) is { } p ? p : new Point(Bounds.Width / 2, Bounds.Height / 2);
+        string what = doc.Tool switch
+        {
+            GizmoTool.Rotate => "Rotate " + AxisName(typedAxis) + ": type degrees",
+            GizmoTool.Scale => "Scale " + (typedAxis == 3 ? "all" : AxisName(typedAxis)) + ": type how many times the size",
+            _ => "Move " + AxisName(typedAxis) + ": type units"
+        };
+        ShowTip(what + "    X Y Z: axis", at);
+    }
+
+    static char KeyChar(Key k) => k switch
+    {
+        >= Key.D0 and <= Key.D9 => (char)('0' + (k - Key.D0)),
+        >= Key.NumPad0 and <= Key.NumPad9 => (char)('0' + (k - Key.NumPad0)),
+        Key.OemPeriod or Key.Decimal or Key.OemComma => '.',
+        Key.OemMinus or Key.Subtract => '-',
+        _ => ' '
+    };
+
+    /// <summary>A key for an exact amount: digits during a drag or after W, E or R, then Enter or Esc. True if it was one</summary>
+    public bool KeyTyped(Key k)
+    {
+        if (k is Key.LeftShift or Key.RightShift or Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt) return false;
+        if (armed && !entering && (DateTime.UtcNow - armedAt).TotalSeconds >= ArmSeconds) { armed = false; ShowTip(null); }
+        if (!Dragging && !armed && !entering) return false;
+        if (doc.Sim != null || doc.Anchor(doc.Sel) == null || ((entering || armed) && doc.Sel != typedSel))
+        {
+            // What it was about is gone
+            if (entering) doc.EndGesture();
+            entering = armed = false;
+            typed = "";
+            ShowTip(null);
+            return false;
+        }
+        char c = KeyChar(k);
+        if (c != ' ')
+        {
+            if (!entering && !BeginTyping()) return true;
+            if (c == '-') typed = typed.StartsWith('-') ? typed[1..] : "-" + typed;
+            else if (c != '.' || !typed.Contains('.')) typed += c;
+            ApplyTyped();
+            return true;
+        }
+        switch (k)
+        {
+            case Key.Back when entering:
+                if (typed.Length > 0) typed = typed[..^1];
+                ApplyTyped();
+                return true;
+            case Key.X or Key.Y or Key.Z when entering || armed:
+                typedAxis = k == Key.X ? 0 : k == Key.Y ? 1 : 2;
+                armedAt = DateTime.UtcNow;
+                if (entering) ApplyTyped(); else ShowArmed();
+                return true;
+            case Key.Enter when entering:
+                ConfirmTyped();
+                return true;
+            case Key.Escape:
+                CancelGesture();
+                return true;
+        }
+        if (entering) return true;  // nothing else gets through while an amount is being typed
+        if (armed) { armed = false; ShowTip(null); }
+        return false;
+    }
+
+    bool BeginTyping()
+    {
+        typedSel = doc.Sel;
+        if (Dragging)
+        {
+            typedAxis = drag == Drag.Free ? 0 : dragIndex;
+        }
+        else
+        {
+            if (doc.SharedFiles(doc.Sel).Count > 0)
+            {
+                armed = false;
+                ShowTip(null);
+                NeedsPermission?.Invoke(doc.Sel);
+                return false;
+            }
+            doc.EndGesture();
+            StartAmounts();
+            if (ScreenOf(doc.Anchor(doc.Sel)!.Value) is { } p) tipAt = p;
+        }
+        typed = "";
+        entering = true;
+        armed = false;
+        return true;
+    }
+
+    // The amount typed so far, as a number. Nothing typed yet: no change
+    float TypedValue(float none) =>
+        float.TryParse(typed, System.Globalization.NumberStyles.Float, Plain, out var v) && float.IsFinite(v) ? v : none;
+
+    // Each key starts again from how it was before the gesture, so what's typed is exactly what happens
+    void ApplyTyped()
+    {
+        doc.CancelTo(gestureDepth);
+        doc.InGesture = true;
+        var tool = Dragging ? drag switch { Drag.Turn => GizmoTool.Rotate, Drag.Size => GizmoTool.Scale, _ => GizmoTool.Move } : doc.Tool;
+        var axis = typedAxis is >= 0 and <= 2 ? GizmoAxes[typedAxis] : Vector3.UnitX;
+        moveTotal = Vector3.Zero; scaleTotal = Vector3.One; turnTotal = 0;
+        switch (tool)
+        {
+            case GizmoTool.Move:
+                {
+                    float v = TypedValue(0);
+                    moveTotal = axis * v;
+                    if (v != 0) doc.Move(doc.Sel, moveTotal);
+                    break;
+                }
+            case GizmoTool.Rotate:
+                {
+                    float deg = TypedValue(0);
+                    turnTotal = deg * MathF.PI / 180;
+                    if (deg != 0) doc.Rotate(doc.Sel, axis, turnTotal);
+                    break;
+                }
+            default:
+                {
+                    float f = TypedValue(1);
+                    if (f <= 0.001f) f = 1;
+                    scaleTotal = typedAxis == 3 ? new Vector3(f) : Vector3.One + axis * (f - 1);
+                    // A sphere has one size, its radius
+                    if (f != 1) doc.Scale(doc.Sel, doc.Sel.Kind == SelKind.HullSphere ? new Vector3(f, 1, 1) : scaleTotal);
+                    break;
+                }
+        }
+        ShowTip(AmountText());
+        Redraw();
+    }
+
+    void ConfirmTyped()
+    {
+        var said = AmountText();
+        int cut = said.IndexOf("    ", StringComparison.Ordinal);
+        doc.EndGesture();
+        entering = armed = false;
+        drag = Drag.None;
+        ShowTip(null);
+        Status?.Invoke(doc.Sel.Label + ": " + (cut > 0 ? said[..cut] : said).Replace("|", ""));
+        typed = "";
+        Redraw();
+    }
+
+    /// <summary>Esc: what the drag or the typing did so far is taken back</summary>
+    void CancelGesture()
+    {
+        if (Dragging || entering)
+        {
+            doc.CancelTo(gestureDepth);
+            Status?.Invoke("Cancelled: " + doc.Sel.Label + " is as it was");
+        }
+        entering = armed = false;
+        typed = "";
+        drag = Drag.None;
+        ShowTip(null);
+        Redraw();
     }
 
     float PixelsPerHandle()
@@ -546,6 +888,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             : accumulated;
         if (step == Vector3.Zero) return;
         accumulated -= step;
+        moveTotal += step;
         doc.Move(doc.Sel, step);
     }
 
@@ -562,9 +905,27 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             doc.Select(PickPart(p));
             Picked?.Invoke();
         }
-        if (drag is Drag.Axis or Drag.Free or Drag.Turn or Drag.Size) doc.EndGesture();
+        if (drag is Drag.Orbit && !movedOnce && !left && rightPress && doc.Sim == null) ContextAt(p);
+        rightPress = false;
+        if (Dragging)
+        {
+            if (entering) { dragLast = p; return; } // the mouse let go, the typing goes on until Enter or Esc
+            doc.EndGesture();
+            ShowTip(null);
+        }
         drag = Drag.None;
         Redraw();
+    }
+
+    /// <summary>Right click: the part under the mouse is selected and offers its menu</summary>
+    public void ContextAt(Point p)
+    {
+        var s = HitGizmo(p) >= 0 ? doc.Sel : PickPart(p);
+        if (s.Kind == SelKind.None) return;
+        doc.Select(s);
+        Picked?.Invoke();
+        ShowTip(null);
+        ContextAsked?.Invoke(s, p);
     }
 
     /// <summary>Where a point of the car is on the view, in control units</summary>
@@ -578,6 +939,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         Distance = Math.Clamp(Distance * (e.Delta.Y > 0 ? 0.9f : 1.11f), 8, 8000);
+        if (armed && !entering) { armed = false; ShowTip(null); }
         Redraw();
     }
 
@@ -598,6 +960,9 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
     }
 
     static uint Rgba(byte r, byte g, byte b, byte a = 255) => (uint)(r | g << 8 | b << 16 | a << 24);
+    static uint Rgb((byte R, byte G, byte B) c) => Rgba(c.R, c.G, c.B);
+    // A helper's colour, darker on a light floor
+    static uint Mark(byte r, byte g, byte b) => Rgb(Look.Mark(r, g, b));
     static void Line(List<LineVertex> l, Vector3 a, Vector3 b, uint c)
     {
         l.Add(new LineVertex { Pos = a, Color = c });
@@ -648,7 +1013,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                 _ => false
             };
             // the game reflects the environment on the body
-            f.Items.Add((m, part.World, part.Tex, part.Kind == PartKind.Body, sel, null));
+            f.Items.Add((m, part.World, part.Tex, part.Kind == PartKind.Body, sel, null, !clean && sim == null && !sel && Hovered.Kind != SelKind.None && SelOf(part) == Hovered));
         }
 
         f.EnvColor = new Vector3(d.EnvR, d.EnvG, d.EnvB) / 255f;
@@ -668,7 +1033,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         var groundCenter = sim != null ? new Vector3(sim.Pos.X, floor, sim.Pos.Z) : new Vector3(0, floor, 0);
         if (!clean && ShowGrid && fromAbove && doc.Race == null)
         {
-            uint gc = Rgba(70, 76, 88, 255), g2 = Rgba(52, 58, 68, 255);
+            uint gc = Rgb(Look.GridMajor), g2 = Rgb(Look.GridMinor);
             float cell = 50;
             int n = 14;
             var cx = MathF.Round(groundCenter.X / cell) * cell;
@@ -694,7 +1059,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
 
         if ((ShowHull || doc.Sel.IsHull) && doc.Hull is { } hull)
         {
-            uint hc = Rgba(90, 230, 150, 255), sc = Rgba(255, 200, 80, 255), selc = Rgba(255, 255, 255, 255);
+            uint hc = Mark(90, 230, 150), sc = Mark(255, 200, 80), selc = Rgb(Look.ViewLine);
             for (int k = 0; k < hull.Convex.Count; k++)
             {
                 var c = hull.Convex[k];
@@ -722,7 +1087,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
 
         if (ShowTravel)
         {
-            uint up = Rgba(120, 200, 255), dn = Rgba(255, 140, 120);
+            uint up = Mark(120, 200, 255), dn = Mark(255, 140, 120);
             for (int i = 0; i < 4; i++)
             {
                 var w = d.Wheels[i];
@@ -743,15 +1108,22 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             {
                 uint c = sel.Kind switch
                 {
-                    SelKind.CoM => Rgba(255, 220, 60),
-                    SelKind.Weapon1 or SelKind.Weapon2 => Rgba(255, 90, 90),
-                    SelKind.HoodCam or SelKind.RearCam => Rgba(120, 220, 255),
-                    SelKind.AerialBase or SelKind.AerialTip => Rgba(255, 150, 240),
-                    SelKind.HullPart => Rgba(90, 230, 150),
-                    SelKind.HullSphere => Rgba(255, 200, 80),
-                    _ => Rgba(180, 190, 205)
+                    SelKind.CoM => Mark(255, 220, 60),
+                    SelKind.Weapon1 or SelKind.Weapon2 => Mark(255, 90, 90),
+                    SelKind.HoodCam or SelKind.RearCam => Mark(120, 220, 255),
+                    SelKind.AerialBase or SelKind.AerialTip => Mark(255, 150, 240),
+                    SelKind.HullPart => Mark(90, 230, 150),
+                    SelKind.HullSphere => Mark(255, 200, 80),
+                    _ => Mark(180, 190, 205)
                 };
                 Cross(f.Overlay, p, s, c);
+                // The one under the mouse
+                if (sel == Hovered && sel != doc.Sel)
+                {
+                    var (hr, hu) = CameraAxes();
+                    var hl = Look.HoverLine;
+                    Ring(f.Overlay, p, hr, hu, s * 1.6f, Rgba((byte)(hl.X * 255), (byte)(hl.Y * 255), (byte)(hl.Z * 255)), 16);
+                }
             }
         }
 
@@ -759,7 +1131,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         if (doc.Anchor(doc.Sel) is { } a2)
         {
             float h = HandleLength;
-            uint[] cols = { Rgba(240, 80, 80), Rgba(90, 220, 90), Rgba(90, 150, 255) };
+            uint[] cols = Look.LightView ? new[] { Rgba(210, 40, 40), Rgba(20, 150, 40), Rgba(30, 90, 230) } : new[] { Rgba(240, 80, 80), Rgba(90, 220, 90), Rgba(90, 150, 255) };
             bool canTransform = doc.CanTransform(doc.Sel);
             for (int i = 0; i < 3; i++)
             {
@@ -792,12 +1164,12 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                 Line(f.Overlay, tip, tip - GizmoAxes[i] * h * 0.08f - v * h * 0.05f, cols[i]);
             }
             var (rr, uu) = CameraAxes();
-            Ring(f.Overlay, a2, rr, uu, h * 0.09f, Rgba(255, 255, 255), 16);
+            Ring(f.Overlay, a2, rr, uu, h * 0.09f, Rgb(Look.ViewLine), 16);
 
             // Where the same move lands on the other corners
             if (doc.Sel.HasFourCorners)
                 foreach (var other in Ghosts(doc.Sel.Index, a2))
-                    Ring(f.Overlay, other, rr, uu, h * 0.09f, Rgba(255, 210, 90), 16);
+                    Ring(f.Overlay, other, rr, uu, h * 0.09f, Mark(255, 210, 90), 16);
         }
         return f;
     }
@@ -855,7 +1227,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
     // Short lines where each vertex says it faces: reflections and the game's moving lights come from these
     void AddNormals(Frame f)
     {
-        uint col = Rgba(120, 255, 220);
+        uint col = Mark(120, 255, 220);
         float len = Distance * 0.03f;
         var done = new HashSet<Prm>();
         foreach (var it in f.Items)
@@ -958,7 +1330,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             string? tex = c.Folder.Equals(car.Folder, StringComparison.OrdinalIgnoreCase) ? f.CarTexture : car.Game.Find(c.Data.TPage);
             foreach (var part in CarPose.Build(c.Data, c.Dyn))
                 if (doc.RaceModel(c, part.Slot) is { } m)
-                    f.Items.Add((m, part.World, part.Tex, false, false, part.Tex == 1 ? null : tex));
+                    f.Items.Add((m, part.World, part.Tex, false, false, part.Tex == 1 ? null : tex, false));
         }
     }
 
@@ -1297,7 +1669,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         {
             g.Disable(EnableCap.CullFace);
             g.Uniform1(uMode, 5);
-            g.Uniform4(uTint, 0.30f, 0.33f, 0.38f, 1f);
+            g.Uniform4(uTint, f.FloorTint.X, f.FloorTint.Y, f.FloorTint.Z, 1f);
             Mat(uMvp, vp);
             Mat(uModel, Matrix4x4.Identity);
             float s = 6000;
@@ -1309,7 +1681,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
             g.Disable(EnableCap.CullFace);
             g.Uniform1(uMode, 5);
             if (doc.Race != null) g.Uniform4(uTint, 0.27f, 0.42f, 0.22f, 1f);
-            else g.Uniform4(uTint, 0.30f, 0.33f, 0.38f, 1f);
+            else g.Uniform4(uTint, f.FloorTint.X, f.FloorTint.Y, f.FloorTint.Z, 1f);
             Mat(uMvp, vp);
             Mat(uModel, Matrix4x4.Identity);
             if (doc.Sim.Ground == SimGround.Flat)
@@ -1413,10 +1785,11 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         g.UseProgram(lineProg);
         foreach (var it in f.Items)
         {
-            if (!f.Wire && !it.Selected) continue;
+            if (!f.Wire && !it.Selected && !it.Hover) continue;
             var mesh = Mesh(it.Mesh, f.ModelVersion);
             Mat(lMvp, it.World * vp);
-            if (it.Selected) g.Uniform4(lOverride, 0.35f, 0.7f, 1f, 0.55f);
+            if (it.Selected) g.Uniform4(lOverride, f.SelectLine.X, f.SelectLine.Y, f.SelectLine.Z, f.SelectLine.W);
+            else if (it.Hover) g.Uniform4(lOverride, f.HoverLine.X, f.HoverLine.Y, f.HoverLine.Z, f.HoverLine.W);
             else g.Uniform4(lOverride, 0f, 0f, 0f, 0f);
             g.BindVertexArray(mesh.LineVao);
             g.DrawArrays(PrimitiveType.Lines, 0, (uint)mesh.LineCount);
@@ -1464,28 +1837,28 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
     {
         var done = captureDone!;
         captureDone = null;
-        int size = captureSize;
+        int size = captureSize, high = captureHeight > 0 ? captureHeight : captureSize;
         var g = gl!;
         var fbo = g.GenFramebuffer();
         var col = g.GenRenderbuffer();
         var dep = g.GenRenderbuffer();
         g.BindRenderbuffer(RenderbufferTarget.Renderbuffer, col);
-        g.RenderbufferStorage(RenderbufferTarget.Renderbuffer, InternalFormat.Rgba8, (uint)size, (uint)size);
+        g.RenderbufferStorage(RenderbufferTarget.Renderbuffer, InternalFormat.Rgba8, (uint)size, (uint)high);
         g.BindRenderbuffer(RenderbufferTarget.Renderbuffer, dep);
-        g.RenderbufferStorage(RenderbufferTarget.Renderbuffer, InternalFormat.DepthComponent24, (uint)size, (uint)size);
+        g.RenderbufferStorage(RenderbufferTarget.Renderbuffer, InternalFormat.DepthComponent24, (uint)size, (uint)high);
         g.BindFramebuffer(FramebufferTarget.Framebuffer, fbo);
         g.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, col);
         g.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, RenderbufferTarget.Renderbuffer, dep);
         var cf = captureFrame ?? frame!;
         try
         {
-            Draw(cf, size, size, captureClean ? new Vector3(1, 1, 1) : cf.Background, !captureClean);
-            var px = new byte[size * size * 4];
-            fixed (byte* p = px) g.ReadPixels(0, 0, (uint)size, (uint)size, PixelFormat.Rgba, PixelType.UnsignedByte, p);
-            var bmp = new SKBitmap(size, size, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-            for (int y = 0; y < size; y++)
-                System.Runtime.InteropServices.Marshal.Copy(px, (size - 1 - y) * size * 4, bmp.GetPixels() + y * bmp.RowBytes, size * 4);
-            for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) { var c = bmp.GetPixel(x, y); bmp.SetPixel(x, y, c.WithAlpha(255)); }
+            Draw(cf, size, high, captureClean ? new Vector3(1, 1, 1) : cf.Background, !captureClean);
+            var px = new byte[size * high * 4];
+            fixed (byte* p = px) g.ReadPixels(0, 0, (uint)size, (uint)high, PixelFormat.Rgba, PixelType.UnsignedByte, p);
+            var bmp = new SKBitmap(size, high, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+            for (int y = 0; y < high; y++)
+                System.Runtime.InteropServices.Marshal.Copy(px, (high - 1 - y) * size * 4, bmp.GetPixels() + y * bmp.RowBytes, size * 4);
+            for (int y = 0; y < high; y++) for (int x = 0; x < size; x++) { var c = bmp.GetPixel(x, y); bmp.SetPixel(x, y, c.WithAlpha(255)); }
             done.SetResult(bmp);
         }
         catch (Exception ex) { done.SetException(ex); }
@@ -1498,8 +1871,9 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
     Frame? captureFrame;
 
     /// <summary>A picture of the view, from OpenGL. Clean: white background, no helpers, for the carbox</summary>
-    public Task<SKBitmap> Capture(int size, bool clean)
+    public Task<SKBitmap> Capture(int size, bool clean, int height = 0)
     {
+        captureHeight = height;
         var tcs = new TaskCompletionSource<SKBitmap>(TaskCreationOptions.RunContinuationsAsynchronously);
         captureFrame = Build(clean);
         captureSize = size;

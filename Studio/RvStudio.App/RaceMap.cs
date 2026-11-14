@@ -10,15 +10,16 @@ public sealed class RaceMap : Control
 {
     public Race? Race;
 
-    static readonly IBrush Back = new SolidColorBrush(Color.FromArgb(120, 15, 18, 24));
-    static readonly IBrush Me = new SolidColorBrush(Color.Parse("#FFD83D"));
-    static readonly IBrush Others = new SolidColorBrush(Color.Parse("#FF6B5B"));
-    static readonly Pen Road = new(new SolidColorBrush(Color.FromArgb(230, 225, 230, 240)), 2.5);
+    // The look's own brushes: they change colour in place when the theme does
+    static IBrush Back => Look.MapBack;
+    static IBrush Me => Look.MapMe;
+    static IBrush Others => Look.MapOther;
+    static readonly Pen Road = new(Look.MapRoad, 2.5);
 
     public override void Render(DrawingContext g)
     {
         if (Race is not { } race) return;
-        g.FillRectangle(Back, new Rect(Bounds.Size), 6);
+        g.DrawRectangle(Back, new Pen(Look.Line, 1), new Rect(Bounds.Size).Deflate(0.5), Look.BigRadius, Look.BigRadius);
         var pts = race.Track.Points;
         float minX = pts.Min(p => p.X), maxX = pts.Max(p => p.X), minZ = pts.Min(p => p.Z), maxZ = pts.Max(p => p.Z);
         double pad = 10, scale = Math.Min((Bounds.Width - 2 * pad) / Math.Max(maxX - minX, 1), (Bounds.Height - 2 * pad) / Math.Max(maxZ - minZ, 1));

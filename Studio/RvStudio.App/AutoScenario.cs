@@ -13,7 +13,7 @@ namespace RvStudio.App;
 /// RvCarStudio -rvpath COPY --auto SHOTS   Runs the real window on a copy of a Re-Volt folder, writes pictures
 /// from the 3D view and the window itself, never from the screen. Saving tests write into the copy.
 /// </summary>
-public static class AutoScenario
+public static partial class AutoScenario
 {
     public static bool Running;
     static int pass, fail;
@@ -946,6 +946,8 @@ public static class AutoScenario
 
             // The whole way, as Windows delivers it: messages to the window
             await RealMouse(w);
+            await InViewTest(w);
+            await LookTest(w);
 
             // The mouse on the 3D view: click selects, a handle moves, the other side mirrors
             d.MoveMode = MoveMode.Mirror;

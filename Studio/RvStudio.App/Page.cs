@@ -11,7 +11,7 @@ namespace RvStudio.App;
 /// <summary>A panel of rows connected to the car: labels, numbers, vectors, switches. Everything edits live with undo</summary>
 public sealed class Page : ScrollViewer
 {
-    readonly StackPanel stack = new() { Spacing = 5, Margin = new Thickness(10, 8, 14, 12) };
+    readonly StackPanel stack = new() { Spacing = 6, Margin = new Thickness(14, 8, 16, 14) };
     readonly List<Action> loaders = new();
     readonly Doc doc;
     bool loading;
@@ -36,15 +36,16 @@ public sealed class Page : ScrollViewer
         loading = false;
     }
 
-    public static readonly IBrush Faint = new SolidColorBrush(Color.Parse("#9AA3B2"));
-    public static readonly IBrush Accent = new SolidColorBrush(Color.Parse("#4C9AFF"));
+    // The look's own brushes: they change colour in place when the theme does
+    public static IBrush Faint => Look.Faint;
+    public static IBrush Accent => Look.Accent;
 
     public void Header(string text)
     {
-        stack.Children.Add(new TextBlock
-        {
-            Text = text, FontWeight = FontWeight.SemiBold, FontSize = 13, Foreground = Accent, Margin = new Thickness(0, 10, 0, 2)
-        });
+        // A line between sections, none above the first
+        if (stack.Children.Count > 0)
+            stack.Children.Add(new Border { Height = 1, Background = Look.Line, Margin = new Thickness(0, 10, 0, 0) });
+        stack.Children.Add(Look.Heading(text, new Thickness(0, 6, 0, 3)));
     }
 
     public void Hint(Func<string> text)
@@ -185,7 +186,7 @@ public sealed class Page : ScrollViewer
     public Button Button(string text, Action click, string? tip = null, bool primary = false)
     {
         var b = new Button { Content = text, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(8, 5) };
-        if (primary) b.Background = Accent;
+        if (primary) Look.Primary(b);
         if (tip != null) ToolTip.SetTip(b, tip);
         b.Click += (_, _) => click();
         stack.Children.Add(b);
@@ -265,7 +266,7 @@ public sealed class ColourButton : Button
 
     public Color Value { get; private set; }
     public event Action<Color>? Changed;
-    readonly Border swatch = new() { Height = 18, MinWidth = 60, CornerRadius = new CornerRadius(3), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1) };
+    readonly Border swatch = new() { Height = 18, MinWidth = 60, CornerRadius = new CornerRadius(4), BorderBrush = Look.Edge, BorderThickness = new Thickness(1) };
     readonly WrapPanel own = new();
     readonly Slider red = Part(), green = Part(), blue = Part();
     readonly TextBox hex = new() { FontSize = 12, Width = 90, MinHeight = 26, Height = 26, Padding = new Thickness(5, 2), Watermark = "#RRGGBB" };
@@ -310,7 +311,7 @@ public sealed class ColourButton : Button
         var b = new Button
         {
             Width = 24, Height = 22, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), Margin = new Thickness(0, 0, 4, 4), Focusable = false,
-            Background = new SolidColorBrush(c), BorderBrush = Brushes.Gray, BorderThickness = new Thickness(1)
+            Background = new SolidColorBrush(c), BorderBrush = Look.Edge, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1)
         };
         ToolTip.SetTip(b, $"#{c.R:X2}{c.G:X2}{c.B:X2}");
         b.Click += (_, _) => Pick(c);
@@ -348,7 +349,8 @@ public sealed class NumberBox : Grid
     readonly TextBox box = new()
     {
         MinHeight = 26, Height = 26, MinWidth = 0, Padding = new Thickness(5, 2, 1, 2), FontSize = 12,
-        VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(1, 1, 0, 1)
+        VerticalContentAlignment = VerticalAlignment.Center, BorderThickness = new Thickness(1, 1, 0, 1),
+        CornerRadius = new CornerRadius(Look.Radius, 0, 0, Look.Radius)
     };
     readonly double min, max;
     readonly bool whole;
@@ -399,7 +401,7 @@ public sealed class NumberBox : Grid
         var b = new RepeatButton
         {
             Content = new TextBlock { Text = text, FontSize = 7, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-            Padding = new Thickness(0), MinHeight = 0, MinWidth = 0, CornerRadius = new CornerRadius(0),
+            Padding = new Thickness(0), MinHeight = 0, MinWidth = 0, CornerRadius = row == 0 ? new CornerRadius(0, Look.Radius, 0, 0) : new CornerRadius(0, 0, Look.Radius, 0),
             HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center, Focusable = false
         };

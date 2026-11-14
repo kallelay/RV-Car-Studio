@@ -29,13 +29,18 @@ public sealed partial class MainWindow : Window
     readonly TextBlock carCount = new() { FontSize = 11, Foreground = Page.Faint, Margin = new Thickness(10, 0, 0, 6) };
     public readonly TextBlock StatusText = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0) };
     readonly TextBlock titleText = new() { FontSize = 15, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 16, 0) };
-    readonly TextBlock modifiedDot = new() { Foreground = Brushes.Orange, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+    readonly TextBlock modifiedDot = new() { Foreground = Look.Modified, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     readonly Button undoBtn = new(), redoBtn = new(), saveBtn = new();
     public readonly TabControl Tabs = new() { TabStripPlacement = Dock.Top };
     readonly Border selectedHost = new();
     readonly ItemsControl issues = new();
     readonly TextBlock issuesHead = new() { FontSize = 12, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
-    readonly TextBlock hud = new() { IsHitTestVisible = false, FontSize = 15, Foreground = Brushes.White, FontWeight = FontWeight.SemiBold, IsVisible = false, Margin = new Thickness(14), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+    readonly TextBlock hud = new() { FontSize = 15, Foreground = Look.Text, FontWeight = FontWeight.SemiBold };
+    readonly Border hudBox = new()
+    {
+        IsHitTestVisible = false, IsVisible = false, Background = Look.TipBack, BorderBrush = Look.Line, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Look.BigRadius),
+        Padding = new Thickness(12, 8), Margin = new Thickness(14), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top
+    };
     readonly TextBox rawText = new() { AcceptsReturn = true, FontFamily = new FontFamily("Consolas,Menlo,monospace"), FontSize = 12, TextWrapping = TextWrapping.NoWrap };
     readonly List<Page> pages = new();
     readonly List<CarEntry> allCars = new();
@@ -48,9 +53,10 @@ public sealed partial class MainWindow : Window
     DateTime simLast;
     bool loadingList;
 
-    static readonly IBrush PanelBrush = new SolidColorBrush(Color.Parse("#23262D"));
-    static readonly IBrush BarBrush = new SolidColorBrush(Color.Parse("#1B1E23"));
-    static readonly IBrush LineBrush = new SolidColorBrush(Color.Parse("#343842"));
+    // The look's own brushes: they change colour in place when the theme does
+    static IBrush PanelBrush => Look.Panel;
+    static IBrush BarBrush => Look.Bar;
+    static IBrush LineBrush => Look.Line;
 
     public MainWindow(string? rvPath)
     {
@@ -68,6 +74,9 @@ public sealed partial class MainWindow : Window
         Doc.SelectionChanged += OnSelectionChanged;
         Doc.CarOpened += OnCarOpened;
         View.Status += s => Say(s);
+        View.TipChanged += ShowViewTip;
+        View.ContextAsked += ShowPartMenu;
+        Look.Changed += OnThemeChanged;
         View.Picked += () => Tabs.SelectedIndex = 0;
         View.NeedsPermission += async s => await AskShared(s);
         Doc.StockTouched += () => stockBanner.IsVisible = true;
@@ -93,7 +102,7 @@ public sealed partial class MainWindow : Window
 
     Control BuildLayout()
     {
-        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,26") };
+        var root = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,*,28") };
 
         var menu = BuildMenu();
         root.Children.Add(menu);
@@ -112,7 +121,7 @@ public sealed partial class MainWindow : Window
         left.Children.Add(lockedPanel);
         main.Children.Add(left);
 
-        var split1 = new GridSplitter { Width = 3, Background = LineBrush, ResizeDirection = GridResizeDirection.Columns };
+        var split1 = new GridSplitter { Width = 4, ResizeDirection = GridResizeDirection.Columns };
         Grid.SetColumn(split1, 1);
         main.Children.Add(split1);
 
@@ -122,33 +131,35 @@ public sealed partial class MainWindow : Window
         main.Children.Add(mid);
         var overlay = new Grid();
         overlay.Children.Add(View);
-        overlay.Children.Add(hud);
+        hudBox.Child = hud;
+        overlay.Children.Add(hudBox);
+        overlay.Children.Add(viewTip);
         overlay.Children.Add(raceMap);
         overlay.Children.Add(stockBanner);
         mid.Children.Add(overlay);
-        var split2 = new GridSplitter { Height = 3, Background = LineBrush, ResizeDirection = GridResizeDirection.Rows };
+        var split2 = new GridSplitter { Height = 4, ResizeDirection = GridResizeDirection.Rows };
         Grid.SetRow(split2, 1);
         mid.Children.Add(split2);
 
         var issuesPanel = new DockPanel { Background = PanelBrush };
-        var ih = new Border { Padding = new Thickness(10, 5), Child = issuesHead };
+        var ih = new Border { Padding = new Thickness(12, 8, 12, 6), Child = issuesHead };
         DockPanel.SetDock(ih, Dock.Top);
         issuesPanel.Children.Add(ih);
-        issuesPanel.Children.Add(new ScrollViewer { Content = issues, Margin = new Thickness(10, 0, 4, 6) });
+        issuesPanel.Children.Add(new ScrollViewer { Content = issues, Margin = new Thickness(12, 0, 4, 8) });
         Grid.SetRow(issuesPanel, 2);
         mid.Children.Add(issuesPanel);
 
-        var split3 = new GridSplitter { Width = 3, Background = LineBrush, ResizeDirection = GridResizeDirection.Columns };
+        var split3 = new GridSplitter { Width = 4, ResizeDirection = GridResizeDirection.Columns };
         Grid.SetColumn(split3, 3);
         main.Children.Add(split3);
 
         // Right: everything about the car
         BuildTabs();
-        var right = new Border { Background = PanelBrush, Child = Tabs };
+        var right = new Border { Background = PanelBrush, Padding = new Thickness(0, 6, 0, 0), Child = Tabs };
         Grid.SetColumn(right, 4);
         main.Children.Add(right);
 
-        var status = new Border { Background = BarBrush, Child = StatusText };
+        var status = new Border { Background = BarBrush, BorderBrush = LineBrush, BorderThickness = new Thickness(0, 1, 0, 0), Child = StatusText };
         Grid.SetRow(status, 3);
         root.Children.Add(status);
         return root;
@@ -158,7 +169,7 @@ public sealed partial class MainWindow : Window
     {
         var left = new DockPanel { IsVisible = true };
         var head = new StackPanel();
-        head.Children.Add(new TextBlock { Text = "Pick a car", FontSize = 14, FontWeight = FontWeight.SemiBold, Margin = new Thickness(10, 10, 10, 0) });
+        head.Children.Add(new TextBlock { Text = "Pick a car", FontSize = 15, FontWeight = FontWeight.SemiBold, Margin = new Thickness(12, 12, 10, 0) });
         head.Children.Add(search);
         head.Children.Add(carCount);
         DockPanel.SetDock(head, Dock.Top);
@@ -186,7 +197,7 @@ public sealed partial class MainWindow : Window
         ToolTip.SetTip(change, "Ctrl+O");
         change.Click += (_, _) => ChangeCar();
         head.Children.Add(change);
-        head.Children.Add(new TextBlock { Text = "Parts", FontSize = 13, FontWeight = FontWeight.SemiBold, Foreground = Page.Accent, Margin = new Thickness(0, 10, 0, 0) });
+        head.Children.Add(Look.Heading("Parts", new Thickness(0, 12, 0, 2)));
         var hullEdit = new CheckBox { Content = "Show and edit the hull", FontSize = 12, MinHeight = 22 };
         hullEdit.IsCheckedChanged += (_, _) => { View.ShowHull = hullEdit.IsChecked == true; FillParts(); View.Redraw(); };
         head.Children.Add(hullEdit);
@@ -214,7 +225,7 @@ public sealed partial class MainWindow : Window
     readonly Border stockBanner = new()
     {
         IsVisible = false, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(10),
-        Background = new SolidColorBrush(Color.Parse("#3A3320")), BorderBrush = Brushes.Goldenrod, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(12, 7)
+        Background = Look.Banner, BorderBrush = Look.BannerLine, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(Look.BigRadius), Padding = new Thickness(14, 8)
     };
 
     public bool StockBannerShown => stockBanner.IsVisible;
@@ -224,7 +235,7 @@ public sealed partial class MainWindow : Window
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         row.Children.Add(new TextBlock { Text = "You're changing a stock car. Nothing is saved yet: make your own copy?", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
         ToolTip.SetTip(row, "If you keep editing, Save puts your changes in packs\\local on top of the game's files. RVGL shows them everywhere, and may mark the car as changed online.");
-        var copy = new Button { Content = "Make a copy", FontSize = 12, Padding = new Thickness(9, 3), Background = Page.Accent };
+        var copy = Look.Primary(new Button { Content = "Make a copy", FontSize = 12, Padding = new Thickness(9, 3) });
         copy.Click += async (_, _) => await CopyCar();
         var keep = new Button { Content = "Keep editing the original", FontSize = 12, Padding = new Thickness(9, 3) };
         keep.Click += (_, _) => stockBanner.IsVisible = false;
@@ -385,7 +396,7 @@ public sealed partial class MainWindow : Window
                 Grid.SetColumn(eye, 1);
                 row.Children.Add(eye);
             }
-            partsList.Items.Add(new ListBoxItem { Content = row, Tag = s, Padding = new Thickness(10, 1, 4, 1), MinHeight = 22 });
+            partsList.Items.Add(new ListBoxItem { Content = row, Tag = s, Padding = new Thickness(8, 2, 4, 2), MinHeight = 24 });
         }
         if (d.BodyModel >= 0) Add(new(SelKind.Body));
         for (int i = 0; i < 4; i++) if (d.Wheels[i].Present) Add(new(SelKind.Wheel, i));
@@ -468,13 +479,29 @@ public sealed partial class MainWindow : Window
         run.Items.Add(Item("Race here", () => StartRace(), "F7"));
         run.Items.Add(Item("Automatic runs and report", AutoRuns));
 
+        var view = new MenuItem { Header = "View", FontSize = 13 };
+        var themes = new MenuItem { Header = "Theme", FontSize = 13 };
+        foreach (var (kind, text) in new[] { (ThemeKind.Dark, "Dark: black"), (ThemeKind.Light, "Light: ghost white"), (ThemeKind.Classic, "Classic: as it was") })
+        {
+            var item = Item(text, () => SetTheme(kind));
+            item.ToggleType = MenuItemToggleType.Radio;
+            item.IsChecked = kind == Look.Kind;
+            item.Tag = kind;
+            themeItems.Add(item);
+            themes.Items.Add(item);
+        }
+        view.Items.Add(themes);
+        view.Items.Add(new Separator());
+        view.Items.Add(Item("Frame the car", View.FrameCar));
+        view.Items.Add(Item("Frame what's selected", () => View.FramePart(Doc.Sel)));
+
         var help = new MenuItem { Header = "Help", FontSize = 13 };
         help.Items.Add(Item("Guide and calculations", ShowGuide, "F1"));
-        help.Items.Add(Item("Mouse and keys", () => Say("Left drag: turn the view, click: select, arrows on the handle: move. Right drag: turn, middle drag: pan, wheel: zoom. Arrows + PgUp/PgDn: nudge. 1 2 3 4: views. F: frame the car.")));
+        help.Items.Add(Item("Mouse and keys", () => Say("Click: select, double click: frame it, right click: its menu. Drag a handle, or W E R then type an amount (X Y Z: axis, Enter, Esc). Right drag: turn, middle drag: pan, wheel: zoom. Arrows + PgUp/PgDn: nudge. 1 2 3 4: views. F: frame the car.")));
         help.Items.Add(Item("About", () => Say("RV Car Studio 3 by Kallel A.Y (theKDL). GPL v3. Re-Volt is a trademark of its owners.")));
 
-        var m = new Menu { Background = BarBrush, Height = 28 };
-        foreach (var x in new[] { file, edit, tools, run, help }) m.Items.Add(x);
+        var m = new Menu { Background = BarBrush, Height = 28, Padding = new Thickness(4, 0) };
+        foreach (var x in new[] { file, edit, view, tools, run, help }) m.Items.Add(x);
         return m;
     }
 
@@ -487,17 +514,28 @@ public sealed partial class MainWindow : Window
     Button BarButton(string text, string tip, Action click, Button? use = null)
     {
         var b = use ?? new Button();
-        b.Content = text; b.FontSize = 12; b.Padding = new Thickness(9, 4); b.Margin = new Thickness(2, 0);
+        b.Content = text; b.FontSize = 12; b.Padding = new Thickness(10, 5); b.Margin = new Thickness(2, 0); b.VerticalAlignment = VerticalAlignment.Center;
         ToolTip.SetTip(b, tip);
         b.Click += (_, _) => click();
         return b;
     }
 
-    static Border Sep() => new() { Width = 1, Background = LineBrush, Margin = new Thickness(7, 5) };
+    static Border Sep() => new() { Width = 1, Height = 18, Background = LineBrush, Margin = new Thickness(8, 0), VerticalAlignment = VerticalAlignment.Center };
+
+    // In a group: no box of its own
+    static Button Flat(Button b)
+    {
+        b.Classes.Add("flat");
+        b.Margin = new Thickness(0);
+        b.Padding = new Thickness(10, 3);
+        b.MinHeight = 24;
+        return b;
+    }
 
     Control BuildToolbar()
     {
-        var p = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 4) };
+        // Wraps onto a second line when the window is too narrow for it all
+        var p = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 4) };
         p.Children.Add(titleText);
         p.Children.Add(modifiedDot);
         p.Children.Add(Sep());
@@ -506,6 +544,7 @@ public sealed partial class MainWindow : Window
         p.Children.Add(BarButton("Redo", "Ctrl+Y", Doc.Redo, redoBtn));
         p.Children.Add(Sep());
 
+        var seg = new List<Control>();
         foreach (var (tool, text, tip) in new[]
         {
             (GizmoTool.Move, "Move", "Drag the arrows or the circle (W)"),
@@ -513,14 +552,16 @@ public sealed partial class MainWindow : Window
             (GizmoTool.Scale, "Scale", "Drag a box, or the circle for all axes: resizes the model and its radius or length (R)")
         })
         {
-            var t = new RadioButton { Content = text, GroupName = "tool", FontSize = 12, IsChecked = tool == Doc.Tool, Margin = new Thickness(0, 0, 4, 0), MinHeight = 24, Tag = tool };
+            var t = new RadioButton { Content = text, GroupName = "tool", IsChecked = tool == Doc.Tool, Tag = tool, Classes = { "seg" } };
             ToolTip.SetTip(t, tip);
             t.IsCheckedChanged += (_, _) => { if (t.IsChecked == true) { Doc.Tool = tool; View.Redraw(); } };
             toolButtons.Add(t);
-            p.Children.Add(t);
+            seg.Add(t);
         }
+        p.Children.Add(Look.Group(seg.ToArray()));
         p.Children.Add(Sep());
-        p.Children.Add(new TextBlock { Text = "Corners:", VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = Page.Faint, Margin = new Thickness(0, 0, 5, 0) });
+        p.Children.Add(new TextBlock { Text = "Corners", VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = Page.Faint, Margin = new Thickness(2, 0, 5, 0) });
+        seg.Clear();
         foreach (var (mode, text, tip) in new[]
         {
             (MoveMode.Single, "Single", "Only this wheel or part"),
@@ -529,23 +570,27 @@ public sealed partial class MainWindow : Window
             (MoveMode.All, "All four", "All four corners, mirrored both ways")
         })
         {
-            var r = new RadioButton { Content = text, GroupName = "move", FontSize = 12, IsChecked = mode == Doc.MoveMode, Margin = new Thickness(0, 0, 4, 0), MinHeight = 24 };
+            var r = new RadioButton { Content = text, GroupName = "move", IsChecked = mode == Doc.MoveMode, Tag = mode, Classes = { "seg" } };
+            moveButtons.Add(r);
             ToolTip.SetTip(r, tip);
             r.IsCheckedChanged += (_, _) => { if (r.IsChecked == true) { Doc.MoveMode = mode; View.Redraw(); } };
-            p.Children.Add(r);
+            seg.Add(r);
         }
-        var linked = new CheckBox { Content = "Suspension follows wheel", FontSize = 12, IsChecked = true, MinHeight = 24, Margin = new Thickness(4, 0) };
+        p.Children.Add(Look.Group(seg.ToArray()));
+        var linked = new CheckBox { Content = "Suspension follows wheel", FontSize = 12, IsChecked = true, MinHeight = 24, Margin = new Thickness(8, 0, 6, 0) };
         linked.IsCheckedChanged += (_, _) => Doc.MoveLinked = linked.IsChecked == true;
         p.Children.Add(linked);
 
-        var snap = new ComboBox { ItemsSource = new[] { "Snap off", "Snap 0.1", "Snap 0.5", "Snap 1", "Snap 5" }, SelectedIndex = 2, FontSize = 12, MinHeight = 24, VerticalAlignment = VerticalAlignment.Center };
+        var snap = new ComboBox { ItemsSource = new[] { "Snap off", "Snap 0.1", "Snap 0.5", "Snap 1", "Snap 5" }, SelectedIndex = 2, FontSize = 12, MinHeight = 28, Padding = new Thickness(10, 3, 0, 3), VerticalAlignment = VerticalAlignment.Center };
         snap.SelectionChanged += (_, _) => Doc.Snap = new[] { 0f, 0.1f, 0.5f, 1f, 5f }[Math.Max(snap.SelectedIndex, 0)];
         p.Children.Add(snap);
         p.Children.Add(Sep());
 
+        seg.Clear();
         foreach (var (v, text) in new[] { (ViewMode.Perspective, "3D"), (ViewMode.Top, "Top"), (ViewMode.Front, "Front"), (ViewMode.Side, "Side") })
-            p.Children.Add(BarButton(text, "View (" + ((int)v + 1) + ")", () => View.SetView(v)));
-        p.Children.Add(BarButton("Frame", "Frame the car (F)", View.FrameCar));
+            seg.Add(Flat(BarButton(text, "View (" + ((int)v + 1) + ")", () => View.SetView(v))));
+        seg.Add(Flat(BarButton("Frame", "Frame the car (F)", View.FrameCar)));
+        p.Children.Add(Look.Group(seg.ToArray()));
 
         var viewMenu = new MenuFlyout();
         void Toggle(string name, bool start, Action<bool> set)
@@ -564,8 +609,9 @@ public sealed partial class MainWindow : Window
         Toggle("Markers", true, v => View.ShowMarkers = v);
         Toggle("Grid", true, v => View.ShowGrid = v);
         Toggle("Soft light", false, v => View.Lit = v);
-        var showBtn = new Button { Content = "Show ▾", FontSize = 12, Padding = new Thickness(9, 4), Margin = new Thickness(2, 0), Flyout = viewMenu };
+        var showBtn = new Button { Content = "Show ▾", FontSize = 12, Padding = new Thickness(10, 5), Margin = new Thickness(2, 0), Flyout = viewMenu };
         p.Children.Add(showBtn);
+        seg.Clear();
         foreach (var (m, n, tip) in new[]
         {
             (ShadeMode.Textured, "Texture", "As in the game"),
@@ -573,18 +619,24 @@ public sealed partial class MainWindow : Window
             (ShadeMode.Clay, "Clay", "Only the shape")
         })
         {
-            var r = new RadioButton { Content = n, GroupName = "shade", FontSize = 12, IsChecked = m == View.Shade, Margin = new Thickness(4, 0, 0, 0), MinHeight = 24, Tag = m };
+            var r = new RadioButton { Content = n, GroupName = "shade", IsChecked = m == View.Shade, Tag = m, Classes = { "seg" } };
             ToolTip.SetTip(r, tip);
             r.IsCheckedChanged += (_, _) => { if (r.IsChecked == true) { View.Shade = m; View.Redraw(); } };
             shadeButtons.Add(r);
-            p.Children.Add(r);
+            seg.Add(r);
         }
+        p.Children.Add(Look.Group(seg.ToArray()));
         p.Children.Add(Sep());
 
         var runBtn = BarButton("▶  Test run", "Run the car in RVGL (F5)", () => TestRunGame(false));
-        runBtn.Background = Page.Accent;
+        Look.Primary(runBtn);
         p.Children.Add(runBtn);
         p.Children.Add(BarButton("Drive here", "Drive with the arrow keys: the original game's physics on a plain floor (F6)", () => StartDrive(SimGround.Flat)));
+        p.Children.Add(Sep());
+        p.Children.Add(BarButton(ThemeButtonText, "The look: dark, light or classic. Also in View, Theme", NextTheme, themeBtn));
+        // Room between the lines when it wraps
+        foreach (var c in p.Children)
+            if (c.Margin.Top < 3) c.Margin = new Thickness(c.Margin.Left, 3, c.Margin.Right, 3);
 
         return new Border { Background = PanelBrush, BorderBrush = LineBrush, BorderThickness = new Thickness(0, 0, 0, 1), Child = p };
     }
@@ -654,18 +706,20 @@ public sealed partial class MainWindow : Window
     {
         var game = Doc.Game;
         if (game == null) return;
+        var back = Look.ThumbBack;
         var png = await Task.Run(() =>
         {
             try
             {
-                using var b = Thumbnail.OfCar(new Car(game, folder), 96);
+                using var b = Thumbnail.OfCar(new Car(game, folder), 96, back);
                 return Thumbnail.Png(b);
             }
             catch (Exception) { return null; }
         });
         if (png == null) return;
         var bmp = new Avalonia.Media.Imaging.Bitmap(new MemoryStream(png));
-        thumbs[folder] = bmp;
+        // The look may have changed meanwhile: then this one is of the old colour
+        if (back == Look.ThumbBack) thumbs[folder] = bmp;
         image.Source = bmp;
     }
 
@@ -785,10 +839,10 @@ public sealed partial class MainWindow : Window
         if (Doc.Car == null) return;
         var r = CarChecker.Check(Doc.Car);
         issuesHead.Text = $"Car check: {r.Score}/100    {r.Errors.Count} errors, {r.Warnings.Count} warnings";
-        issuesHead.Foreground = r.Errors.Count > 0 ? Brushes.OrangeRed : r.Warnings.Count > 0 ? Brushes.Gold : Brushes.LightGreen;
+        issuesHead.Foreground = r.Errors.Count > 0 ? Look.Bad : r.Warnings.Count > 0 ? Look.Warn : Look.Good;
         var rows = new List<Control>();
-        foreach (var e in r.Errors) rows.Add(new TextBlock { Text = "✖  " + e, Foreground = Brushes.OrangeRed, FontSize = 12, TextWrapping = TextWrapping.Wrap });
-        foreach (var e in r.Warnings) rows.Add(new TextBlock { Text = "▲  " + e, Foreground = Brushes.Gold, FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        foreach (var e in r.Errors) rows.Add(new TextBlock { Text = "✖  " + e, Foreground = Look.Bad, FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        foreach (var e in r.Warnings) rows.Add(new TextBlock { Text = "▲  " + e, Foreground = Look.Warn, FontSize = 12, TextWrapping = TextWrapping.Wrap });
         foreach (var e in r.Infos) rows.Add(new TextBlock { Text = "·   " + e, Foreground = Page.Faint, FontSize = 12, TextWrapping = TextWrapping.Wrap });
         issues.ItemsSource = rows;
     }
@@ -809,6 +863,8 @@ public sealed partial class MainWindow : Window
         if (e.Key == Key.F6) { if (Doc.Sim != null) StopDrive(); else StartDrive(SimGround.Flat); e.Handled = true; return; }
         if (e.Key == Key.F7) { if (Doc.Sim != null) StopDrive(); else StartRace(ctrl); e.Handled = true; return; }
         if (e.Key == Key.F1) { ShowGuide(); e.Handled = true; return; }
+        // An exact amount typed during a drag, or after W, E or R
+        if (!ctrl && Doc.Sim == null && View.KeyTyped(e.Key)) { e.Handled = true; return; }
         if (Doc.Sim != null)
         {
             if (e.Key == Key.Escape) StopDrive();
@@ -834,9 +890,9 @@ public sealed partial class MainWindow : Window
             case Key.D3: View.SetView(ViewMode.Front); break;
             case Key.D4: View.SetView(ViewMode.Side); break;
             case Key.F: View.FrameCar(); break;
-            case Key.W: SetTool(GizmoTool.Move); break;
-            case Key.E: SetTool(GizmoTool.Rotate); break;
-            case Key.R: SetTool(GizmoTool.Scale); break;
+            case Key.W: SetTool(GizmoTool.Move); View.Arm(); break;
+            case Key.E: SetTool(GizmoTool.Rotate); View.Arm(); break;
+            case Key.R: SetTool(GizmoTool.Scale); View.Arm(); break;
             case Key.Left: View.Nudge(-1, 0, 0, amount); break;
             case Key.Right: View.Nudge(1, 0, 0, amount); break;
             case Key.Up: View.Nudge(0, 0, 1, amount); break;
@@ -860,7 +916,7 @@ public sealed partial class MainWindow : Window
     {
         if (Doc.Car == null) return;
         Doc.StartSim(ground);
-        hud.IsVisible = true;
+        hudBox.IsVisible = true;
         driveCamYaw = float.NaN;
         simLast = DateTime.UtcNow;
         simTimer.Start();
@@ -880,7 +936,7 @@ public sealed partial class MainWindow : Window
         Doc.StartRace(RaceTrackIndex, materials ? RaceGround.Materials : (RaceGround)RaceGroundIndex, RaceOpponents, RaceLapsHere, RaceSkill, RaceSameCar, RaceAiDrives);
         raceMap.Race = Doc.Race;
         raceMap.IsVisible = true;
-        hud.IsVisible = true;
+        hudBox.IsVisible = true;
         driveCamYaw = float.NaN;
         simLast = DateTime.UtcNow;
         simTimer.Start();
@@ -917,7 +973,7 @@ public sealed partial class MainWindow : Window
         Doc.StopSim();
         raceMap.Race = null;
         raceMap.IsVisible = false;
-        hud.IsVisible = false;
+        hudBox.IsVisible = false;
         View.SetView(ViewMode.Perspective);
         View.FrameCar();
         Say("Back to editing");
