@@ -798,7 +798,7 @@ public static partial class AutoScenario
         Check(d.Race!.Cars.Where(c => !c.IsPlayer).Select(c => c.Folder).Distinct().Count() == 3, "stock cars: " + string.Join(", ", d.Race.Cars.Select(c => c.Folder)));
         await Wait(300);
         await GlShot(w, "race_grid", 900);
-        await Wait(3200);
+        await Wait(5200); // the game's countdown is 5 s
         Check(d.Race.Started, "the countdown ends");
         float raceFrom = d.Race.Time;
         var raceClock = System.Diagnostics.Stopwatch.StartNew();
@@ -818,13 +818,13 @@ public static partial class AutoScenario
         w.RaceOpponents = 1;
         w.StartRace();
         Check(d.Race!.Track.Ground == RaceGround.Ramp, "Ramp in the list");
-        await Wait(4400);
+        await Wait(6400);
         await GlShot(w, "race_ramp", 700);
         w.StopDrive();
         w.RaceGroundIndex = 1;
         w.StartRace();
         Check(d.Race!.Track.Ground == RaceGround.Bumpy, "Bumpy in the list");
-        await Wait(4400);
+        await Wait(6400);
         await GlShot(w, "race_bumpy", 700);
         w.StopDrive();
         w.RaceGroundIndex = 0;
