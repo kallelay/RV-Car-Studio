@@ -93,6 +93,7 @@ public sealed partial class MainWindow : Window
         AddHandler(KeyDownEvent, OnKey, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, (_, e) => keys.Remove(e.Key), RoutingStrategies.Tunnel);
         Closing += OnClosing;
+        HookInstallDrop();
 
         var startPath = rvPath ?? Settings.RvPath;
         if (GameFolder.IsGameFolder(startPath)) OpenGame(startPath!);
@@ -441,6 +442,8 @@ public sealed partial class MainWindow : Window
         file.Items.Add(Item("Change car...", ChangeCar, "Ctrl+O"));
         file.Items.Add(Item("Open Re-Volt folder...", async () => await AskGameFolder()));
         file.Items.Add(Item("New car...", async () => await NewCar()));
+        file.Items.Add(Item("Install a car from a zip or folder...", async () => await InstallAsked()));
+        file.Items.Add(Item("Undo the last install", async () => await UndoInstall()));
         file.Items.Add(new Separator());
         file.Items.Add(Item("Save", async () => await SaveAsked(), "Ctrl+S"));
         file.Items.Add(Item("Make a copy of this car...", async () => await CopyCar()));

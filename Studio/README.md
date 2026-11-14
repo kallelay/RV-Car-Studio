@@ -63,6 +63,15 @@ RVGL stacks folders: the root, then the packs in `packs\default.txt`, later ones
 `packs\game_files`, so a file in `cars\<stock car>` is ignored by the game. The Studio reads files the way RVGL does and
 never writes into a read-only pack: a stock car's saved changes go to `packs\local`, on top. File has the way back.
 
+## Installing a downloaded car
+
+File, *Install a car from a zip or folder*, or drop the zip or folder on the window. It first shows what's inside: each car,
+the folder it gets, and what's wrong (paths naming another folder, missing files, files that aren't part of a car, a folder
+name that's taken). Cars go into the root's `cars` folder. Nothing that exists is replaced: when the name is taken, by a
+stock car too, the car gets another folder and only the paths in its parameters.txt change. Entries that would land outside
+the game folder are left out. *Undo the last install* deletes exactly the files that install made; files you changed since
+are kept unless you say otherwise. The notes for that are in `.rvcarstudio\installs` in the game folder.
+
 ## Starting a car
 
 **New car** asks what you're making. *Repaint*: new colours on a car that exists, opens on the Paint tab. *Remodel*: start
