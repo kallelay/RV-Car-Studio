@@ -9,19 +9,25 @@ public static class Thumbnail
     public sealed record Part(Prm Model, Matrix4x4 World, SKBitmap? Texture);
 
     /// <summary>Black is see-through in textures without an alpha channel, also in a thumbnail</summary>
-    public static SKBitmap? KeyedTexture(string? path)
+    public static SKBitmap? KeyedTexture(string? path, int most = 512)
     {
         using var src = Images.Load(path);
         if (src == null) return null;
-        var o = new SKBitmap(src.Width, src.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
         bool key = src.AlphaType == SKAlphaType.Opaque;
-        for (int y = 0; y < src.Height; y++)
-            for (int x = 0; x < src.Width; x++)
+        // No bigger than a small picture can show: a 2048 texture has 64 times the pixels of a 256 one
+        int w = Math.Min(src.Width, most), h = Math.Min(src.Height, most);
+        var from = src.Pixels;
+        var to = new SKColor[w * h];
+        for (int y = 0; y < h; y++)
+        {
+            int row = (int)((y + 0.5) * src.Height / h) * src.Width;
+            for (int x = 0; x < w; x++)
             {
-                var c = src.GetPixel(x, y);
-                o.SetPixel(x, y, key && c.Red == 0 && c.Green == 0 && c.Blue == 0 ? SKColors.Transparent : c);
+                var c = from[row + (int)((x + 0.5) * src.Width / w)];
+                to[y * w + x] = key && ((uint)c & 0xFFFFFF) == 0 ? SKColors.Transparent : c;
             }
-        return o;
+        }
+        return new SKBitmap(w, h, SKColorType.Bgra8888, SKAlphaType.Premul) { Pixels = to };
     }
 
     public static SKBitmap Render(IReadOnlyList<Part> parts, int size, SKColor? background = null, float yaw = 0.75f, float pitch = 0.4f)

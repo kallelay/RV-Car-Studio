@@ -643,10 +643,11 @@ public sealed partial class MainWindow
         swatches.Children.Clear();
         PaintOnly.Clear();
         if (paintSrc == null) return;
-        var own = CarTools.MainColours(paintSrc).Take(10).Select(c => Avalonia.Media.Color.FromRgb(c.Sample.Red, c.Sample.Green, c.Sample.Blue)).ToList();
+        var colours = CarTools.MainColours(paintSrc).Take(10).ToList();
+        var own = colours.Select(c => Avalonia.Media.Color.FromRgb(c.Sample.Red, c.Sample.Green, c.Sample.Blue)).ToList();
         PaintFrom.SetOwn(own);
         if (own.Count > 0) PaintFrom.SetValue(own[0]);
-        foreach (var (bucket, _, sample) in CarTools.MainColours(paintSrc).Take(10))
+        foreach (var (bucket, _, sample) in colours)
         {
             var t = new Avalonia.Controls.Primitives.ToggleButton
             {

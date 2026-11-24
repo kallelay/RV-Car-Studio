@@ -2,9 +2,14 @@ RV Car Studio 3 is a new car editor for Re-Volt / RVGL, written again from the s
 
 ## Download
 
-- **Windows (64-bit): `RvCarStudio-3.0.1-win-x64.zip`**. Unzip it anywhere and run `RvCarStudio.exe`. Nothing to install.
-- **Linux (64-bit): `RvCarStudio-3.0.1-linux-x64.tar.gz`**. `tar -xzf` it and run `./RvCarStudio`. Tested on Ubuntu 24.04.
-- `RvCarStudio-3.0.1-source.zip`: the source they were built from. `SHA256SUMS.txt`: checksums.
+- **Windows (64-bit): `RvCarStudio-3.0.2-win-x64.zip`**. Unzip it anywhere and run `RvCarStudio.exe`. Nothing to install.
+- **Linux (64-bit): `RvCarStudio-3.0.2-linux-x64.tar.gz`**. `tar -xzf` it and run `./RvCarStudio`. Tested on Ubuntu 24.04.
+- `RvCarStudio-3.0.2-source.zip`: the source they were built from. `SHA256SUMS.txt`: checksums.
+
+## New in 3.0.2
+
+- A game with many cars: the first car opens at once. Before, the window could stand still for minutes while the pictures of the whole list were made. Now only the rows you see get theirs, as you scroll.
+- Big textures: a car with a 2048 texture opens faster.
 
 ## New in 3.0.1
 

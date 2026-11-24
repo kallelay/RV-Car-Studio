@@ -89,6 +89,33 @@ public static partial class AutoScenario
     }
 
     /// <summary>RvCarStudio -rvpath FOLDER --look SHOTS   Only the looks: pictures of every page in each, and the checks on them. Writes nothing into the folder</summary>
+    /// <summary>
+    /// A car opens at once also when the shared threads have a long line of work: 433 pictures of the list once kept the
+    /// window waiting for minutes
+    /// </summary>
+    static async Task BusyTest(MainWindow w)
+    {
+        Check(w.ThumbsAsked > 0 && w.ThumbsAsked < w.CarsListed, $"pictures for the rows in view only: {w.ThumbsAsked} of {w.CarsListed} cars");
+        bool over = false;
+        for (int i = 0; i < Environment.ProcessorCount * 400; i++) _ = Task.Run(() => { if (!over) Thread.Sleep(50); });
+        int drawn = w.View.FramesDrawn;
+        var t = System.Diagnostics.Stopwatch.StartNew();
+        w.PickCar("rc");
+        while (w.View.FramesDrawn == drawn && t.Elapsed.TotalSeconds < 20) await Task.Delay(5);
+        Check(t.Elapsed.TotalSeconds < 3, $"a car opens with busy threads: {t.ElapsedMilliseconds} ms");
+        over = true;
+        w.ChangeCar();
+        await Wait(400);
+        int asked = w.ThumbsAsked;
+        w.ScrollCars(w.CarsListed - 1);
+        for (int i = 0; i < 60 && (w.ThumbsDone < w.ThumbsAsked || w.ThumbsAsked == asked); i++) await Task.Delay(50);
+        await Wait(200);
+        Check(w.ThumbsAsked > asked && w.RowPicture(w.CarsListed - 1), "scrolled down, the last cars get their pictures");
+        w.ScrollCars(0);
+        await Wait(200);
+        Check(w.RowPicture(0), "the first cars keep theirs");
+    }
+
     public static async Task RunLook(MainWindow w, string shotDir)
     {
         Running = true;
@@ -98,6 +125,7 @@ public static partial class AutoScenario
         try
         {
             await Wait(1500);
+            await BusyTest(w);
             await LookTest(w);
         }
         catch (Exception ex) { Check(false, ex.ToString()); }

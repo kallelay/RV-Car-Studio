@@ -15,6 +15,13 @@ public static class Images
         catch { return null; }
     }
 
+    /// <summary>The size of a picture, without reading its pixels. 0 x 0: it can't be read</summary>
+    public static (int Width, int Height) Size(string path)
+    {
+        try { var i = SKBitmap.DecodeBounds(File.ReadAllBytes(path)); return (i.Width, i.Height); }
+        catch { return (0, 0); }
+    }
+
     /// <summary>32 bit BMP keeps see-through parts, for RVGL</summary>
     public static void SaveBmp32(SKBitmap b, string path)
     {
@@ -115,8 +122,9 @@ public static class CarChecker
         if (texPath == null) r.Errors.Add("Texture not found: " + d.TPage);
         else
         {
-            using var b = Images.Load(texPath);
-            if (b == null) r.Errors.Add("Texture can't be read: " + d.TPage);
+            // Its size is enough: no need to read all the pixels
+            var b = Images.Size(texPath);
+            if (b.Width <= 0 || b.Height <= 0) r.Errors.Add("Texture can't be read: " + d.TPage);
             else
             {
                 r.Infos.Add($"Texture {b.Width} x {b.Height}");
@@ -723,10 +731,12 @@ public static class CarTools
     {
         var counts = new int[ColourBuckets];
         var r = new long[ColourBuckets]; var g = new long[ColourBuckets]; var b = new long[ColourBuckets];
-        for (int y = 0; y < src.Height; y += 2)
-            for (int x = 0; x < src.Width; x += 2)
+        var px = src.Pixels;
+        int step = Math.Max(2, Math.Max(src.Width, src.Height) / 512);
+        for (int y = 0; y < src.Height; y += step)
+            for (int x = 0; x < src.Width; x += step)
             {
-                var c = src.GetPixel(x, y);
+                var c = px[y * src.Width + x];
                 c.ToHsv(out var h, out var s, out var v);
                 if (s < GreySaturation || v < 12) continue;
                 int i = ColourBucket(h);

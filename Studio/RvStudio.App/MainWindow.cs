@@ -839,6 +839,8 @@ public sealed partial class MainWindow : Window
     public void OpenGame(string path)
     {
         Doc.Game = new GameFolder(path);
+        thumbs.Clear();
+        thumbsComing.Clear();
         LoadCarList();
         BuildGameDependent();
         SetLocked(false);
@@ -874,7 +876,8 @@ public sealed partial class MainWindow : Window
             text.Children.Add(new TextBlock { Text = c.Folder + (c.Stock ? "  ·  stock" : ""), FontSize = 10.5, Foreground = Page.Faint, TextTrimming = TextTrimming.CharacterEllipsis });
             Grid.SetColumn(text, 1);
             row.Children.Add(text);
-            if (image.Source == null) _ = LoadThumb(c.Folder, image);
+            // Its picture is made when the row first comes into view, not for the whole list
+            if (image.Source == null) image.AttachedToVisualTree += (_, _) => { if (image.Source == null) _ = LoadThumb(c.Folder, image); };
             carList.Items.Add(new ListBoxItem { Content = row, Padding = new Thickness(6, 3), Tag = c.Folder });
         }
         carCount.Text = show.Count == allCars.Count ? allCars.Count + " cars" : show.Count + " of " + allCars.Count + " cars";
@@ -885,24 +888,33 @@ public sealed partial class MainWindow : Window
 
     readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap> thumbs = new(StringComparer.OrdinalIgnoreCase);
 
+    readonly Dictionary<string, Task<byte[]?>> thumbsComing = new(StringComparer.OrdinalIgnoreCase);
+    public int ThumbsAsked, ThumbsDone;
+    public int CarsListed => carList.ItemCount;
+    public void ScrollCars(int to) => carList.ScrollIntoView(to);
+    public bool RowPicture(int i) => ((carList.Items[i] as ListBoxItem)?.Content as Grid)?.Children[0] is Image { Source: not null };
+
     async Task LoadThumb(string folder, Image image)
     {
         var game = Doc.Game;
         if (game == null) return;
         var back = Look.ThumbBack;
-        var png = await Task.Run(() =>
+        var key = folder + back;
+        if (!thumbsComing.TryGetValue(key, out var coming))
         {
-            try
+            ThumbsAsked++;
+            thumbsComing[key] = coming = PictureQueue.Make(() =>
             {
                 using var b = Thumbnail.OfCar(new Car(game, folder), 96, back);
                 return Thumbnail.Png(b);
-            }
-            catch (Exception) { return null; }
-        });
-        if (png == null) return;
-        var bmp = new Avalonia.Media.Imaging.Bitmap(new MemoryStream(png));
+            }, true);
+        }
+        var png = await coming;
+        if (thumbsComing.Remove(key)) ThumbsDone++;
+        if (png == null || Doc.Game != game) return;
         // The look may have changed meanwhile: then this one is of the old colour
-        if (back == Look.ThumbBack) thumbs[folder] = bmp;
+        if (back != Look.ThumbBack) return;
+        if (!thumbs.TryGetValue(folder, out var bmp)) thumbs[folder] = bmp = new Avalonia.Media.Imaging.Bitmap(new MemoryStream(png));
         image.Source = bmp;
     }
 

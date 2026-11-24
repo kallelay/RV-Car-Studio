@@ -119,22 +119,22 @@ public sealed class ModelPicker : Window
     async Task LoadThumb(int run, string rel, Image image, TextBlock info)
     {
         var back = Look.ThumbBack;
-        var made = await Task.Run(() =>
+        var made = await PictureQueue.Make(() =>
         {
             try
             {
                 var file = game.Find(rel);
-                if (file == null || run != fillRun) return ((byte[]?)null, 0);
+                if (file == null || run != fillRun) return Tuple.Create((byte[]?)null, 0);
                 var m = Prm.Load(file);
                 var dir = rel[..rel.LastIndexOf('\\')];
                 var tex = game.Find(dir + "\\car.bmp") ?? (dir.EndsWith("misc", StringComparison.OrdinalIgnoreCase) ? game.Find("gfx\\fxpage1.bmp") : null);
                 using var b = Thumbnail.OfModel(m, tex, 112, back);
-                return (Thumbnail.Png(b), m.Faces.Length);
+                return Tuple.Create((byte[]?)Thumbnail.Png(b), m.Faces.Length);
             }
-            catch (Exception) { return ((byte[]?)null, 0); }
-        });
+            catch (Exception) { return Tuple.Create((byte[]?)null, 0); }
+        }, false);
         if (run != fillRun) return;
-        if (made.Item1 == null) { info.Text += "  (can't be read)"; return; }
+        if (made?.Item1 == null) { info.Text += "  (can't be read)"; return; }
         image.Source = new Bitmap(new MemoryStream(made.Item1));
         info.Text += "  " + made.Item2 + " polys";
     }

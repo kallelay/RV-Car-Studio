@@ -45,7 +45,7 @@ public sealed class StudioApp : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d)
         {
             string? path = null;
-            string? auto = null, look = null, release = null, releaseShots = null, tours = null, docs = null, load = null;
+            string? auto = null, look = null, release = null, releaseShots = null, tours = null, docs = null, speed = null, load = null;
             bool config = false;
             var a = Program.Args;
             for (int i = 0; i < a.Length; i++)
@@ -59,9 +59,10 @@ public sealed class StudioApp : Application
                 else if (a[i] == "--look" && i + 1 < a.Length) look = a[++i];
                 else if (a[i] == "--release" && i + 2 < a.Length) { release = a[++i]; releaseShots = a[++i]; }
                 else if (a[i] == "--docs" && i + 2 < a.Length) { docs = a[++i]; releaseShots = a[++i]; }
+                else if (a[i] == "--speed" && i + 1 < a.Length) { speed = a[++i]; AutoScenario.SpeedCars = a[(i + 1)..]; break; }
                 else if (a[i] == "--tours" && i + 2 < a.Length) { tours = a[++i]; releaseShots = a[++i]; }
             }
-            AutoScenario.Running = auto != null || look != null || release != null || tours != null || docs != null;
+            AutoScenario.Running = auto != null || look != null || release != null || tours != null || docs != null || speed != null;
             // A test run starts as it always looked, whatever you chose
             Look.Apply(AutoScenario.Running ? ThemeKind.Classic : Settings.Theme);
             var w = new MainWindow(config ? "" : path);
@@ -72,6 +73,7 @@ public sealed class StudioApp : Application
             if (look != null) w.Opened += async (_, _) => await AutoScenario.RunLook(w, look);
             if (release != null) w.Opened += async (_, _) => await AutoScenario.RunRelease(w, release, releaseShots!);
             if (docs != null) w.Opened += async (_, _) => await AutoScenario.RunDocs(w, docs, releaseShots!);
+            if (speed != null) w.Opened += async (_, _) => await AutoScenario.RunSpeed(w, speed);
             if (tours != null) w.Opened += async (_, _) => await AutoScenario.RunTours(w, tours, releaseShots!);
         }
         base.OnFrameworkInitializationCompleted();

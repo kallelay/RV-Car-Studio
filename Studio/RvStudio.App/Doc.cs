@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
 using RvStudio.Core;
 using SkiaSharp;
 
@@ -1074,17 +1075,15 @@ public sealed partial class Doc
         w = b.Width; h = b.Height;
         bool key = b.AlphaType == SKAlphaType.Opaque || b.ColorType == SKColorType.Rgb888x || b.ColorType == SKColorType.Rgb565;
         var o = new byte[w * h * 4];
-        var px = b.Pixels;
-        Parallel.For(0, h, y =>
+        // On this thread alone: the window's own thread comes here, and Parallel.For would make it wait for the shared
+        // threads, behind whatever they're busy with
+        var to = MemoryMarshal.Cast<byte, uint>(o.AsSpan());
+        var px = MemoryMarshal.Cast<SKColor, uint>(b.Pixels.AsSpan()); // ARGB
+        for (int i = 0; i < to.Length; i++)
         {
-            int n = y * b.Width * 4;
-            for (int i = y * b.Width, end = i + b.Width; i < end; i++)
-            {
-                var c = px[i];
-                o[n++] = c.Red; o[n++] = c.Green; o[n++] = c.Blue;
-                o[n++] = key && c.Red == 0 && c.Green == 0 && c.Blue == 0 ? (byte)0 : c.Alpha;
-            }
-        });
+            uint c = px[i];
+            to[i] = key && (c & 0xFFFFFF) == 0 ? 0 : (c & 0xFF00FF00) | (c >> 16 & 255) | (c & 255) << 16;
+        }
         return o;
     }
 }

@@ -1921,6 +1921,8 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         g.BindVertexArray(0);
     }
 
+    public int FramesDrawn;
+
     protected override unsafe void OnOpenGlRender(GlInterface gi, int fb)
     {
         if (gl == null) return;
@@ -1942,6 +1944,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() => Status?.Invoke("3D error: " + ex.Message));
         }
+        FramesDrawn++;
         if (doc.Sim != null) RequestNextFrameRendering();
     }
 
