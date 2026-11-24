@@ -128,17 +128,48 @@ public static class Look
 
     static FluentTheme? fluent;
 
-    // Fluent's lists, sliders, check boxes and popups take their colours from its palette when it's made,
-    // so each look has a Fluent theme of its own, put in the place of the last one
-    static FluentTheme Fluent(ThemeKind kind, Palette l)
+    // One Fluent theme for the whole run. Putting a new one in its place gave every scroller a new template, and a
+    // popup that was closed then (the Run menu, a drop-down's list) crashed when it opened next ("already has a
+    // visual parent"). But its brushes take their colours from its palette only once, when first asked for: so each
+    // look's colours are read from a Fluent theme made for it (never shown), into brushes of the app's own, which
+    // come before the theme's and change in place.
+    static readonly Dictionary<object, SolidColorBrush> fluentBrushes = new();
+    static List<object>? fluentKeys;
+
+    static void FluentColours(Application app, ThemeKind kind, Palette l)
     {
-        var f = new FluentTheme();
-        f.Palettes[kind == ThemeKind.Light ? ThemeVariant.Light : ThemeVariant.Dark] = new ColorPaletteResources
+        var variant = kind == ThemeKind.Light ? ThemeVariant.Light : ThemeVariant.Dark;
+        var made = new FluentTheme();
+        made.Palettes[variant] = new ColorPaletteResources
         {
             Accent = Color.Parse(kind == ThemeKind.Light ? "#E8590C" : l.Accent), RegionColor = Color.Parse(l.Panel),
             AltHigh = Color.Parse(l.Field), ChromeMediumLow = Color.Parse(l.Card), ChromeMedium = Color.Parse(l.Card)
         };
-        return f;
+        if (fluentKeys == null)
+        {
+            var keys = new HashSet<object>();
+            void Keys(IResourceProvider p)
+            {
+                if (p is not ResourceDictionary d) return;
+                foreach (var k in d.Keys) keys.Add(k);
+                foreach (var v in d.ThemeDictionaries.Values) Keys(v);
+                foreach (var m in d.MergedDictionaries) Keys(m);
+            }
+            Keys(made.Resources);
+            // The keys the app points at its own brushes stay as they are
+            fluentKeys = keys.Where(k => k is string && !app.Resources.ContainsKey(k)).ToList();
+        }
+        foreach (var k in fluentKeys)
+        {
+            if (!made.TryGetResource(k, variant, out var v) || v is not ISolidColorBrush b) continue;
+            // No colour at all: one that follows the accent by itself (below), which a theme that isn't shown can't look up
+            if (b.Color == default) continue;
+            if (!fluentBrushes.TryGetValue(k, out var own)) app.Resources[k] = fluentBrushes[k] = own = new SolidColorBrush();
+            own.Color = b.Color;
+            own.Opacity = b.Opacity;
+        }
+        foreach (var k in new[] { "", "Dark1", "Dark2", "Dark3", "Light1", "Light2", "Light3" })
+            if (made.TryGetResource("SystemAccentColor" + k, variant, out var a) && a is Color ac) app.Resources["SystemAccentColor" + k] = ac;
     }
 
     public static void Apply(ThemeKind kind)
@@ -150,11 +181,8 @@ public static class Look
         if (Application.Current is { } app)
         {
             app.RequestedThemeVariant = kind == ThemeKind.Light ? ThemeVariant.Light : ThemeVariant.Dark;
-            var made = Fluent(kind, l);
-            int at = fluent == null ? -1 : app.Styles.IndexOf(fluent);
-            if (at >= 0) app.Styles[at] = made;
-            else app.Styles.Insert(0, made);
-            fluent = made;
+            if (fluent == null) app.Styles.Insert(0, fluent = new FluentTheme());
+            FluentColours(app, kind, l);
         }
         Changed?.Invoke();
     }
@@ -202,16 +230,22 @@ public static class Look
 
     // A plain rounded box around the content: for tabs and for choices in a group, in place of Fluent's underline and circle
     static IControlTemplate Pill<T>(AvaloniaProperty content) where T : TemplatedControl =>
-        new FuncControlTemplate<T>((c, _) => new Border
+        new FuncControlTemplate<T>((c, _) =>
         {
-            [!Border.BackgroundProperty] = c[!TemplatedControl.BackgroundProperty],
-            [!Border.CornerRadiusProperty] = c[!TemplatedControl.CornerRadiusProperty],
-            [!Decorator.PaddingProperty] = c[!TemplatedControl.PaddingProperty],
-            Child = new ContentPresenter
+            var cp = new ContentPresenter
             {
                 Name = "PART_ContentPresenter", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                 [!ContentPresenter.ContentProperty] = c[!content]
-            }
+            };
+            // A tab's header template too (its symbol before its name)
+            if (content == HeaderedContentControl.HeaderProperty) cp[!ContentPresenter.ContentTemplateProperty] = c[!HeaderedContentControl.HeaderTemplateProperty];
+            return new Border
+            {
+                [!Border.BackgroundProperty] = c[!TemplatedControl.BackgroundProperty],
+                [!Border.CornerRadiusProperty] = c[!TemplatedControl.CornerRadiusProperty],
+                [!Decorator.PaddingProperty] = c[!TemplatedControl.PaddingProperty],
+                Child = cp
+            };
         });
 
     /// <summary>The app's own styles, on top of Fluent's. Made once: they hold the shared brushes, so they follow the look</summary>

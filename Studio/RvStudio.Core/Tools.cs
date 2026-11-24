@@ -128,6 +128,20 @@ public static class CarChecker
         var coll = c.Game.Find(d.Coll);
         if (coll == null) r.Errors.Add("Collision hull not found: " + d.Coll);
         else if (new FileInfo(coll).Length == 0) r.Errors.Add("Collision hull is empty: " + d.Coll);
+        else
+        {
+            // Ground clearance: the stock cars keep the hull 7 to 16 units above the bottom of the wheels
+            Hull? h = null;
+            try { h = Hull.Load(coll); } catch { }
+            var ws = d.Wheels.Where(x => x.Present && x.Radius > 0).ToArray();
+            if (h != null && ws.Length > 0 && h.Convex.Any(x => x.Points.Length > 0))
+            {
+                float bottom = ws.Average(x => x.Offset1.Y + x.Offset2.Y + (float)x.Radius);
+                float low = h.Convex.Where(x => x.Points.Length > 0).Max(x => x.Points.Max(p => p.Y));
+                if (bottom - low < 6.5f)
+                    r.Warnings.Add($"Low hull: only {bottom - low:0.0} above the ground (stock cars 7 to 16), it will catch on kerbs. Make the hull again");
+            }
+        }
         if (None(d.TCarBox)) r.Infos.Add("No carbox");
         else if (c.Game.Find(d.TCarBox) == null) r.Warnings.Add("Carbox not found: " + d.TCarBox);
         if (!None(d.TShadow) && c.Game.Find(d.TShadow) == null) r.Warnings.Add("Shadow texture not found: " + d.TShadow);
@@ -188,7 +202,7 @@ public static class CarChecker
 
         if (!GameFolder.IsStock(c.Folder) &&
             !c.Game.CarFiles(c.Folder).Values.Any(f => Path.GetFileName(f).Contains("read", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(f).Contains("me", StringComparison.OrdinalIgnoreCase)))
-            r.Warnings.Add("No readme (try the readme tool)");
+            r.Warnings.Add("No readme (Package tab > Readme..., or Pack as zip writes one)");
         return r;
     }
 }
@@ -393,70 +407,123 @@ public static class CarTools
         return r.ToArray();
     }
 
-    /// <summary>A simple hull from the body: its outer points as one convex part, spheres inside it</summary>
-    public static Hull? MakeHull(Prm body, Vector3 offset)
+    /// <summary>
+    /// The lowest a hull may reach (game Y points down): this far above the bottom of the wheels. The stock cars' spheres
+    /// keep 5 to 20 units there, about a wheel's radius in the middle. A hull down at the floor pan catches on every kerb and stops the car dead. Null without wheels.
+    /// </summary>
+    public static float? HullFloor(CarData d)
+    {
+        var w = d.Wheels.Where(x => x.Present && x.Radius > 0).ToArray();
+        if (w.Length == 0) return null;
+        float r = (float)w.Average(x => x.Radius);
+        float bottom = w.Average(x => x.Offset1.Y + x.Offset2.Y + (float)x.Radius);
+        return bottom - Math.Clamp(0.9f * r, 8f, 20f);
+    }
+
+    /// <summary>A hull from the body: its outer points as a convex part (two when the body needs them), and spheres that
+    /// together have the body's outline (HullMaker).
+    /// floorY (from HullFloor) keeps the hull's underside clear of the road; it never takes more than the lower 45% off</summary>
+    public static Hull? MakeHull(Prm body, Vector3 offset, float? floorY = null, HullMaker.Detail detail = HullMaker.Detail.Normal)
     {
         if (body.Verts.Length < 4) return null;
+        var hull = new Hull();
+        hull.Convex.AddRange(HullMaker.Parts(body, offset, floorY, DopDirs));
+        if (hull.Convex.Count == 0) return null;
+        if (HullMaker.Spheres(body, offset, floorY, detail) is { } s) hull.Spheres.AddRange(s.Spheres);
+        return hull;
+    }
+
+    /// <summary>
+    /// A convex hull part through these points: the corners (a point inside is left out), the faces and the edges
+    /// between them, always a closed solid. Null if the points don't make one.
+    /// </summary>
+    public static ConvexHull? ConvexFrom(IReadOnlyList<Vector3> points)
+    {
+        const double eps = 0.02;
         var pts = new List<Vector3>();
-        foreach (var dir in DopDirs)
+        foreach (var p in points) if (!pts.Any(q => (q - p).LengthSquared() < 0.0025f)) pts.Add(p);
+        if (pts.Count < 4) return null;
+        (double X, double Y, double Z) D(int k) => (pts[k].X, pts[k].Y, pts[k].Z);
+
+        // Four points to start from, as far apart as can be
+        int a0 = 0, b0 = 0;
+        for (int i = 0; i < pts.Count; i++) for (int k = i + 1; k < pts.Count; k++) if ((pts[i] - pts[k]).LengthSquared() > (pts[a0] - pts[b0]).LengthSquared()) { a0 = i; b0 = k; }
+        float Area(int k) => Vector3.Cross(pts[b0] - pts[a0], pts[k] - pts[a0]).Length();
+        int c0 = Enumerable.Range(0, pts.Count).MaxBy(Area);
+        if (Area(c0) < 0.5f) return null;
+        var n0 = Vector3.Normalize(Vector3.Cross(pts[b0] - pts[a0], pts[c0] - pts[a0]));
+        int d0 = Enumerable.Range(0, pts.Count).MaxBy(k => Math.Abs(Vector3.Dot(n0, pts[k] - pts[a0])));
+        if (Math.Abs(Vector3.Dot(n0, pts[d0] - pts[a0])) < 0.1f) return null;
+
+        // Triangles, their outside to the left of their corners' order
+        var tris = new List<(int A, int B, int C, double Nx, double Ny, double Nz, double W)>();
+        (int, int, int, double, double, double, double)? Tri(int a, int b, int c)
         {
-            var best = body.Verts.MaxBy(v => Vector3.Dot(v.Pos, dir)).Pos + offset;
-            if (!pts.Any(p => (p - best).LengthSquared() < 4f)) pts.Add(best);
+            var (p, q, r) = (D(a), D(b), D(c));
+            double ux = q.X - p.X, uy = q.Y - p.Y, uz = q.Z - p.Z, vx = r.X - p.X, vy = r.Y - p.Y, vz = r.Z - p.Z;
+            double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, l = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            if (l < 1e-4) return null;
+            nx /= l; ny /= l; nz /= l;
+            return (a, b, c, nx, ny, nz, -(nx * p.X + ny * p.Y + nz * p.Z));
+        }
+        double Side((int A, int B, int C, double Nx, double Ny, double Nz, double W) f, int k) { var p = D(k); return f.Nx * p.X + f.Ny * p.Y + f.Nz * p.Z + f.W; }
+        foreach (var (a, b, c, other) in new[] { (a0, b0, c0, d0), (a0, b0, d0, c0), (a0, c0, d0, b0), (b0, c0, d0, a0) })
+        {
+            if (Tri(a, b, c) is not { } f) return null;
+            if (Side(f, other) > 0) f = Tri(a, c, b)!.Value;
+            tris.Add(f);
+        }
+        // One point after the other: the faces that see it go, the edge of the hole is joined to it
+        foreach (var k in Enumerable.Range(0, pts.Count).Where(k => k != a0 && k != b0 && k != c0 && k != d0))
+        {
+            var see = tris.Where(f => Side(f, k) > eps).ToList();
+            if (see.Count == 0) continue;
+            var edges0 = new HashSet<(int, int)>();
+            foreach (var f in see) { edges0.Add((f.A, f.B)); edges0.Add((f.B, f.C)); edges0.Add((f.C, f.A)); }
+            var rim = edges0.Where(e => !edges0.Contains((e.Item2, e.Item1))).ToList();
+            var made = rim.Select(e => Tri(e.Item1, e.Item2, k)).ToList();
+            // On the line of an edge, or a hole with two rims (a point almost on a face): as good as inside
+            if (made.Any(m => m == null) || rim.Select(e => e.Item1).Distinct().Count() != rim.Count || see.Count == tris.Count) continue;
+            var keep = tris.Where(f => Side(f, k) <= eps).ToList();
+            keep.AddRange(made.Select(m => m!.Value));
+            tris = keep;
         }
 
-        // Planes through 3 points with all others behind them
-        var planes = new List<(Vector3 N, float D)>();
-        for (int a = 0; a < pts.Count; a++)
-            for (int b = a + 1; b < pts.Count; b++)
-                for (int c = b + 1; c < pts.Count; c++)
-                {
-                    var n = Vector3.Cross(pts[b] - pts[a], pts[c] - pts[a]);
-                    if (n.LengthSquared() < 1e-3f) continue;
-                    n = Vector3.Normalize(n);
-                    var d = -Vector3.Dot(n, pts[a]);
-                    bool pos = false, neg = false;
-                    foreach (var p in pts)
-                    {
-                        var s = Vector3.Dot(n, p) + d;
-                        if (s > 0.05f) pos = true;
-                        if (s < -0.05f) neg = true;
-                    }
-                    if (pos && neg) continue;
-                    if (pos) { n = -n; d = -d; }
-                    if (!planes.Any(q => Vector3.Dot(q.N, n) > 0.999f && Math.Abs(q.D - d) < 0.1f)) planes.Add((n, d));
-                }
-        if (planes.Count < 4) return null;
-
-        // Points on a plane, then edges: pairs of points shared by 2 planes
-        var used = new List<Vector3>();
-        var edges = new List<(short, short)>();
-        bool On(Vector3 p, (Vector3 N, float D) q) => Math.Abs(Vector3.Dot(q.N, p) + q.D) < 0.1f;
-        foreach (var p in pts) if (planes.Count(q => On(p, q)) >= 3) used.Add(p);
-        for (short a = 0; a < used.Count; a++)
-            for (short b = (short)(a + 1); b < used.Count; b++)
-                if (planes.Count(q => On(used[a], q) && On(used[b], q)) >= 2) edges.Add((a, b));
-
-        var min = new Vector3(float.MaxValue); var max = new Vector3(float.MinValue);
-        foreach (var p in used) { min = Vector3.Min(min, p); max = Vector3.Max(max, p); }
-        var center = (min + max) / 2;
-
-        var hull = new Hull();
-        hull.Convex.Add(new ConvexHull
+        // Triangles that make one flat face are one face, where what's left is still a closed solid
+        ConvexHull Build(double flat)
         {
-            Points = used.ToArray(), Edges = edges.ToArray(), Faces = planes.ToArray(),
-            Offset = center, Min = min - center, Max = max - center
-        });
-
-        // Spheres: a grid inside, each touching the nearest plane
-        float Depth(Vector3 p) => planes.Min(q => -(Vector3.Dot(q.N, p) + q.D));
-        for (int iz = 0; iz < 5; iz++)
-            for (int ix = -1; ix <= 1; ix += 2)
+            var group = Enumerable.Range(0, tris.Count).ToArray();
+            int Find(int x) { while (group[x] != x) x = group[x] = group[group[x]]; return x; }
+            var at = new Dictionary<(int, int), int>();
+            for (int i = 0; i < tris.Count; i++) { at[(tris[i].A, tris[i].B)] = i; at[(tris[i].B, tris[i].C)] = i; at[(tris[i].C, tris[i].A)] = i; }
+            if (flat > 0)
+                foreach (var (e, i) in at)
+                {
+                    if (!at.TryGetValue((e.Item2, e.Item1), out var k) || Find(i) == Find(k)) continue;
+                    var corners = Enumerable.Range(0, tris.Count).Where(x => Find(x) == Find(i) || Find(x) == Find(k)).SelectMany(x => new[] { tris[x].A, tris[x].B, tris[x].C }).Distinct().ToList();
+                    var both = Enumerable.Range(0, tris.Count).Where(x => Find(x) == Find(i) || Find(x) == Find(k)).ToList();
+                    // Each face's plane holds all the corners of both
+                    if (both.All(x => corners.All(v => Math.Abs(Side(tris[x], v)) < flat))) group[Find(i)] = Find(k);
+                }
+            var used = new List<int>();
+            int Corner(int v) { int x = used.IndexOf(v); if (x < 0) { used.Add(v); x = used.Count - 1; } return x; }
+            var edges = new List<(short, short)>();
+            foreach (var (e, i) in at)
+                if (e.Item1 < e.Item2 && at.TryGetValue((e.Item2, e.Item1), out var k) && Find(i) != Find(k)) edges.Add(((short)Corner(e.Item1), (short)Corner(e.Item2)));
+            var faces = Enumerable.Range(0, tris.Count).GroupBy(Find).Select(g =>
             {
-                var p = new Vector3(center.X + ix * (max.X - min.X) * 0.25f, center.Y, min.Z + (max.Z - min.Z) * (0.12f + 0.19f * iz));
-                var r = Depth(p);
-                if (r > 1) hull.Spheres.Add((p, r));
-            }
-        return hull;
+                // The largest triangle's plane, moved out so that no corner is in front of it
+                var f = tris[g.MaxBy(x => Vector3.Cross(pts[tris[x].B] - pts[tris[x].A], pts[tris[x].C] - pts[tris[x].A]).Length())];
+                var normal = new Vector3((float)f.Nx, (float)f.Ny, (float)f.Nz);
+                return (normal, -used.Select(v => pts[v]).Max(q => Vector3.Dot(normal, q)));
+            }).ToArray();
+            var min = new Vector3(float.MaxValue); var max = new Vector3(float.MinValue);
+            foreach (var v in used) { min = Vector3.Min(min, pts[v]); max = Vector3.Max(max, pts[v]); }
+            var center = (min + max) / 2;
+            return new ConvexHull { Points = used.Select(v => pts[v]).ToArray(), Edges = edges.ToArray(), Faces = faces, Offset = center, Min = min - center, Max = max - center };
+        }
+        var h = Build(0.08);
+        return h.Points.Length - h.Edges.Length + h.Faces.Length == 2 ? h : Build(0);
     }
 
     // ---------------------------- Readme ----------------------------
@@ -581,7 +648,15 @@ public static class CarTools
         p.From?.ToHsv(out fromHue, out fromSat, out fromVal);
         p.To?.ToHsv(out toHue, out toSat, out toVal);
         bool plainTone = p.Contrast == 1 && p.Warmth == 0;
-        Parallel.For(0, inPx.Length, i =>
+        // A line at a time: a task for each pixel costs more than the pixel
+        Parallel.For(0, src.Height, line =>
+        {
+        for (int i = line * src.Width, end = i + src.Width; i < end; i++) One(i);
+        });
+        o.Pixels = outPx;
+        return o;
+
+        void One(int i)
         {
             var c = inPx[i];
             if (c.Red == 0 && c.Green == 0 && c.Blue == 0) { outPx[i] = c; return; }
@@ -629,9 +704,7 @@ public static class CarTools
                 if (result.Red == 0 && result.Green == 0 && result.Blue == 0) result = new SKColor(1, 1, 1, c.Alpha);
             }
             outPx[i] = result;
-        });
-        o.Pixels = outPx;
-        return o;
+        }
     }
 
     // 0 for the same colour, 1 for black against white
@@ -675,9 +748,12 @@ public static class CarTools
     public static void SetupOriginal(Car c, string bodyFile, string? wheelFile, string? textureFile)
     {
         var d = c.Data;
-        var body = Prm.Load(bodyFile);
+        var body = LoadModelFile(bodyFile);
         if (!body.IsValid() || body.Faces.Length == 0) throw new InvalidDataException("That body model is damaged");
         string Rel(string name) => "cars\\" + c.Folder + "\\" + name;
+        // The base car's own files that this car may stop using: removed at the end if nothing points at them
+        var before = d.Models.Concat(new[] { d.TPage, d.Coll }).Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+        if (!string.IsNullOrWhiteSpace(d.TPage)) before.Add(Path.ChangeExtension(d.TPage, ".bmq"));
 
         body.Save(Path.Combine(c.Dir, "body.prm"));
         int bodySlot = d.BodyModel >= 0 ? d.BodyModel : 0;
@@ -698,7 +774,7 @@ public static class CarTools
             var names = new[] { "wheelfl.prm", "wheelfr.prm", "wheelbl.prm", "wheelbr.prm" };
             for (int i = 0; i < 4; i++)
             {
-                var w = Prm.Load(wheelFile);
+                var w = LoadModelFile(wheelFile);
                 if (i % 2 == 1) w.MirrorX();
                 w.Save(Path.Combine(c.Dir, names[i]));
                 int slot = i + 1 == bodySlot ? 5 + i : i + 1;
@@ -709,7 +785,7 @@ public static class CarTools
         }
         if (textureFile != null)
         {
-            File.Copy(textureFile, Path.Combine(c.Dir, "car.bmp"), true);
+            CopyTexture(textureFile, Path.Combine(c.Dir, "car.bmp"));
             d.TPage = Rel("car.bmp");
         }
 
@@ -726,7 +802,7 @@ public static class CarTools
             var dir = d.Aerial.Direction.LengthSquared() < 1e-6f ? -Vector3.UnitY : d.Aerial.Direction;
             d.Aerial.Direction = dir;
             d.Aerial.Offset = new Vector3(b.Max.X * 0.7f, b.Min.Y * 0.6f, b.Min.Z * 0.75f);
-            if (MakeHull(b, Vector3.Zero) is { } h)
+            if (MakeHull(b, Vector3.Zero, HullFloor(d)) is { } h)
             {
                 h.Save(Path.Combine(c.Dir, "hull.hul"));
                 d.Coll = Rel("hull.hul");
@@ -736,6 +812,47 @@ public static class CarTools
         d.HasShadowIndex = false;
         FitShadowTable(c);
         d.TCarBox = "";
+
+        var now = new HashSet<string>(d.Models.Concat(new[] { d.TPage, d.Coll }).Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => Path.GetFileName(p.Trim())), StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(d.TPage)) now.Add(Path.GetFileName(Path.ChangeExtension(d.TPage, ".bmq")));
+        foreach (var old in before)
+        {
+            var name = Path.GetFileName(old.Trim());
+            var file = Path.Combine(c.Dir, name);
+            if (name == "" || now.Contains(name) || !File.Exists(file)) continue;
+            File.Delete(file);
+        }
+    }
+
+    /// <summary>A .prm, or an .obj from another program</summary>
+    public static Prm LoadModelFile(string path) =>
+        Path.GetExtension(path).Equals(".obj", StringComparison.OrdinalIgnoreCase) ? ObjModel.Import(path) : Prm.Load(path);
+
+    /// <summary>A real square .bmp as it is; PNG, JPG and others become a BMP, 32 bit when they have see-through parts.
+    /// A page that isn't square with a power of two side (the game needs that) is stretched to one, up to 1024</summary>
+    public static void CopyTexture(string from, string to)
+    {
+        using var loaded = Images.Load(from) ?? throw new InvalidDataException("That texture can't be read");
+        static bool Pow2(int n) => n > 0 && (n & (n - 1)) == 0;
+        bool good = loaded.Width == loaded.Height && Pow2(loaded.Width);
+        if (good && Path.GetExtension(from).Equals(".bmp", StringComparison.OrdinalIgnoreCase)) { File.Copy(from, to, true); return; }
+        var b = loaded;
+        if (!good)
+        {
+            int side = 64;
+            while (side < 1024 && side < Math.Max(loaded.Width, loaded.Height)) side *= 2;
+            b = new SKBitmap(new SKImageInfo(side, side, SKColorType.Bgra8888, SKAlphaType.Unpremul));
+            using var cv = new SKCanvas(b);
+            using var paint = new SKPaint { FilterQuality = SKFilterQuality.High };
+            cv.DrawBitmap(loaded, new SKRect(0, 0, side, side), paint);
+        }
+        using var made = b == loaded ? null : b;
+        bool alpha = false;
+        for (int y = 0; y < b.Height && !alpha; y++)
+            for (int x = 0; x < b.Width; x++)
+                if (b.GetPixel(x, y).Alpha < 255) { alpha = true; break; }
+        SaveTexture(b, to, alpha);
     }
 
     public static string SameBodyAsStock(Car c)
@@ -744,12 +861,13 @@ public static class CarTools
         try
         {
             var h = Convert.ToHexString(MD5.HashData(File.ReadAllBytes(own)));
-            foreach (var dir in Directory.GetDirectories(c.Game.CarsDir))
+            // Every layer: an RVGL install keeps the stock cars in packs\game_files, not in cars
+            foreach (var e in c.Game.ListCars())
             {
-                var folder = Path.GetFileName(dir);
+                var folder = e.Folder;
                 if (!GameFolder.IsStock(folder) || folder.Equals(c.Folder, StringComparison.OrdinalIgnoreCase)) continue;
-                var f = Path.Combine(dir, "body.prm");
-                if (File.Exists(f) && Convert.ToHexString(MD5.HashData(File.ReadAllBytes(f))) == h) return folder;
+                var f = c.Game.Find("cars\\" + folder + "\\body.prm");
+                if (f != null && Convert.ToHexString(MD5.HashData(File.ReadAllBytes(f))) == h) return folder;
             }
         }
         catch (Exception) { }

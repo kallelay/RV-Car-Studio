@@ -50,9 +50,13 @@ track polygons and materials aren't here, so times don't compare with RVGL.
 
 ## Shading and normals
 
-Each polygon stores a colour per corner, so shading can look faceted or smooth on any model without changing it. Tools, Auto shade
-has Surface (the model's normals, smooth, by angle, by faces), sun direction, soft shadows, floor bounce, contrast, sky, sun and
-bounce colours, and the whole car blocking light. It all shows while you move it.
+Each polygon stores a colour per corner, so shading can look faceted or smooth on any model without changing it.
+- *Tools > Auto shade* lights the car as a clay render and bakes it into those colours: soft light from the sky, darker
+  where the car's own shape hides it, contact shadows where it meets the floor, and a soft light from above.
+- *The whole car blocks light*: wheels shade the body and the body shades the wheels.
+- *Controls*: Depth (how dark corners and shadows get), Brightness, and Surface (smooth with sharp edges kept, smooth,
+  faceted, or the model's normals).
+- It shows as you move them, and a full-quality bake takes a fraction of a second.
 
 Normals are separate: the game takes reflections and its moving lights from them. A vertex holds one normal, so sharp edges need
 two vertices in one place. Rewrite the normals offers smooth, by angle or by faces, and says how many vertices it took. Show has Vertex normals.
@@ -76,11 +80,24 @@ are kept unless you say otherwise. The notes for that are in `.rvcarstudio\insta
 
 **New car** asks what you're making. *Repaint*: new colours on a car that exists, opens on the Paint tab. *Remodel*: start
 from a car and change its settings, parts or models. *Original car*: your own body, one wheel for all four (the right side
-mirrored) and a texture. Wheels are placed, sizes fitted and a first hull made. The handling comes from the base car.
+mirrored) and a texture. Models can be .prm or .obj, the texture .bmp, .png or .jpg. Wheels are placed, sizes fitted and a first hull made. The handling comes from the base car.
 
 **Paint** shows hue, colour and brightness on the car as you move them, for all colours or only the ones you click.
 Keep it as a new skin or over the texture. *Open the texture and watch it* opens your image editor, and each save there
 shows here.
+
+**UV and texture editor** (U, or Paint > *Open the UV and texture editor*) shows the texture with a part's faces laid
+over it, and the car in the 3D view changes as you work.
+- *Faces*: click, Shift, Ctrl, a box, or double click for a whole piece. Drag them to move, use the corners to size and
+  the round handle to turn. You can also flip, snap to pixels, fit to the page, project from the side, top or front,
+  *Unwrap by sides*, and pack the pieces.
+- *Save the layout as a picture* gives a template to paint over in another editor.
+- *Painting*: brush, an eraser that brings the original back, fill and colour pick, optionally kept inside the selected
+  faces.
+- *Generate*: plain colour, gradient, racing stripes, checks, carbon fibre, grunge, a number plate, panel lines along the
+  faces, a colour per piece, light and shade. *Make a livery* does a whole paint job in one click.
+- *Keeping it*: the painting is saved as a new skin or over the car's texture. The faces' places are saved with Save
+  (Ctrl+S).
 
 **Stock cars:** the first change offers a copy that keeps what you've done. The game's own files stay as they are.
 **Shared files:** before changing a model or hull other cars use, or one outside the car's folder, it asks: your own copy,
@@ -90,9 +107,22 @@ change it for all, or cancel.
 *Show and edit the hull* lists its parts and spheres. Parts move, turn and scale as a whole, so they stay solid. Spheres
 move and resize, can be added and removed, and with Mirror L/R the one on the other side follows.
 
+## Other programs and other cars
+
+- **.obj out and in** (File menu): *Export the selected part* or *the whole car* (each part where it stands, one object
+  each, to model around), and *Import a model from .obj for the selected part*.
+  - Scale and axes: 1 metre in the .obj is 100 game units, with Y up and the front towards -Z, as Blender's Re-Volt add-on
+    uses. The texture comes along in a .mtl.
+  - Import: polygons over 4 corners become triangles. Without normals the model is smooth; without colours it's white,
+    ready for Auto shade. It's written as a .prm in the car's folder, named after the .obj.
+  - Live link: an imported .obj stays watched. Save it again in Blender and the part changes here, so both can stay open.
+- **Compare with another car** (Tools): every value that differs from another car, grouped (engine, steering, mass,
+  wheels and grip, springs, AI, looks, menu and stats, files). Tick values, or a whole group, and *Take* them. It's one
+  step that undo takes back.
+
 ## What it does for you
 
-- Auto shade: soft light baked into the vertex colours, with the shadows of the car's own shape
+- Auto shade: a clay-render light baked into the vertex colours: sky, contact shadows, soft key light
 - Make shadow: `shadow.bmp` from a top view, and the shadow table around the car
 - Make carbox: a picture of the car with its name on white
 - Make hull: a first `.hul` from the body (a hull made by hand fits better)

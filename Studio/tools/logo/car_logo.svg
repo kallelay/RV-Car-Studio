@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- RV Car Studio: one bold RC car in side view, orange to red, on a white tile.
+       Same family as the RVGL Track Editor's logo (white tile, one gradient shape). -->
+  <defs>
+    <linearGradient id="tileFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f2f4f8"/>
+    </linearGradient>
+    <linearGradient id="paint" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb43a"/>
+      <stop offset="0.55" stop-color="#ff7a2e"/>
+      <stop offset="1" stop-color="#f0453a"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.4"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="tyre" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3f4f"/>
+      <stop offset="1" stop-color="#1c1f29"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#1b2140" flood-opacity="0.22"/>
+    </filter>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#8a2a10" flood-opacity="0.28"/>
+    </filter>
+    <!-- The body, facing right: rear deck, cabin, long hood, round nose, arches over the wheels -->
+    <path id="body" d="M 196 600 L 190 532
+      C 188 504 208 488 240 484 L 388 472
+      C 438 408 502 370 590 368
+      C 670 366 714 398 754 446
+      C 812 454 862 474 882 516
+      C 896 548 892 588 866 600 L 824 600
+      A 118 118 0 0 0 588 600 L 466 600
+      A 118 118 0 0 0 230 600 Z"/>
+    <clipPath id="bodyclip"><use href="#body"/></clipPath>
+  </defs>
+
+  <rect x="64" y="64" width="896" height="896" rx="196" fill="url(#tileFill)" filter="url(#tileShadow)"/>
+  <rect x="65" y="65" width="894" height="894" rx="195" fill="none" stroke="#dfe3eb" stroke-width="2"/>
+
+  <g filter="url(#drop)">
+    <!-- Wing -->
+    <path d="M 238 486 L 220 410 L 246 408 L 270 484 Z" fill="#c9411f"/>
+    <path d="M 146 392 L 318 380 L 322 410 L 152 422 Z" fill="url(#paint)"/>
+    <use href="#body" fill="url(#paint)"/>
+    <!-- Wheels -->
+    <circle cx="348" cy="640" r="104" fill="url(#tyre)"/>
+    <circle cx="706" cy="640" r="104" fill="url(#tyre)"/>
+  </g>
+  <use href="#body" fill="url(#sheen)"/>
+  <!-- Window -->
+  <path d="M 452 462 C 494 416 542 396 596 396 C 648 396 680 418 710 450 Z" fill="#ffffff" fill-opacity="0.92"/>
+  <!-- Stripe -->
+  <path d="M 214 556 L 880 540" stroke="#ffffff" stroke-opacity="0.85" stroke-width="12" stroke-linecap="round" clip-path="url(#bodyclip)"/>
+  <!-- Hubs -->
+  <circle cx="348" cy="640" r="54" fill="#ffffff"/>
+  <circle cx="706" cy="640" r="54" fill="#ffffff"/>
+  <circle cx="348" cy="640" r="22" fill="#ff7a2e"/>
+  <circle cx="706" cy="640" r="22" fill="#ff7a2e"/>
+</svg>

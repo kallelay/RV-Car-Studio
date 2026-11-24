@@ -19,6 +19,7 @@ public sealed partial class MainWindow
     {
         foreach (var item in Tabs.Items.OfType<TabItem>())
             if (item.Content == GuideTab) Tabs.SelectedItem = item;
+        GuideTab.ScrollToHome();
     }
 
     static string Mph(float unitsPerSecond) => $"{CarCalc.ToMph(unitsPerSecond):0.0} mph, {CarCalc.ToMph(unitsPerSecond) * 1.609f:0.0} km/h";
@@ -29,10 +30,11 @@ public sealed partial class MainWindow
     static string Springiness(float ratio) =>
         ratio < 0.2f ? "bouncy" : ratio < 0.5f ? "lively" : ratio < 0.9f ? "settled" : "slow to come back";
 
-    Page GuidePage()
+    /// <summary>How it drives: the top of Properties. The car's numbers worked out from what's below them, as you edit</summary>
+    void GuideTop(Page p)
     {
-        var p = NewPage();
-        p.Note("The numbers of the car you have open, worked out from the formulas of the original game's car physics. They change as you edit. Point at a row for what it means.");
+        p.Section("How it drives");
+        p.Note("Worked out from the values below with the original game's car physics. They change as you edit. Point at a row for what it means.");
 
         p.Header("To look at");
         p.Info(() =>
@@ -71,6 +73,12 @@ public sealed partial class MainWindow
         p.Value("Turns in, back", () => $"{Calc().TurnInTime:0.00} s, {Calc().StraightenTime:0.00} s", "SteerRate: straightening is 8 times quicker than turning in");
         p.Value("Tightest turn", () => $"{Cm(Calc().TurnRadius)} radius, {Mph(Calc().CornerSpeed)} at the limit", "Wheelbase over the steering angle");
         p.Value("Roll", () => Calc().RollIndex > 0 ? $"rolls above {Calc().RollIndex:0.00} g" : "", "Half the track over the height: it rolls if grip beats this");
+    }
+
+    /// <summary>The bottom of Properties: what-ifs, units, what each value does</summary>
+    void GuideBottom(Page p)
+    {
+        p.Section("Help with the numbers");
 
         p.Header("Try it, nothing changes");
         p.Note("Move these to see what would happen. Use these numbers puts them on the car, with undo.");
@@ -113,10 +121,9 @@ public sealed partial class MainWindow
         };
 
         p.Header("Making a car");
-        p.Note("Repaint: Paint tab, then save as a new skin.\nRemodel: copy a stock car, edit parts in the view, then Tools, Fit to the models.\nOriginal: New car, then Place wheels, Inertia from the body's shape, Make a hull, Make shadow, Shade the car, Make carbox.\nThen Drive here or Race for a first feel, and Test run in RVGL for the final word.");
+        p.Note("Help > Tours walks you through each of these, step by step.\nRepaint: New car, Repaint; the Paint tab; then save as a new skin.\nRemodel: New car, Remodel; your model in; then the Model tab: Fit to the models, a hull.\nOriginal: New car, Original; then the Model tab (inertia, hull), the Shade tab (shade, shadow), the Package tab (carbox, readme, zip).\nThen Drive here or Race here for a first feel, and Test run in RVGL for the final word.");
         p.Header("Keys");
-        p.Note("F1 this guide. F5 Test run. F6 Drive here. F7 Race.\nDriving: arrows or WASD, or an XInput gamepad: left stick steers with the game's curve, triggers or stick for throttle, X flips, Y puts you back. Space flips a car on its roof. R restarts, or in a race puts you back on the road. I lets the AI drive. Esc leaves.\nView: left drag turns, click selects, right drag turns, middle drag pans, wheel zooms. 1 2 3 4 views, F frames the car. W E R move, rotate, scale.");
-        return p;
+        p.Note("F1 How it drives. Tab: edit the selected part's vertices. F5 Test run. F6 Drive here. F7 Race.\nDriving: arrows or WASD, or an XInput gamepad: left stick steers with the game's curve, triggers or stick for throttle, X flips, Y puts you back. Space flips a car on its roof. R restarts, or in a race puts you back on the road. I lets the AI drive. Esc leaves.\nView: left drag turns, click selects, right drag turns, middle drag pans, wheel zooms. 1 2 3 4 views, F frames the car. W E R move, rotate, scale.");
     }
 
     (string Name, Func<string> Value, string What)[] Reference()
@@ -150,7 +157,7 @@ public sealed partial class MainWindow
             ("Stiffness", () => F(S().Stiffness), "Spring force per unit pressed. Decides how much the car sits down and how fast it bounces."),
             ("Damping", () => F(S().Damping), "Slows the spring's movement, and stops the bounce."),
             ("Restitution", () => F(S().Restitution), "Negative softens a hit: how much of a bump the suspension takes away."),
-            ("AI values", () => D().Ai == null ? "none" : "see the AI tab", "They only correct the CPU's driving when the car slides, and choose routes at a fork."),
+            ("AI values", () => D().Ai == null ? "none" : "see AI, in Properties", "They only correct the CPU's driving when the car slides, and choose routes at a fork."),
             ("EnvRGB", () => $"{D().EnvR} {D().EnvG} {D().EnvB}", "Colour and strength of the reflection on the body. Uses the vertex normals."),
         };
     }

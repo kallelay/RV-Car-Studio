@@ -4,6 +4,9 @@ using SkiaSharp;
 
 namespace RvStudio.App;
 
+/// <summary>How a part is drawn in the view (Easy's drawing of the car): nothing to do with the file</summary>
+public enum PartView { Solid, Wire, Points, None, Half }
+
 public enum SelKind { None, Body, Wheel, Spring, Axle, Pin, Spinner, AerialBase, AerialTip, CoM, Weapon1, Weapon2, HoodCam, RearCam, HullPart, HullSphere }
 
 public readonly record struct Selection(SelKind Kind, int Index = 0)
@@ -39,7 +42,7 @@ public enum MoveMode { Single, Mirror, FrontBack, All }
 public enum GizmoTool { Move, Rotate, Scale }
 
 /// <summary>The open car and everything that can be done to it. The window and the 3D view only look at this</summary>
-public sealed class Doc
+public sealed partial class Doc
 {
     public GameFolder? Game;
     public Car? Car;
@@ -51,7 +54,7 @@ public sealed class Doc
     public float Snap = 0.5f;
     public GizmoTool Tool = GizmoTool.Move;
 
-    sealed record UndoState(string Label, CarData Data, List<(Prm Model, PrmVertex[] Verts, byte[]? Lods, short[] Faces)> Models, Hull? Hull, bool HullDirty);
+    sealed record UndoState(string Label, CarData Data, List<(Prm Model, PrmVertex[] Verts, byte[]? Lods, short[] Faces, float[] Uvs)> Models, Hull? Hull, bool HullDirty);
 
     /// <summary>The collision hull, as it will be saved</summary>
     public Hull? Hull;
@@ -195,6 +198,7 @@ public sealed class Doc
     public event Action? SelectionChanged;
     public event Action? PartsChanged;  // a part came or went
 
+    public readonly Dictionary<Selection, PartView> PartViews = new();
     public readonly HashSet<Selection> Hidden = new();  // only in the view, nothing to do with the file
 
     public static string WheelName(int i) => i switch { 0 => "front left", 1 => "front right", 2 => "back left", _ => "back right" };
@@ -203,10 +207,13 @@ public sealed class Doc
     {
         Game = game;
         Car = new Car(game, folder);
+        VertexMode = false;
+        PickedVerts.Clear();
         ReloadModels();
         undo.Clear(); redo.Clear();
         Sel = new Selection(SelKind.Body);
         Hidden.Clear();
+        PartViews.Clear();
         sharedOk.Clear();
         StockAnswered = false;
         LoadHull();
@@ -224,6 +231,30 @@ public sealed class Doc
         DirtyModels.Clear();
         ModelVersion++;
         TextureVersion++;
+    }
+
+    /// <summary>Read a model file again: it was changed on disk</summary>
+    public void ReloadModel(string rel)
+    {
+        foreach (var k in Models.Keys.Where(k => k.Equals(rel, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            if (Models[k] is { } old) DirtyModels.Remove(old);
+            Models.Remove(k);
+        }
+        ModelVersion++;
+        TextureVersion++;
+        PartsChanged?.Invoke();
+        Changed?.Invoke();
+    }
+
+    /// <summary>All the car's values at once, as one step undo takes back</summary>
+    public void ReplaceData(string label, CarData data)
+    {
+        if (Car == null) return;
+        Edit(label, () => { Car.Data = data; ModelVersion++; });
+        EndGesture();
+        PartsChanged?.Invoke();
+        SelectionChanged?.Invoke();
     }
 
     public Prm? Model(int slot)
@@ -246,11 +277,16 @@ public sealed class Doc
     {
         if (s == Sel) return;
         Sel = s;
+        VertexFollowSelection(s);
         SelectionChanged?.Invoke();
         Changed?.Invoke();
     }
 
     // --------------------------- Undo ---------------------------
+
+    /// <summary>The newest undo (or redo) step changed one of these models: what the UV editor's own undo may take back</summary>
+    public bool UndoTopHas(IEnumerable<Prm> ms) => undo.Count > 0 && undo.Peek().Models.Any(x => ms.Contains(x.Model));
+    public bool RedoTopHas(IEnumerable<Prm> ms) => redo.Count > 0 && redo.Peek().Models.Any(x => ms.Contains(x.Model));
 
     public bool CanUndo => undo.Count > 0;
     public bool CanRedo => redo.Count > 0;
@@ -298,15 +334,16 @@ public sealed class Doc
     void Step(Stack<UndoState> from, Stack<UndoState> to)
     {
         var s = from.Pop();
-        to.Push(new UndoState(s.Label, Car!.Data, s.Models.Select(m => (m.Model, m.Model.Verts, m.Model.OtherLods, m.Model.FaceIndices())).ToList(), HullCopy(), HullDirty));
+        to.Push(new UndoState(s.Label, Car!.Data, s.Models.Select(m => (m.Model, m.Model.Verts, m.Model.OtherLods, m.Model.FaceIndices(), UvKit.Copy(m.Model))).ToList(), HullCopy(), HullDirty));
         Car.Data = s.Data;
         Hull = s.Hull;
         HullDirty = s.HullDirty;
-        foreach (var (m, v, l, faces) in s.Models)
+        foreach (var (m, v, l, faces, uvs) in s.Models)
         {
             m.Verts = v;
             m.OtherLods = l;
             m.SetFaceIndices(faces);
+            UvKit.Paste(m, uvs);
             m.ComputeBounds();
         }
         if (s.Models.Count > 0) ModelVersion++;
@@ -362,10 +399,10 @@ public sealed class Doc
     }
 
     /// <summary>Hull from the body, kept in memory until Save</summary>
-    public bool RebuildHull()
+    public bool RebuildHull(HullMaker.Detail detail = HullMaker.Detail.Normal)
     {
         if (D is not { } d || Model(d.BodyModel) is not { } body) return false;
-        var h = CarTools.MakeHull(body, d.BodyOffset);
+        var h = CarTools.MakeHull(body, d.BodyOffset, CarTools.HullFloor(d), detail);
         if (h == null) return false;
         Edit("Make hull", () =>
         {
@@ -375,6 +412,34 @@ public sealed class Doc
         EndGesture();
         PartsChanged?.Invoke();
         return true;
+    }
+
+    /// <summary>The spheres again from the body, the hull's parts as they are</summary>
+    public bool RefillSpheres(HullMaker.Detail detail)
+    {
+        if (Hull == null || D is not { } d || Model(d.BodyModel) is not { } body) return false;
+        if (HullMaker.Spheres(body, d.BodyOffset, CarTools.HullFloor(d), detail) is not { } made) return false;
+        if (Sel.Kind == SelKind.HullSphere) Select(new Selection(SelKind.Body));
+        Edit("Fill with spheres", () => HullChange(h => { h.Spheres.Clear(); h.Spheres.AddRange(made.Spheres); }));
+        EndGesture();
+        PartsChanged?.Invoke();
+        return true;
+    }
+
+    HullMaker.Quality? quality;
+    int qualityKey;
+
+    /// <summary>How well the hull's spheres stand for the body</summary>
+    public HullMaker.Quality? HullQuality()
+    {
+        if (Hull is not { Spheres.Count: > 0 } h || D is not { } d || Model(d.BodyModel) is not { } body) return null;
+        // Pages ask at each change of anything: measured again only when the hull, the body or the wheels changed
+        var key = new HashCode();
+        foreach (var (p, r) in h.Spheres) { key.Add(p); key.Add(r); }
+        key.Add(d.BodyOffset); key.Add(ModelVersion); key.Add(CarTools.HullFloor(d)); key.Add(body.Verts.Length);
+        int k = key.ToHashCode();
+        if (k != qualityKey) { quality = HullMaker.Measure(body, d.BodyOffset, CarTools.HullFloor(d), h.Spheres); qualityKey = k; }
+        return quality;
     }
 
     public void AddSphere(Vector3 pos, float radius)
@@ -418,6 +483,7 @@ public sealed class Doc
     public Vector3? Anchor(Selection s)
     {
         if (D is not { } d) return null;
+        if (VertexMode && s == VertexPart) return VertexAnchor();   // editing vertices: the handles sit on the picked ones
         return s.Kind switch
         {
             SelKind.Body => d.BodyOffset,
@@ -465,6 +531,7 @@ public sealed class Doc
     public void Move(Selection s, Vector3 delta)
     {
         if (D is not { } d) return;
+        if (EditingVertices(s)) { MoveVertices(delta); return; }
         Edit("Move " + s.Label, () =>
         {
             switch (s.Kind)
@@ -574,13 +641,17 @@ public sealed class Doc
     }
 
     /// <summary>The file as the game wants it: from the Re-Volt folder. A file from elsewhere is copied into the car's folder</summary>
-    public string BringIn(string file)
+    public string BringIn(string file, string? asName = null)
     {
-        if (Car!.Game.RelOf(file) is { } rel) return rel;
-        Directory.CreateDirectory(Car.Dir);
-        var dest = Path.Combine(Car.Dir, Path.GetFileName(file));
+        if (asName == null && Car!.Game.RelOf(file) is { } rel) return rel;
+        Directory.CreateDirectory(Car!.Dir);
+        // The file picked, always: a different file of the same name already there gets a new name (name_2.prm)
+        var name = asName ?? Path.GetFileName(file);
+        var dest = Path.Combine(Car.Dir, name);
+        for (int k = 2; File.Exists(dest) && !File.ReadAllBytes(dest).AsSpan().SequenceEqual(File.ReadAllBytes(file)); k++)
+            dest = Path.Combine(Car.Dir, Path.GetFileNameWithoutExtension(name) + "_" + k + Path.GetExtension(name));
         if (!File.Exists(dest)) File.Copy(file, dest);
-        return "cars\\" + Car.Folder + "\\" + Path.GetFileName(file);
+        return "cars\\" + Car.Folder + "\\" + Path.GetFileName(dest);
     }
 
     /// <summary>Give a part a model. With nothing there yet it gets sensible values to start from. Follows the corner mode</summary>
@@ -687,9 +758,27 @@ public sealed class Doc
     // --------------------------- Rotating and scaling ---------------------------
 
     /// <summary>Can this be rotated or scaled? Points like the centre of mass only move</summary>
-    public bool CanTransform(Selection s) => s.Kind is SelKind.Body or SelKind.Wheel or SelKind.Spring or SelKind.Axle
+    public bool CanTransform(Selection s) => EditingVertices(s) || s.Kind is SelKind.Body or SelKind.Wheel or SelKind.Spring or SelKind.Axle
         or SelKind.Pin or SelKind.Spinner or SelKind.AerialBase or SelKind.AerialTip or SelKind.HullPart
         || (s.Kind == SelKind.HullSphere && Tool == GizmoTool.Scale);
+
+    /// <summary>The models a part uses (the four wheels may share one), each once.</summary>
+    public List<Prm> ModelsOf(Selection s)
+    {
+        var r = new List<Prm>();
+        if (D == null) return r;
+        int n = s.HasFourCorners ? 4 : 1;
+        for (int i = 0; i < n; i++)
+        {
+            int k = s.HasFourCorners ? i : s.Index;
+            int slot = s.Kind switch { SelKind.AerialBase => D.Aerial.SecModel, SelKind.AerialTip => D.Aerial.TopModel, _ => SlotOf(s, k) };
+            if (Model(slot) is { } m && !r.Contains(m)) r.Add(m);
+        }
+        return r;
+    }
+
+    /// <summary>The name of the file a model came from, as the car's parameters give it.</summary>
+    public string? ModelName(Prm m) => Models.FirstOrDefault(kv => kv.Value == m).Key;
 
     int SlotOf(Selection s, int i) => s.Kind switch
     {
@@ -739,12 +828,13 @@ public sealed class Doc
     {
         var top = undo.Count > 0 ? undo.Peek() : null;
         if (top == null || top.Label != label) return;
-        if (!top.Models.Any(x => x.Model == m)) top.Models.Add((m, m.Verts, m.OtherLods, m.FaceIndices()));
+        if (!top.Models.Any(x => x.Model == m)) top.Models.Add((m, m.Verts, m.OtherLods, m.FaceIndices(), UvKit.Copy(m)));
     }
 
     /// <summary>Turn the model of what's selected around its origin. Stays in memory until Save</summary>
     public void Rotate(Selection s, Vector3 axis, float angle)
     {
+        if (EditingVertices(s)) { RotateVertices(axis, angle); return; }
         if (D is not { } d || !CanTransform(s)) return;
         var label = "Rotate " + s.Label;
         Edit(label, () =>
@@ -796,6 +886,7 @@ public sealed class Doc
     /// <summary>Resize the model of what's selected from its origin, and the values that go with its size</summary>
     public void Scale(Selection s, Vector3 f)
     {
+        if (EditingVertices(s)) { if (f.X > 0 && f.Y > 0 && f.Z > 0) ScaleVertices(f); return; }
         if (D is not { } d || !CanTransform(s) || f.X <= 0 || f.Y <= 0 || f.Z <= 0) return;
         var label = "Scale " + s.Label;
         Edit(label, () =>
@@ -983,14 +1074,17 @@ public sealed class Doc
         w = b.Width; h = b.Height;
         bool key = b.AlphaType == SKAlphaType.Opaque || b.ColorType == SKColorType.Rgb888x || b.ColorType == SKColorType.Rgb565;
         var o = new byte[w * h * 4];
-        int n = 0;
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
+        var px = b.Pixels;
+        Parallel.For(0, h, y =>
+        {
+            int n = y * b.Width * 4;
+            for (int i = y * b.Width, end = i + b.Width; i < end; i++)
             {
-                var c = b.GetPixel(x, y);
+                var c = px[i];
                 o[n++] = c.Red; o[n++] = c.Green; o[n++] = c.Blue;
                 o[n++] = key && c.Red == 0 && c.Green == 0 && c.Blue == 0 ? (byte)0 : c.Alpha;
             }
+        });
         return o;
     }
 }

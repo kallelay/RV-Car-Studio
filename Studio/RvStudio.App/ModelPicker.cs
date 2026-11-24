@@ -41,7 +41,7 @@ public sealed class ModelPicker : Window
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
                 Title = title, AllowMultiple = false,
-                FileTypeFilter = new[] { new FilePickerFileType("Re-Volt models") { Patterns = new[] { "*.prm", "*.m" } } }
+                FileTypeFilter = new[] { new FilePickerFileType("Models") { Patterns = new[] { "*.prm", "*.obj", "*.m" } } }
             });
             if (files.FirstOrDefault()?.TryGetLocalPath() is { } p) { FilePath = p; Close(); }
         };

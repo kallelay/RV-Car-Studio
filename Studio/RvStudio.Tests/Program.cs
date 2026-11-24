@@ -1,9 +1,11 @@
 using System.Numerics;
 using System.Text;
 using RvStudio.Core;
+using SkiaSharp;
 
 // RvStudio.Tests read <Re-Volt folder>   writes nothing. Safe on the real game
 // RvStudio.Tests write <copy of folder>  saving, new car, rename, tools: only on a copy
+// RvStudio.Tests hull <Re-Volt folder> [out] [Few|Normal|Fine]  made hulls against the stock cars' own
 // RvStudio.Tests fit <Re-Volt folder>    the simulator against the stock cars' real TopEnd and Acc
 
 int pass = 0, fail = 0;
@@ -11,6 +13,129 @@ void Check(bool ok, string what) { if (ok) pass++; else { fail++; Console.WriteL
 
 var mode = args.Length > 0 ? args[0] : "read";
 var game = new GameFolder(args.Length > 1 ? args[1] : @"D:\ReVolt");
+
+// The hull the studio makes for each stock car, measured beside the hull the car has
+void HullPass()
+{
+    var outDir = args.Length > 2 ? args[2] : null;
+    var detail = args.Length > 3 ? Enum.Parse<HullMaker.Detail>(args[3]) : HullMaker.Detail.Normal;
+    var sums = new List<(HullMaker.Quality Own, HullMaker.Quality Made)>();
+    foreach (var folder in game.CarFolders().Where(GameFolder.IsStock))
+    {
+        var c = new Car(game, folder);
+        var body = CarTools.LoadModel(c, c.Data.BodyModel);
+        var file = game.Find(c.Data.Coll);
+        if (body == null || file == null) continue;
+        var own = Hull.Load(file);
+        var floor = CarTools.HullFloor(c.Data);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var made = CarTools.MakeHull(body, c.Data.BodyOffset, floor, detail);
+        sw.Stop();
+        Check(made is { Spheres.Count: > 3 }, folder + ": a hull with spheres");
+        if (made == null || own.Spheres.Count == 0) continue;
+        var q = HullMaker.Measure(body, c.Data.BodyOffset, floor, made.Spheres)!;
+        var o = HullMaker.Measure(body, c.Data.BodyOffset, floor, own.Spheres)!;
+        sums.Add((o, q));
+        string S(HullMaker.Quality x) => $"{x.Spheres,3} spheres gap {x.Gap:0.0} p95 {x.Gap95:0.0} max {x.GapMax:0.0} out {x.OutMax:0.0} outline {x.Outline:0.00}";
+        Console.WriteLine($"{folder,-9} own {S(o)} {own.Convex.Count} parts | made {S(q)} {made.Convex.Count} parts ({string.Join("+", made.Convex.Select(x => x.Points.Length))} points, own {string.Join("+", own.Convex.Select(x => x.Points.Length))}) volume {made.Convex.Sum(HullMaker.Volume):0} own {own.Convex.Sum(HullMaker.Volume):0}  {sw.ElapsedMilliseconds} ms");
+        if (floor is float fy)
+        {
+            float bt = body.Verts.Min(v => v.Pos.Y) + c.Data.BodyOffset.Y, bl = body.Verts.Max(v => v.Pos.Y) + c.Data.BodyOffset.Y;
+            float lim = Math.Min(bl, Math.Max(fy, bt + 0.55f * (bl - bt))), lowest = made.Spheres.Max(s => s.Pos.Y + s.Radius);
+            Check(lowest <= lim + 0.02f, $"{folder}: no sphere below the road clearance: {lowest:0.0}, {lim:0.0}");
+        }
+        foreach (var p in made.Convex) Check(p.Points.Length - p.Edges.Length + p.Faces.Length == 2, folder + ": each part is a closed solid");
+        if (outDir != null) { Directory.CreateDirectory(outDir); made.Save(Path.Combine(outDir, folder + ".hul")); }
+    }
+    Console.WriteLine($"average own: gap {sums.Average(x => x.Own.Gap):0.00} p95 {sums.Average(x => x.Own.Gap95):0.0} out {sums.Average(x => x.Own.OutMax):0.0} outline {sums.Average(x => x.Own.Outline):0.00}; made: gap {sums.Average(x => x.Made.Gap):0.00} p95 {sums.Average(x => x.Made.Gap95):0.0} out {sums.Average(x => x.Made.OutMax):0.0} outline {sums.Average(x => x.Made.Outline):0.00}, {sums.Average(x => x.Made.Spheres):0.0} spheres");
+}
+
+void FileCheckTests()
+{
+    // Every sound and hull of the game passes; files that only look the part don't
+    int wavs = 0, hulls = 0;
+    foreach (var layer in game.Layers)
+    {
+        var wd = Path.Combine(layer, "wavs");
+        if (Directory.Exists(wd))
+            foreach (var f in Directory.GetFiles(wd, "*.wav")) { wavs++; Check(FileChecks.Wav(f) == null, "a stock sound passes: " + f + " " + FileChecks.Wav(f)); }
+        var cd = Path.Combine(layer, "cars");
+        if (Directory.Exists(cd))
+            // (an empty leftover no car uses, like candy's hull.hul next to its real candy.hul, is rightly refused)
+            foreach (var f in Directory.GetFiles(cd, "*.hul", SearchOption.AllDirectories).Where(x => new FileInfo(x).Length > 0).Take(40)) { hulls++; Check(FileChecks.Hull(f) == null, "a stock hull passes: " + f + " " + FileChecks.Hull(f)); }
+    }
+    Console.WriteLine($"file checks: {wavs} sounds, {hulls} hulls");
+    var tmp = Path.Combine(Path.GetTempPath(), "rvcs_checks");
+    Directory.CreateDirectory(tmp);
+    var fakeWav = Path.Combine(tmp, "song.wav");
+    File.WriteAllBytes(fakeWav, new byte[] { 0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 0 }.Concat(new byte[200]).ToArray()); // an MP3 renamed
+    Check(FileChecks.Wav(fakeWav) != null, "an MP3 renamed .wav is refused: " + FileChecks.Wav(fakeWav));
+    Check(FileChecks.Wav(Path.Combine(tmp, "x.ogg")) != null, "a sound must be a .wav");
+    var notPic = Path.Combine(tmp, "pic.png");
+    File.WriteAllText(notPic, "hello");
+    Check(FileChecks.Picture(notPic) != null, "a text file named .png is refused");
+    var notHull = Path.Combine(tmp, "h.hul");
+    File.WriteAllBytes(notHull, new byte[] { 0, 0, 0, 0 });
+    Check(FileChecks.Hull(notHull) != null, "an empty hull is refused: " + FileChecks.Hull(notHull));
+    var notModel = Path.Combine(tmp, "m.obj");
+    File.WriteAllText(notModel, "nothing here");
+    Check(FileChecks.Model(notModel) != null, "an .obj with no polygons is refused");
+    Directory.Delete(tmp, true);
+}
+
+void TexToolTests()
+{
+    // A grey page with a sharp black and white edge down the middle
+    SkiaSharp.SKBitmap Edge()
+    {
+        var b = new SkiaSharp.SKBitmap(64, 64, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Unpremul);
+        for (int y = 0; y < 64; y++) for (int x = 0; x < 64; x++) b.SetPixel(x, y, x < 32 ? new SkiaSharp.SKColor(40, 40, 40) : new SkiaSharp.SKColor(220, 220, 220));
+        return b;
+    }
+    int Gap(SkiaSharp.SKBitmap b) => b.GetPixel(32, 32).Red - b.GetPixel(31, 32).Red;
+    using (var b = Edge()) { int before = Gap(b); TexturePaint.Dab(b, 32, 32, 6, 1, SkiaSharp.SKColors.Red, 1, null, null, TexturePaint.Tip.Round, TexturePaint.Effect.Blur); Check(Gap(b) < before * 0.8, $"blur softens an edge: {before} -> {Gap(b)}"); }
+    using (var b = Edge())
+    {
+        // Sharpen: the dark side gets darker next to the light one
+        var dark = b.GetPixel(31, 32).Red;
+        TexturePaint.Dab(b, 32, 32, 6, 1, SkiaSharp.SKColors.Red, 1, null, null, TexturePaint.Tip.Round, TexturePaint.Effect.Sharpen);
+        Check(b.GetPixel(31, 32).Red < dark, $"sharpen makes an edge crisper: {dark} -> {b.GetPixel(31, 32).Red}");
+    }
+    using (var b = Edge()) { var c = b.GetPixel(10, 10).Red; TexturePaint.Dab(b, 10, 10, 4, 1, SkiaSharp.SKColors.Red, 1, null, null, TexturePaint.Tip.Round, TexturePaint.Effect.Lighten); Check(b.GetPixel(10, 10).Red > c + 50, "lighten lightens"); }
+    using (var b = Edge()) { var c = b.GetPixel(50, 10).Red; TexturePaint.Dab(b, 50, 10, 4, 1, SkiaSharp.SKColors.Red, 1, null, null, TexturePaint.Tip.Round, TexturePaint.Effect.Burn); Check(b.GetPixel(50, 10).Red < c - 50, "burn darkens"); }
+    using (var b = Edge())
+    {
+        // Square tip: its corner is painted, a round tip's isn't
+        TexturePaint.Dab(b, 20, 20, 6, 1, SkiaSharp.SKColors.Red, 1, null, null, TexturePaint.Tip.Square);
+        TexturePaint.Dab(b, 20, 44, 6, 1, SkiaSharp.SKColors.Red, 1, null, null, TexturePaint.Tip.Round);
+        Check(b.GetPixel(15, 15) == SkiaSharp.SKColors.Red && b.GetPixel(15, 39) != SkiaSharp.SKColors.Red, "a square tip paints its corners, a round one doesn't");
+    }
+    using (var b = Edge())
+    {
+        int n = TexturePaint.Polygon(b, new[] { new SkiaSharp.SKPoint(5, 5), new SkiaSharp.SKPoint(25, 5), new SkiaSharp.SKPoint(15, 25) }, SkiaSharp.SKColors.Blue, 1);
+        Check(n > 150 && b.GetPixel(15, 12) == SkiaSharp.SKColors.Blue && b.GetPixel(4, 30) != SkiaSharp.SKColors.Blue, "a shape fills inside its corners only: " + n);
+    }
+}
+
+void ReadmeTests()
+{
+    // Wrapping: words onto lines, a word too long for a line is cut
+    var wr = Readme.Wrap("one two three four five six", 9);
+    Check(wr.All(l => l.Length <= 9) && string.Join(" ", wr) == "one two three four five six", "readme wrap: " + string.Join("|", wr));
+    Check(Readme.Wrap(new string('x', 25), 10).Count == 3, "readme wrap cuts a long word");
+    Check(Readme.Latin1Safe("Café — “GT” óź 日") == "Café - \"GT\" óz ?", "readme: Latin-1 safe text: " + Readme.Latin1Safe("Café — “GT” óź 日"));
+    if (game.Find("cars\\rc\\parameters.txt") == null) return;
+    var rc = new Car(game, "rc");
+    Check(Readme.Guess(rc).Type == Readme.Kind.StockEdit, "readme: a stock car is a changed stock car");
+    Hull? h = null;
+    try { if (game.Find(rc.Data.Coll) is { } hf) h = Hull.Load(hf); } catch (Exception) { }
+    var text = Readme.Make(rc, h, new Readme.Info("Some Body", Description: new string('w', 120) + " and a long description that has to wrap over more than one line of the readme", Thanks: "everyone"));
+    var lines = text.Replace("\r\n", "\n").Split('\n');
+    Check(lines.All(l => l.Length <= 78), "readme: every line fits 78 columns: " + lines.Max(l => l.Length));
+    Check(text.All(ch => ch == '\r' || ch == '\n' || ch >= 0x20 && ch < 0x7F || ch >= 0xA0 && ch <= 0xFF), "readme: Latin-1 only, no control characters");
+    Check(text.Contains("Install") && text.Contains("cars\\rc") && text.Contains("Some Body") && text.Contains("Top speed") && text.Contains("everyone"), "readme: the car, its maker, install, speed, thanks");
+    Check(!text.Contains("Skins       : carbox"), "readme: the carbox isn't a skin");
+}
 
 void Parser()
 {
@@ -402,6 +527,18 @@ void WritePass()
     Check(ch.Points.Length - ch.Edges.Length + ch.Faces.Length == 2, "hull is a closed solid (Euler)");
     foreach (var f in ch.Faces) foreach (var p in ch.Points) Check(Vector3.Dot(f.Normal, p) + f.D < 0.15f, "points behind planes");
     foreach (var s in hl.Spheres) Check(s.Radius > 0, "sphere");
+
+    // Ground clearance: a hull down at the floor pan catches on kerbs, the floor keeps it up like the stock cars'
+    if (CarTools.HullFloor(n.Data) is float floor)
+    {
+        var fh = CarTools.MakeHull(body, n.Data.BodyOffset, floor)!;
+        float fLow = fh.Convex[0].Points.Max(p => p.Y), bLow = body.Verts.Max(v => v.Pos.Y) + n.Data.BodyOffset.Y;
+        float fTop = body.Verts.Min(v => v.Pos.Y) + n.Data.BodyOffset.Y;
+        Check(fLow <= Math.Max(floor, fTop + 0.55f * (bLow - fTop)) + 0.01f, $"hull floor holds: {fLow:0.0} vs {floor:0.0}");
+        var fc = fh.Convex[0];
+        Check(fc.Points.Length - fc.Edges.Length + fc.Faces.Length == 2, "floored hull is a closed solid");
+        foreach (var f in fc.Faces) foreach (var p in fc.Points) Check(Vector3.Dot(f.Normal, p) + f.D < 0.15f, "floored points behind planes");
+    }
 
     foreach (var tpl in Directory.Exists(args.Length > 2 ? args[2] : "") ? Directory.GetFiles(args[2], "*.txt") : Array.Empty<string>())
     {
@@ -883,6 +1020,142 @@ void NewTools(CarData rc, Hull? hull)
     }
 }
 
+// .obj out and back in, and comparing two cars: files go to the temp folder only
+void DevKit()
+{
+    var dir = Path.Combine(Path.GetTempPath(), "rvstudio_devkit_" + Environment.ProcessId);
+    Directory.CreateDirectory(dir);
+    try
+    {
+        foreach (var rel in new[] { @"cars\rc\body.prm", @"cars\cougar\body.prm", @"cars\mud\wheelbl.prm" })
+        {
+            var f = game.Find(rel);
+            if (f == null) { Check(false, "found " + rel); continue; }
+            var m = Prm.Load(f);
+            var obj = Path.Combine(dir, Path.GetFileNameWithoutExtension(rel) + ".obj");
+            ObjModel.Export(m, obj, game.Find(@"cars\rc\car.bmp"));
+            var back = ObjModel.Import(obj, out var rep);
+            Check(back.Faces.Length == m.Faces.Length, $"obj {rel}: {back.Faces.Length} polygons back of {m.Faces.Length}");
+            Check(back.Faces.Count(x => x.IsQuad) == m.Faces.Count(x => x.IsQuad), "obj: quads stay quads");
+            Check((back.Min - m.Min).Length() < 0.01f && (back.Max - m.Max).Length() < 0.01f, $"obj: same size and place {back.Min} {back.Max} vs {m.Min} {m.Max}");
+            float worst = 0;
+            int agree = 0, total = 0;
+            for (int i = 0; i < m.Faces.Length && i < back.Faces.Length; i++)
+            {
+                var a = m.Faces[i]; var b = back.Faces[i];
+                for (int k = 0; k < a.Corners; k++)
+                {
+                    worst = Math.Max(worst, (m.Verts[a.Index(k)].Pos - back.Verts[b.Index(k)].Pos).Length());
+                    worst = Math.Max(worst, Math.Abs(a.U[k] - b.U[k]) + Math.Abs(a.V[k] - b.V[k]));
+                }
+                var n = System.Numerics.Vector3.Cross(back.Verts[b.V1].Pos - back.Verts[b.V0].Pos, back.Verts[b.V2].Pos - back.Verts[b.V0].Pos);
+                var vn = back.Verts[b.V0].Normal + back.Verts[b.V1].Normal + back.Verts[b.V2].Normal;
+                if (n.LengthSquared() > 1e-8f) { total++; if (System.Numerics.Vector3.Dot(n, vn) < 0) agree++; }
+            }
+            Check(worst < 0.01f, $"obj: every corner in the same place with the same UV ({worst})");
+            Check(agree > total * 0.95, $"obj: polygons face the way the game's do ({agree}/{total})");
+            Check(rep.HadNormals && rep.HadColours && rep.HadUvs, "obj: normals, colours and UVs come back");
+        }
+        Check(File.Exists(Path.Combine(dir, "body.mtl")) && File.Exists(Path.Combine(dir, "car.bmp")), "obj: material and texture beside it");
+        // A file from another program: an n-gon, no normals, negative indices
+        var hand = Path.Combine(dir, "hand.obj");
+        File.WriteAllText(hand, "v 0 0 0\nv 1 0 0\nv 1 0 1\nv 0.5 0 1.5\nv 0 0 1\nvt 0 0\nf 1/1 5/1 4/1 3/1 2/1\nf -3 -4 -5\n");
+        var h = ObjModel.Import(hand, out var hr);
+        Check(h.Faces.Length == 4 && hr.SplitPolygons == 1 && !hr.HadNormals, $"obj: a five-sided polygon becomes 3 triangles ({h.Faces.Length})");
+        Check(h.Verts.All(v => v.Normal.Y < -0.9f), "obj: made normals point up (the game's -Y) for a floor facing up");
+    }
+    finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+
+    var rc = new Car(game, "rc");
+    var cougar = new Car(game, "cougar");
+    var rows = CarCompare.Diff(rc.Data, cougar.Data);
+    Check(rows.Count > 20 && rows.Any(r => r.Key == "TopSpeed"), $"compare: {rows.Count} values differ, top speed among them");
+    Check(CarCompare.Diff(rc.Data, rc.Data).Count == 0, "compare: a car is the same as itself");
+    var take = rows.Where(r => r.Group == CarCompare.Groups.Engine).ToList();
+    var text = rc.File_.Text;
+    var mixed = CarCompare.Take(text, take, true);
+    Check(Math.Abs(mixed.TopSpeed - cougar.Data.TopSpeed) < 1e-6 && mixed.Name == rc.Data.Name, $"compare: takes the engine ({mixed.TopSpeed}) and keeps the name");
+    var left = CarCompare.Diff(mixed, cougar.Data);
+    Check(!left.Any(r => r.Group == CarCompare.Groups.Engine) && left.Count == rows.Count - take.Count, $"compare: exactly those values changed ({left.Count} left of {rows.Count})");
+    var all = CarCompare.Take(text, rows, true);
+    var rest = CarCompare.Diff(all, cougar.Data);
+    Check(rest.Count == 0, "compare: taking everything gives the other car: " + string.Join(", ", rest.Take(5).Select(r => r.Label + " " + r.Mine + " / " + r.Theirs)));
+    Check(rc.File_.Text == text, "compare: the car itself isn't touched");
+}
+
+// UV and texture tools on a stock body, in memory: nothing is written
+void UvAndPaint()
+{
+    var f = game.Find(@"cars\rc\body.prm");
+    Check(f != null, "rc body found");
+    if (f == null) return;
+    var m = Prm.Load(f);
+    var all = Enumerable.Range(0, m.Faces.Length).Where(i => UvKit.Textured(m.Faces[i])).ToList();
+    var islands = UvKit.Islands(m);
+    Check(all.Count > 20 && islands.Count >= 1 && islands.Sum(i => i.Count) == all.Count, $"uv: {all.Count} textured faces in {islands.Count} pieces");
+    var before = UvKit.Copy(m);
+    UvKit.Move(m, all, new Vector2(0.1f, 0));
+    UvKit.Paste(m, before);
+    Check(UvKit.Copy(m).SequenceEqual(before), "uv: copy and paste back");
+    var c0 = UvKit.Centre(m, all);
+    UvKit.Rotate(m, all, 90); UvKit.Rotate(m, all, -90);
+    Check(Vector2.Distance(UvKit.Centre(m, all), c0) < 1e-3f && UvKit.Copy(m).Zip(before).All(p => MathF.Abs(p.First - p.Second) < 1e-3f), "uv: turn and back");
+    UvKit.Flip(m, all, true); UvKit.Flip(m, all, true);
+    Check(UvKit.Copy(m).Zip(before).All(p => MathF.Abs(p.First - p.Second) < 1e-4f), "uv: flip twice is nothing");
+    UvKit.Fit(m, all, new Vector2(0.25f), new Vector2(0.75f));
+    var (lo, hi) = UvKit.Bounds(m, all);
+    Check(lo.X >= 0.249f && hi.X <= 0.751f && lo.Y >= 0.249f && hi.Y <= 0.751f && (MathF.Abs(hi.X - lo.X - 0.5f) < 0.01f || MathF.Abs(hi.Y - lo.Y - 0.5f) < 0.01f), $"uv: fit into a box {lo} {hi}");
+    UvKit.Snap(m, all, 256, 256);
+    Check(all.All(i => Enumerable.Range(0, m.Faces[i].Corners).All(c => MathF.Abs(m.Faces[i].U[c] * 256 - MathF.Round(m.Faces[i].U[c] * 256)) < 1e-3f)), "uv: snapped to pixels");
+    int pieces = UvKit.Unwrap(m, all);
+    (lo, hi) = UvKit.Bounds(m, all);
+    float cover = UvKit.Coverage(m, all);
+    Console.WriteLine($"unwrap: {pieces} pieces, covers {cover * 100:0}% of the page");
+    Check(pieces >= 4 && lo.X >= 0 && lo.Y >= 0 && hi.X <= 1 && hi.Y <= 1 && cover > 0.2f, $"uv: unwrapped into the page, {pieces} pieces, {cover * 100:0}%");
+    UvKit.Project(m, all, 0);
+    (lo, hi) = UvKit.Bounds(m, all);
+    Check(hi.X - lo.X > 0.3f && hi.X <= 1.001f, "uv: projected from the side");
+    using var tpl = UvKit.Template(m, all, 256, 256);
+    Check(tpl.Width == 256, "uv: layout picture");
+
+    // Auto shade, clay light, full quality: quick, tops bright, underside dark
+    var shaded = Prm.Load(f);
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    Shader.Shade(shaded, new ShadeOptions(Occlusion: 0.85f, Rays: 160));
+    float Lum(uint c) => (((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255)) / 765f;
+    var fn = Shader.CornerNormals(shaded, ShadeSmooth.Faces);
+    var up = shaded.Faces.Where((x, i) => fn[i][0].Y < -0.8f).Select(x => Lum(x.Colors[0])).DefaultIfEmpty(0).Average();
+    var down = shaded.Faces.Where((x, i) => fn[i][0].Y > 0.8f).Select(x => Lum(x.Colors[0])).DefaultIfEmpty(0).Average();
+    var side = shaded.Faces.Where((x, i) => MathF.Abs(fn[i][0].Y) < 0.3f).Select(x => Lum(x.Colors[0])).DefaultIfEmpty(0).Average();
+    var spread = shaded.Faces.SelectMany(x => x.Colors.Take(x.Corners)).Select(Lum).OrderBy(v => v).ToList();
+    Console.WriteLine($"clay shade: {watch.ElapsedMilliseconds} ms, tops {up:0.00}, sides {side:0.00}, underside {down:0.00}, darkest tenth {spread[spread.Count / 10]:0.00}, median {spread[spread.Count / 2]:0.00}");
+    Check(watch.ElapsedMilliseconds < 5000 && up > 0.7f && up > down + 0.25f, "clay shade: quick, tops bright, underside dark");
+
+    // Painting
+    using var b = TexturePaint.Blank(64, 64, SKColors.White);
+    TexturePaint.Dab(b, 32, 32, 6, 1, SKColors.Red, 1);
+    Check(b.GetPixel(32, 32) == SKColors.Red && b.GetPixel(2, 2) == SKColors.White, "paint: a dab");
+    using var orig = TexturePaint.Blank(64, 64, SKColors.White);
+    TexturePaint.Dab(b, 32, 32, 8, 1, SKColors.Black, 1, orig);
+    Check(b.GetPixel(32, 32) == SKColors.White, "paint: the eraser puts it back");
+    TexturePaint.Stroke(b, new SKPoint(5, 10), new SKPoint(58, 10), 2, 1, SKColors.Blue, 1);
+    Check(b.GetPixel(30, 10) == SKColors.Blue, "paint: a stroke");
+    int filled = TexturePaint.Fill(b, 0, 63, SKColors.Green, 0.1f);
+    Check(filled > 3000 && b.GetPixel(63, 63) == SKColors.Green && b.GetPixel(30, 10) == SKColors.Blue, "paint: flood fill " + filled);
+    using var mask = new SKPath(); mask.AddRect(new SKRect(0, 0, 32, 64));
+    TexturePaint.Generate(b, 0, new(SKColors.Yellow, SKColors.Yellow), mask);
+    Check(b.GetPixel(10, 40) == SKColors.Yellow && b.GetPixel(50, 40) == SKColors.Green, "generate: kept inside the mask");
+    using var page = TexturePaint.Blank(256, 256, SKColors.White);
+    for (int k = 0; k < TexturePaint.Kinds.Length; k++)
+    {
+        using var before2 = page.Copy();
+        TexturePaint.Generate(page, k, new(new SKColor(200, 30, 30), new SKColor(20, 20, 60), 0.12f, 15, 1, 3, "42"), null, m, all);
+        int diff = 0;
+        for (int y = 0; y < 256; y += 4) for (int x = 0; x < 256; x += 4) if (page.GetPixel(x, y) != before2.GetPixel(x, y)) diff++;
+        Check(diff > 0, $"generate: {TexturePaint.Kinds[k]} changes the page ({diff})");
+    }
+}
+
 void Fit()
 {
     var rows = new List<(string Car, double TopReal, double AccReal, float Top, float Acc)>();
@@ -906,6 +1179,9 @@ void Fit()
 
 Parser();
 Packs();
+ReadmeTests();
+FileCheckTests();
+TexToolTests();
 if (game.Find("cars\\rc\\parameters.txt") != null)
 {
     var flipped = new CarSim(new Car(game, "rc").Data);
@@ -945,9 +1221,10 @@ if (game.Find("cars\\rc\\parameters.txt") != null)
 }
 switch (mode)
 {
-    case "read": ReadPass(); Installer(); break;
+    case "read": ReadPass(); Installer(); UvAndPaint(); DevKit(); break;
     case "write": WritePass(); break;
     case "fit": Fit(); break;
+    case "hull": HullPass(); break;
     case "curve":
         {
             // The schedule of the scripted RVGL run: throttle, coast, throttle, then full lock

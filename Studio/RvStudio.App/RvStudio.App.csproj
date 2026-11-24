@@ -21,6 +21,7 @@
     <PackageReference Include="Silk.NET.OpenGL" Version="2.23.0" />
     <ProjectReference Include="..\RvStudio.Core\RvStudio.Core.csproj" />
     <EmbeddedResource Include="Assets\app.ico" LogicalName="app.ico" />
+    <EmbeddedResource Include="..\..\RvCarStudio\data\Tips\English.txt" LogicalName="easy.tips.txt" />
     <Content Include="..\..\RvCarStudio\data\readme\*.txt" Link="data\readme\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

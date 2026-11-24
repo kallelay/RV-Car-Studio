@@ -43,7 +43,7 @@ sealed class GpuTex { public uint Id; public int Version = -1; }
 /// <summary>What one frame draws. Made on the UI thread, read on the render thread, never changed in between</summary>
 sealed class Frame
 {
-    public readonly List<(Prm Mesh, Matrix4x4 World, int Tex, bool Env, bool Selected, string? TexFile, bool Hover)> Items = new();
+    public readonly List<(Prm Mesh, Matrix4x4 World, int Tex, bool Env, bool Selected, string? TexFile, bool Hover, PartView View)> Items = new();
     public readonly List<LineVertex> Lines = new();         // with depth
     public readonly List<LineVertex> Overlay = new();       // always on top
     public readonly List<LineVertex> Solid = new();         // triangles in their own colours: the hull when shown solid
@@ -83,6 +83,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
     TaskCompletionSource<SKBitmap>? captureDone;
     int captureSize, captureHeight;
     bool captureClean;
+    Vector3? captureBack;
 
     // Camera
     public Vector3 Target = new(0, 0, 0);
@@ -115,6 +116,8 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
     }
 
     // --------------------------- Camera ---------------------------
+
+    public Vector3 EyePos => Eye();
 
     Vector3 Eye()
     {
@@ -293,7 +296,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
 
     // --------------------------- Mouse ---------------------------
 
-    enum Drag { None, Orbit, Pan, Axis, Free, Turn, Size }
+    enum Drag { None, Orbit, Pan, Axis, Free, Turn, Size, VertexBox }
     Drag drag;
     Point dragLast, dragStart;
     Vector3 dragAxis, accumulated;
@@ -372,7 +375,8 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         if (props.IsMiddleButtonPressed) { drag = Drag.Pan; return; }
         if (!props.IsLeftButtonPressed) return;
         if (e.KeyModifiers.HasFlag(KeyModifiers.Alt)) { drag = Drag.Orbit; return; }
-        if (e.ClickCount == 2 && doc.Sim == null) { DoubleClickAt(pt.Position); return; }
+        if (e.ClickCount == 2 && doc.Sim == null && !doc.VertexMode) { DoubleClickAt(pt.Position); return; }
+        pressMods = e.KeyModifiers;
         PressLeft(pt.Position);
     }
 
@@ -493,7 +497,53 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             dragAxisScreen = sv.LengthSquared() > 1 ? Vec2.Normalize(sv) : Vec2.UnitX;
             return;
         }
+        // Editing vertices: a click picks one, a drag picks those in the box (Alt or the right button turns the view)
+        if (doc.VertexMode && doc.Sim == null) { drag = Drag.VertexBox; return; }
         drag = Drag.Orbit; // a click selects, a drag on nothing turns the view
+    }
+
+    public KeyModifiers pressMods;
+
+    /// <summary>The box being dragged to pick vertices, in control units (null: none)</summary>
+    public event Action<Rect?>? BoxChanged;
+
+    /// <summary>Vertices picked by a click (the nearest within a few pixels) or a box. Shift adds, Ctrl takes away</summary>
+    public void PickVerticesAt(Point from, Point to, bool box, KeyModifiers mods)
+    {
+        var pts = doc.VertexPositions();
+        var vp = UiViewProj();
+        bool add = mods.HasFlag(KeyModifiers.Shift), remove = mods.HasFlag(KeyModifiers.Control);
+        if (box)
+        {
+            var rect = new Rect(from, to).Normalize();
+            var inside = new List<int>();
+            for (int i = 0; i < pts.Length; i++)
+                if (Project(pts[i], vp, out var s) && rect.Contains(new Point(s.X, s.Y))) inside.Add(i);
+            doc.PickVertices(inside, add, remove);
+            Status?.Invoke($"{doc.PickedVerts.Count} vertices picked");
+            return;
+        }
+        // Nearest on the screen; of two at the same spot, the one nearer the eye
+        var mouse = new Vec2((float)to.X, (float)to.Y);
+        var eye = Eye();
+        int best = -1; float bestD = 10, bestZ = float.MaxValue;
+        for (int i = 0; i < pts.Length; i++)
+        {
+            if (!Project(pts[i], vp, out var s)) continue;
+            float d = (s - mouse).Length(), z = (pts[i] - eye).Length();
+            if (d < bestD - 0.5f || (Math.Abs(d - bestD) <= 0.5f && z < bestZ)) { best = i; bestD = d; bestZ = z; }
+        }
+        if (best >= 0)
+        {
+            if (remove) doc.PickVertices(new[] { best }, true, true);
+            else doc.PickVertices(new[] { best }, add || false);
+            Status?.Invoke($"Vertex {best} of {doc.VertexPart.Label}: {doc.PickedVerts.Count} picked. Drag the handles, use the arrows, or W and a number");
+            return;
+        }
+        // Nothing near: another part under the mouse is edited instead, else the picked ones are let go
+        var part = PickPart(to);
+        if (part.Kind != SelKind.None && part != doc.VertexPart && doc.CanEditVertices(part)) { doc.Select(part); Picked?.Invoke(); Status?.Invoke("Vertices of " + part.Label); }
+        else if (!add && !remove) doc.PickVertices(Array.Empty<int>(), false);
     }
 
     protected override void OnPointerMoved(PointerEventArgs e) => MoveTo(e.GetPosition(this));
@@ -513,6 +563,9 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
 
         switch (drag)
         {
+            case Drag.VertexBox:
+                if (movedOnce) BoxChanged?.Invoke(new Rect(dragStart, p).Normalize());
+                return;
             case Drag.Orbit:
                 if (View != ViewMode.Perspective) View = ViewMode.Perspective;
                 // The car turns with the mouse, as in 3ds Max
@@ -900,6 +953,14 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
 
     public void ReleaseAt(Point p, bool left = true)
     {
+        if (drag == Drag.VertexBox)
+        {
+            BoxChanged?.Invoke(null);
+            PickVerticesAt(dragStart, p, movedOnce, pressMods);
+            drag = Drag.None;
+            Redraw();
+            return;
+        }
         if (drag is Drag.Orbit && !movedOnce && left && doc.Sim == null)
         {
             doc.Select(PickPart(p));
@@ -987,6 +1048,32 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
         }
     }
 
+    /// <summary>Editing vertices: the part's edges, its vertices as small marks, the picked ones bigger and lit</summary>
+    void AddVertices(Frame f)
+    {
+        var pts = doc.VertexPositions();
+        if (pts.Length == 0) return;
+        uint edge = Mark(120, 170, 255), dot = Mark(235, 235, 245);
+        var hl = Look.SelectLine;
+        uint pick = Rgba((byte)(hl.X * 255), (byte)(hl.Y * 255), (byte)(hl.Z * 255));
+        foreach (var (a, b) in doc.VertexEdges())
+            if (a < pts.Length && b < pts.Length) Line(f.Overlay, pts[a], pts[b], edge);
+        var (r, u) = CameraAxes();
+        float s = Distance * 0.0035f;
+        for (int i = 0; i < pts.Length; i++)
+        {
+            bool on = doc.PickedVerts.Contains(i);
+            float k = on ? s * 2.2f : s;
+            uint c = on ? pick : dot;
+            // A small square facing the eye
+            Line(f.Overlay, pts[i] + (-r - u) * k, pts[i] + (r - u) * k, c);
+            Line(f.Overlay, pts[i] + (r - u) * k, pts[i] + (r + u) * k, c);
+            Line(f.Overlay, pts[i] + (r + u) * k, pts[i] + (-r + u) * k, c);
+            Line(f.Overlay, pts[i] + (-r + u) * k, pts[i] + (-r - u) * k, c);
+            if (on) { Line(f.Overlay, pts[i] - r * k, pts[i] + r * k, c); Line(f.Overlay, pts[i] - u * k, pts[i] + u * k, c); }
+        }
+    }
+
     Frame Build(bool clean)
     {
         var f = new Frame
@@ -1017,7 +1104,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                 _ => false
             };
             // the game reflects the environment on the body
-            f.Items.Add((m, part.World, part.Tex, part.Kind == PartKind.Body, sel, null, !clean && sim == null && !sel && Hovered.Kind != SelKind.None && SelOf(part) == Hovered));
+            f.Items.Add((m, part.World, part.Tex, part.Kind == PartKind.Body, sel, null, !clean && sim == null && !sel && Hovered.Kind != SelKind.None && SelOf(part) == Hovered, clean || sim != null ? PartView.Solid : doc.PartViews.GetValueOrDefault(SelOf(part))));
         }
 
         f.EnvColor = new Vector3(d.EnvR, d.EnvG, d.EnvB) / 255f;
@@ -1088,6 +1175,8 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
                 Ring(f.Overlay, at, Vector3.UnitY, Vector3.UnitZ, r, col, 16);
             }
         }
+
+        if (doc.VertexMode && sim == null) AddVertices(f);
 
         if (ShowTravel)
         {
@@ -1334,7 +1423,7 @@ public sealed class Viewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitT
             string? tex = c.Folder.Equals(car.Folder, StringComparison.OrdinalIgnoreCase) ? f.CarTexture : car.Game.Find(c.Data.TPage);
             foreach (var part in CarPose.Build(c.Data, c.Dyn))
                 if (doc.RaceModel(c, part.Slot) is { } m)
-                    f.Items.Add((m, part.World, part.Tex, false, false, part.Tex == 1 ? null : tex, false));
+                    f.Items.Add((m, part.World, part.Tex, false, false, part.Tex == 1 ? null : tex, false, PartView.Solid));
         }
     }
 
@@ -1439,7 +1528,7 @@ void main() {
 
     const string VsLine = @"
 in vec3 aPos; in vec4 aColor; uniform mat4 uMvp; out vec4 vColor;
-void main() { gl_Position = uMvp * vec4(aPos, 1.0); vColor = aColor; }";
+void main() { gl_Position = uMvp * vec4(aPos, 1.0); gl_PointSize = 3.0; vColor = aColor; }";
     const string FsLine = @"
 in vec4 vColor; uniform vec4 uOverride; out vec4 fragColor;
 void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
@@ -1731,11 +1820,12 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         uint fxTex = Tex(f.FxTexture, 0);
         uint envTex = Tex(f.EnvTexture, 0);
 
-        void Pass(int pass)
+        void Pass(int pass, PartView only = PartView.Solid)
         {
             g.Uniform1(uMode, f.Shade switch { ShadeMode.VertexColours => 1, ShadeMode.Clay => 2, _ => 0 });
             foreach (var it in f.Items)
             {
+                if (it.View != only) continue;
                 var mesh = Mesh(it.Mesh, f.ModelVersion);
                 g.BindVertexArray(mesh.Vao);
                 g.UseProgram(meshProg);
@@ -1764,7 +1854,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
             g.BindTexture(TextureTarget.Texture2D, envTex);
             foreach (var it in f.Items)
             {
-                if (!it.Env) continue;
+                if (!it.Env || it.View != PartView.Solid) continue;
                 var mesh = Mesh(it.Mesh, f.ModelVersion);
                 g.BindVertexArray(mesh.Vao);
                 Mat(uMvp, it.World * vp);
@@ -1783,8 +1873,27 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         g.DepthMask(true);
         g.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
+        // Half see-through parts: over the rest, half of their colour
+        if (f.Items.Any(x => x.View == PartView.Half))
+        {
+            g.UseProgram(meshProg);
+            g.BlendColor(0, 0, 0, 0.5f);
+            g.BlendFunc(BlendingFactor.ConstantAlpha, BlendingFactor.OneMinusConstantAlpha);
+            for (int pass = 0; pass < 3; pass++) Pass(pass, PartView.Half);
+            g.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+        }
+
         // Wireframe, and what's selected is outlined so its colours stay what they are
         g.UseProgram(lineProg);
+        foreach (var it in f.Items)
+        {
+            if (it.View is not (PartView.Wire or PartView.Points)) continue;
+            var mesh = Mesh(it.Mesh, f.ModelVersion);
+            Mat(lMvp, it.World * vp);
+            g.Uniform4(lOverride, f.HoverLine.X, f.HoverLine.Y, f.HoverLine.Z, 1f);
+            g.BindVertexArray(mesh.LineVao);
+            g.DrawArrays(it.View == PartView.Wire ? PrimitiveType.Lines : PrimitiveType.Points, 0, (uint)mesh.LineCount);
+        }
         foreach (var it in f.Items)
         {
             if (!f.Wire && !it.Selected && !it.Hover) continue;
@@ -1854,16 +1963,16 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
         var cf = captureFrame ?? frame!;
         try
         {
-            Draw(cf, size, high, captureClean ? new Vector3(1, 1, 1) : cf.Background, !captureClean);
+            Draw(cf, size, high, captureBack ?? (captureClean ? new Vector3(1, 1, 1) : cf.Background), !captureClean);
             var px = new byte[size * high * 4];
             fixed (byte* p = px) g.ReadPixels(0, 0, (uint)size, (uint)high, PixelFormat.Rgba, PixelType.UnsignedByte, p);
             var bmp = new SKBitmap(size, high, SKColorType.Rgba8888, SKAlphaType.Unpremul);
             for (int y = 0; y < high; y++)
                 System.Runtime.InteropServices.Marshal.Copy(px, (high - 1 - y) * size * 4, bmp.GetPixels() + y * bmp.RowBytes, size * 4);
             for (int y = 0; y < high; y++) for (int x = 0; x < size; x++) { var c = bmp.GetPixel(x, y); bmp.SetPixel(x, y, c.WithAlpha(255)); }
-            done.SetResult(bmp);
+            done.TrySetResult(bmp);
         }
-        catch (Exception ex) { done.SetException(ex); }
+        catch (Exception ex) { done.TrySetException(ex); }
         g.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         g.DeleteFramebuffer(fbo);
         g.DeleteRenderbuffer(col);
@@ -1873,15 +1982,32 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
     Frame? captureFrame;
 
     /// <summary>A picture of the view, from OpenGL. Clean: white background, no helpers, for the carbox</summary>
-    public Task<SKBitmap> Capture(int size, bool clean, int height = 0)
+    /// <summary>The view as a picture. back: the colour behind the car (a clean picture: white)</summary>
+    public async Task<SKBitmap> Capture(int size, bool clean, int height = 0, Vector3? back = null)
     {
+        // One at a time: a second picture asked while one waits would take its place and the first would never come
+        while (captureDone != null) await Task.Delay(20);
         captureHeight = height;
+        captureBack = back;
         var tcs = new TaskCompletionSource<SKBitmap>(TaskCreationOptions.RunContinuationsAsynchronously);
         captureFrame = Build(clean);
         captureSize = size;
         captureClean = clean;
         captureDone = tcs;
         RequestNextFrameRendering();
-        return tcs.Task;
+        // The view may not draw by itself (behind a dialog, its window not in front): keep asking, and never wait forever
+        var started = DateTime.UtcNow;
+        while (!tcs.Task.IsCompleted)
+        {
+            await Task.WhenAny(tcs.Task, Task.Delay(100));
+            if (tcs.Task.IsCompleted) break;
+            RequestNextFrameRendering();
+            if ((DateTime.UtcNow - started).TotalSeconds > 5)
+            {
+                if (captureDone == tcs) captureDone = null;
+                tcs.TrySetException(new TimeoutException("The 3D view didn't draw a picture"));
+            }
+        }
+        return await tcs.Task;
     }
 }

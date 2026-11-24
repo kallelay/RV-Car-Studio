@@ -41,23 +41,61 @@ public sealed class StudioApp : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime d)
         {
             string? path = null;
-            string? auto = null, look = null;
+            string? auto = null, look = null, release = null, releaseShots = null, tours = null, load = null;
+            bool config = false;
             var a = Program.Args;
             for (int i = 0; i < a.Length; i++)
             {
                 if (a[i] == "-rvpath" && i + 1 < a.Length) path = a[++i];
+                // As the old Car Studio: -load <car folder> opens that car, -config asks for the game's folder again
+                else if (a[i] == "-load" && i + 1 < a.Length) load = a[++i];
+                else if (a[i].StartsWith("-load(") && a[i].EndsWith(")")) load = a[i][6..^1];
+                else if (a[i] == "-config") config = true;
                 else if (a[i] == "--auto" && i + 1 < a.Length) auto = a[++i];
                 else if (a[i] == "--look" && i + 1 < a.Length) look = a[++i];
+                else if (a[i] == "--release" && i + 2 < a.Length) { release = a[++i]; releaseShots = a[++i]; }
+                else if (a[i] == "--tours" && i + 2 < a.Length) { tours = a[++i]; releaseShots = a[++i]; }
             }
-            AutoScenario.Running = auto != null || look != null;
+            AutoScenario.Running = auto != null || look != null || release != null || tours != null;
             // A test run starts as it always looked, whatever you chose
             Look.Apply(AutoScenario.Running ? ThemeKind.Classic : Settings.Theme);
-            var w = new MainWindow(path);
+            var w = new MainWindow(config ? "" : path);
             d.MainWindow = w;
+            InstallCrashGuard(w);
+            if (load != null) w.Opened += (_, _) => w.LoadFromCommandLine(load);
             if (auto != null) w.Opened += async (_, _) => await AutoScenario.Run(w, auto);
             if (look != null) w.Opened += async (_, _) => await AutoScenario.RunLook(w, look);
+            if (release != null) w.Opened += async (_, _) => await AutoScenario.RunRelease(w, release, releaseShots!);
+            if (tours != null) w.Opened += async (_, _) => await AutoScenario.RunTours(w, tours, releaseShots!);
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// An error inside the app never closes it: it's written to crash.log next to the settings, said in the status line
+    /// and in a message, and the app goes on (as the old Car Studio did). Your car is as it was before the error.
+    /// </summary>
+    static void InstallCrashGuard(MainWindow w)
+    {
+        var logFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RvCarStudio", "crash.log");
+        void Write(object e)
+        {
+            try { Directory.CreateDirectory(Path.GetDirectoryName(logFile)!); File.AppendAllText(logFile, DateTime.Now.ToString("u") + "  " + e + Environment.NewLine + Environment.NewLine); } catch { }
+        }
+        bool showing = false;
+        Avalonia.Threading.Dispatcher.UIThread.UnhandledException += async (_, e) =>
+        {
+            e.Handled = true;
+            Write(e.Exception);
+            if (AutoScenario.Running) { AutoScenario.NoteCrash(e.Exception); return; }
+            w.Say("Something went wrong: " + e.Exception.Message + " (written to crash.log). The app goes on");
+            if (showing) return;
+            showing = true;
+            try { await Dialogs.Ask(w, "Something went wrong:" + Environment.NewLine + e.Exception.Message + Environment.NewLine + Environment.NewLine + "It's written to " + logFile + ". The app goes on; save your work to be safe.", "OK"); }
+            finally { showing = false; }
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) => { Write(e.Exception); e.SetObserved(); };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Write(e.ExceptionObject);
     }
 }
 
@@ -97,6 +135,14 @@ public static class Settings
     /// <summary>The small view cube in the corner of the 3D view: on unless you hid it</summary>
     public static bool ViewCube { get => V.GetValueOrDefault("viewcube") != "0"; set => Set("viewcube", value ? "1" : "0"); }
     public static string Author { get => V.GetValueOrDefault("author") ?? ""; set => Set("author", value); }
+    public static string Email { get => V.GetValueOrDefault("email") ?? ""; set => Set("email", value); }
+    public static string Site { get => V.GetValueOrDefault("site") ?? ""; set => Set("site", value); }
+    /// <summary>Anything else to keep, by name (a car's readme answers, the tours seen)</summary>
+    public static string? Get(string key) => V.GetValueOrDefault(key);
+    public static void Put(string key, string value) => Set(key, value);
+    /// <summary>The UV editor's face lines: their colour (0 Auto) and how much the texture under them is dimmed</summary>
+    public static int UvLines { get => int.TryParse(V.GetValueOrDefault("uvlines"), out var i) ? i : 0; set => Set("uvlines", value.ToString()); }
+    public static double UvDim { get => double.TryParse(V.GetValueOrDefault("uvdim"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0; set => Set("uvdim", value.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
 }
 
 public static class Dialogs
@@ -110,7 +156,10 @@ public static class Dialogs
     /// <summary>Index of the button pressed. Closing the window counts as the last one</summary>
     public static async Task<int> Ask(Window owner, string text, params string[] buttons)
     {
-        var d = Frame("RV Car Studio", 420, 150);
+        var d = Frame("RV Car Studio", 480, 150);
+        // As tall as its words need: a long message (a path, an error) shows whole
+        d.SizeToContent = SizeToContent.Height;
+        d.MaxHeight = 600;
         int result = buttons.Length - 1;
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 6 };
         for (int i = 0; i < buttons.Length; i++)

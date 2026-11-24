@@ -216,6 +216,15 @@ public sealed class Car
         }
     }
 
+    /// <summary>The text Save would write now, without touching anything</summary>
+    public string PreviewText()
+    {
+        if (!Modified) return File_.Text;
+        var f = new ParamFile(File_.Text);
+        f.Apply(baseEntries, Data.Emit());
+        return f.Text;
+    }
+
     /// <summary>The file text with the current values. Unchanged values keep their exact text</summary>
     public string CurrentText()
     {

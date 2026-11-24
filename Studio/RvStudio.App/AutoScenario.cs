@@ -23,6 +23,9 @@ public static partial class AutoScenario
     static void Log(string s) { log?.WriteLine(s); log?.Flush(); }
     static void Check(bool ok, string what) { if (ok) pass++; else { fail++; Log("FAIL " + what); } }
 
+    /// <summary>An error the crash guard caught during a test: a failure, written down</summary>
+    public static void NoteCrash(Exception e) { fail++; Log("CRASH (caught) " + e); }
+
     static async Task Wait(int ms)
     {
         await Task.Delay(ms);
@@ -79,6 +82,152 @@ public static partial class AutoScenario
         await Send(w, up, b);
     }
 
+    static async Task SendTo(Window win, Control on, uint msg, Point p, int buttons = 0)
+    {
+        var h = win.TryGetPlatformHandle()!.Handle;
+        var c = on.TranslatePoint(p, win) ?? p;
+        var s = win.RenderScaling;
+        int x = (int)(c.X * s), y = (int)(c.Y * s);
+        PostMessage(h, msg, (IntPtr)buttons, (IntPtr)((y << 16) | (x & 0xFFFF)));
+        await Wait(40);
+    }
+
+    /// <summary>The UV and texture editor: opens on the car's texture, unwraps, paints with the mouse, generates, undoes, closes.</summary>
+    static async Task UvEditorTest(MainWindow w)
+    {
+        var d = w.Doc;
+        var t = w.OpenUvEditor();
+        await Wait(600);
+        Check(t != null && t.IsVisible && t.Parts.Count > 0, "uv editor: opens with the car's parts: " + string.Join(", ", t?.Parts.Select(p => p.Label) ?? []));
+        if (t == null) return;
+        Check(t.ChoosePart("Body") && t.Model != null, "uv editor: the body's faces");
+        var body = t.Model!;
+        var uvBefore = UvKit.Copy(body);
+        int undoBefore = d.UndoDepth;
+
+        // Select all and unwrap: the model changes, undo takes it back
+        t.PickAll();
+        Check(t.Picked.Count == body.Faces.Count(UvKit.Textured), "uv editor: select all");
+        int mv = d.ModelVersion;
+        t.UvEdit("Unwrap UVs", f => UvKit.Unwrap(body, f));
+        await Wait(200);
+        var (lo, hi) = UvKit.Bounds(body, t.AllFaces());
+        Check(d.ModelVersion > mv && d.DirtyModels.Contains(body) && lo.X >= 0 && hi.X <= 1 && lo.Y >= 0 && hi.Y <= 1, $"uv editor: unwrapped into the page {lo} {hi}");
+        Check(d.UndoDepth == undoBefore + 1, "uv editor: one undo step in the main window too");
+        SaveWin(t, "uv_editor_unwrapped");
+
+        // A brush stroke with the real mouse, onto the page's middle
+        t.SetTool(TexTool.Brush);
+        t.Ink = SkiaSharp.SKColors.Lime;
+        t.Picked.Clear();
+        var cv = t.Canvas;
+        var a = cv.ToScreen(new System.Numerics.Vector2(0.3f, 0.5f));
+        var b2 = cv.ToScreen(new System.Numerics.Vector2(0.7f, 0.5f));
+        await SendTo(t, cv, MOVE, a);
+        await SendTo(t, cv, LDOWN, a, 1);
+        for (int i = 1; i <= 8; i++) await SendTo(t, cv, MOVE, new Point(a.X + (b2.X - a.X) * i / 8, a.Y), 1);
+        await SendTo(t, cv, LUP, b2);
+        await Wait(250);
+        var mid = t.Pic.GetPixel(t.Pic.Width / 2, t.Pic.Height / 2);
+        Check(mid.Green > 200 && mid.Red < 60 && t.TexDirty, $"uv editor: the mouse paints a stroke ({mid})");
+        Check(d.PaintPreview != null && d.PaintW == t.Pic.Width, "uv editor: the car in the 3D view shows the painting");
+
+        // Generators: a livery on the whole body, then undo
+        using (var before = t.Pic.Copy())
+        {
+            t.Livery(5);
+            await Wait(150);
+            int changed = 0;
+            for (int y = 0; y < t.Pic.Height; y += 8) for (int x = 0; x < t.Pic.Width; x += 8) if (t.Pic.GetPixel(x, y) != before.GetPixel(x, y)) changed++;
+            Check(changed > 50, "uv editor: Make a livery paints the faces: " + changed);
+            SaveWin(t, "uv_editor_livery");
+            await GlShot(w, "uv_editor_car");
+            t.Undo();
+            await Wait(100);
+            Check(t.Pic.GetPixel(t.Pic.Width / 2, t.Pic.Height / 2) == before.GetPixel(t.Pic.Width / 2, t.Pic.Height / 2), "uv editor: undo the livery");
+        }
+        // Undo the stroke, then the unwrap
+        t.Undo();
+        t.Undo();
+        await Wait(100);
+        Check(UvKit.Copy(body).SequenceEqual(uvBefore), "uv editor: undo puts the faces back");
+
+        // Its undo takes back only its own change of the faces, never a later change made in the main window
+        t.UvEdit("Flip UVs", f => UvKit.Flip(body, f, true));
+        var flipped = UvKit.Copy(body);
+        var com = d.D!.CoM;
+        d.Edit("Centre of mass", () => d.D!.CoM = com + new System.Numerics.Vector3(0, 1, 0));
+        d.EndGesture();
+        t.Undo();
+        Check(UvKit.Copy(body).SequenceEqual(flipped) && d.D!.CoM != com, "uv editor: its undo leaves a later change in the main window alone");
+        d.Undo();
+        t.Undo();
+        Check(UvKit.Copy(body).SequenceEqual(uvBefore) && d.D!.CoM == com, "uv editor: once that's undone there, its own undo works");
+
+        // Lines on a white page: Auto makes them dark with a light edge, the selection magenta, all of them readable
+        t.SetTool(TexTool.Select);
+        t.PushUndo();
+        t.Pic = TexturePaint.Blank(t.Pic.Width, t.Pic.Height, SkiaSharp.SKColors.White);
+        t.Changed();
+        t.Picked.Clear();
+        foreach (var fi in t.AllFaces().Take(t.AllFaces().Count() / 3)) t.Picked.Add(fi);
+        t.LineColour = 0;
+        t.Canvas.InvalidateVisual();
+        await Wait(250);
+        SaveWin(t, "uv_lines_white_auto");
+        t.LineColour = Array.IndexOf(TextureWindow.LineNames, "Cyan");
+        t.Canvas.InvalidateVisual();
+        await Wait(150);
+        SaveWin(t, "uv_lines_white_cyan");
+        t.LineColour = 0;
+        t.Undo();
+        t.Picked.Clear();
+
+        // A click on a face only selects it: no change, no undo step, the car not marked changed
+        t.SetTool(TexTool.Select);
+        t.Picked.Clear();
+        bool wasModified = d.Modified;
+        int depth = d.UndoDepth;
+        var faceAt = cv.ToScreen(UvKit.Centre(body, new List<int> { t.AllFaces().First() }));
+        await SendTo(t, cv, MOVE, faceAt);
+        await SendTo(t, cv, LDOWN, faceAt, 1);
+        await SendTo(t, cv, LUP, faceAt);
+        await Wait(100);
+        Check(d.UndoDepth == depth && d.Modified == wasModified, $"uv editor: a click that selects changes nothing ({t.Picked.Count} picked)");
+        t.SetTool(TexTool.Brush);
+
+        // A model read again (saved in Blender): the editor follows it, its faces' changes go to the car's model
+        if (d.ModelName(body) is { } bodyRel)
+        {
+            d.ReloadModel(bodyRel);
+            await Wait(100);
+            var fresh = d.Model(d.D!.BodyModel);
+            Check(t.Model != null && ReferenceEquals(t.Model, fresh), "uv editor: follows the body when it's read again");
+        }
+
+        // Generate inside the selected faces only
+        t.PickAll();
+        t.GenKind = 0; t.GenA = SkiaSharp.SKColors.Blue; t.GenAmount = 1;
+        t.Generate();
+        await Wait(100);
+        t.Picked.Clear();
+        int blue = 0;
+        for (int y = 0; y < t.Pic.Height; y += 4) for (int x = 0; x < t.Pic.Width; x += 4) { var c = t.Pic.GetPixel(x, y); if (c.Blue > 240 && c.Red < 20 && c.Green < 20) blue++; }
+        Check(blue > 20, "uv editor: Plain colour on the selected faces: " + blue);
+
+        t.CloseDiscarding();
+        await Wait(300);
+        Check(w.TextureEditor == null && d.PaintPreview == null, "uv editor: closed, the car shows its texture again");
+    }
+
+    static void SaveWin(Window win, string name)
+    {
+        var size = new PixelSize((int)win.Bounds.Width, (int)win.Bounds.Height);
+        using var rtb = new RenderTargetBitmap(size);
+        rtb.Render(win);
+        rtb.Save(Path.Combine(shots, name + ".png"));
+    }
+
     static async Task RealMouse(MainWindow w)
     {
         var d = w.Doc;
@@ -100,6 +249,13 @@ public static partial class AutoScenario
         await Wait(450);
         Check(w.Cube.Facing() == "top front right", "view cube: corner " + w.Cube.Facing());
         WindowShot(w, "view_cube");
+        // Home, under the cube: back to the starting view, on the grid
+        Check(w.HomeButton.IsVisible && w.HomeButton.Bounds.Height > 0, "Home under the view cube");
+        w.View.Distance = 3000;
+        w.GoHome();
+        await Wait(200);
+        Check(w.View.View == ViewMode.Perspective && MathF.Abs(w.View.Yaw - 0.7f) < 0.01f && MathF.Abs(w.View.Pitch - 0.42f) < 0.01f && w.View.Distance < 3000, $"Home: the starting view ({w.View.Yaw}, {w.View.Pitch}, {w.View.Distance})");
+        await UvEditorTest(w);
         w.Cube.IsVisible = false;
         await Wait(100);
         Check(!w.Cube.IsVisible, "view cube hidden");
@@ -226,6 +382,8 @@ public static partial class AutoScenario
         }
         foreach (var car in new[] { "adeon", "tc4", "jg1jg7" })
         {
+            // jg1jg7 isn't a stock car: a game (or a test copy) without it has nothing to show
+            if (w.Doc.Game?.Find("cars\\" + car + "\\parameters.txt") == null) { Log("colour of " + car + ": not in this game, skipped"); continue; }
             w.PickCar(car);
             w.Doc.Select(new Selection(SelKind.Body));
             w.View.Yaw = 0.75f + MathF.PI; w.View.Pitch = 0.32f;
@@ -568,7 +726,7 @@ public static partial class AutoScenario
         Check(dd.Wheels[0].Offset1.X < 0 && dd.Wheels[1].Offset1.X > 0 && dd.Wheels[0].Offset1.Z > dd.Wheels[2].Offset1.Z, "placed at the corners");
         Check(dd.Wheels[0].Radius > 3, "radius from the model");
         Check(dd.Springs.All(s => s.Model < 0), "base car's suspension gone");
-        Check(d.Car.Game.Find(dd.Coll) != null && d.Hull != null && d.Hull.Convex.Count == 1, "a first hull");
+        Check(d.Car.Game.Find(dd.Coll) != null && d.Hull is { Convex.Count: 1 or 2, Spheres.Count: >= 8 }, "a first hull: " + w.HullReport()); // two parts for RC Bandit, as its own hull
         var r = d.Model(dd.Wheels[1].Model)!; var l = d.Model(dd.Wheels[0].Model)!;
         Check(Math.Abs(r.Max.X + l.Min.X) < 0.01f, "right wheel is the left one mirrored");
         var report = CarChecker.Check(d.Car);
@@ -641,7 +799,7 @@ public static partial class AutoScenario
         w.View.Pitch = 0.35f;
 
         // Pages scroll
-        w.Tabs.SelectedIndex = w.PaintTabIndex + 1; // Car
+        w.Tabs.SelectedIndex = w.PropertiesTabIndex; // Car, Handling... in one long page
         await Wait(300);
         var page = ((TabItem)w.Tabs.Items[w.Tabs.SelectedIndex]!).Content as ScrollViewer;
         Check(page != null && page.Extent.Height > page.Viewport.Height && page.Viewport.Height > 50, $"a long page scrolls: {page?.Extent.Height} in {page?.Viewport.Height}");
@@ -680,9 +838,9 @@ public static partial class AutoScenario
         w.SetShadeView(ShadeMode.VertexColours);
         Check(w.View.Shade == ShadeMode.VertexColours, "texture off");
         int runs = w.ShadeRuns;
-        w.Tabs.SelectedIndex = w.PaintTabIndex + 6;
+        w.Tabs.SelectedIndex = w.ShadeTabIndex;
         await Wait(100);
-        w.ShadeSliderSun.Value = 0.9;
+        w.ShadeSliderDepth.Value = 0.4;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         while (w.ShadeRuns == runs && sw.ElapsedMilliseconds < 3000) await Wait(10);
         Log($"first live shade after {sw.ElapsedMilliseconds} ms");
@@ -694,7 +852,7 @@ public static partial class AutoScenario
         await GlShot(w, "shade_live", 500);
         w.ShadeUndo();
         Check(body.Faces.Select(f => f.Colors[0]).SequenceEqual(c0) && !d.DirtyModels.Contains(body), "and back");
-        w.ShadeSliderSun.Value = 0.55;
+        w.ShadeSliderDepth.Value = 0.85;
         await Wait(30);
         w.ShadeUndo();
         w.SetShadeView(ShadeMode.Textured);
@@ -715,6 +873,78 @@ public static partial class AutoScenario
     }
 
     // Guide, shading, normals, colours, race
+    // .obj out and in, the live link to the .obj, and taking values from another car
+    static async Task DevKitTest(MainWindow w)
+    {
+        var d = w.Doc;
+        w.PickCar("rc");
+        await Wait(200);
+        int depth = d.UndoDepth;
+        d.Select(new Selection(SelKind.Body));
+        var bodyRel = d.D!.Models[d.D.BodyModel];
+        var body = d.Model(d.D.BodyModel)!;
+        var obj = Path.Combine(shots, "devkit_body.obj");
+        Check(w.ExportObj(d.Sel, obj) && File.Exists(obj), "obj: the body saved as .obj");
+        var carObj = Path.Combine(shots, "devkit_car.obj");
+        int parts = w.ExportCarObj(carObj);
+        Check(parts >= 5 && File.ReadLines(carObj).Count(l => l.StartsWith("o ")) == parts, "obj: the whole car, one object per part: " + parts);
+        Check(w.ImportObj(d.Sel, obj), "obj: brought back in for the body");
+        await Wait(200);
+        var rel = d.D.Models[d.D.BodyModel];
+        var back = d.Model(d.D.BodyModel)!;
+        Check(rel.EndsWith("devkit_body.prm", StringComparison.OrdinalIgnoreCase) && back.Faces.Length == body.Faces.Length && (back.Max - body.Max).Length() < 0.01f,
+            $"obj: the body uses {rel}, the same {back.Faces.Length} polygons in the same place");
+        Check(w.ObjLinks.Count == 1, "obj: the .obj is watched");
+
+        // Another program saves it again, twice as long
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var lines = File.ReadAllLines(obj).Select(l =>
+        {
+            if (!l.StartsWith("v ")) return l;
+            var p = l.Split(' ');
+            p[3] = (float.Parse(p[3], inv) * 2).ToString("0.######", inv);
+            return string.Join(' ', p);
+        }).ToArray();
+        int reloads = w.ObjReloads;
+        File.WriteAllLines(obj, lines);
+        for (int i = 0; i < 40 && w.ObjReloads == reloads; i++) await Wait(100);
+        var longer = d.Model(d.D.BodyModel)!;
+        float was = body.Max.Z - body.Min.Z, now = longer.Max.Z - longer.Min.Z;
+        Check(w.ObjReloads > reloads && Math.Abs(now - was * 2) < 0.1f, $"obj: saving the .obj reads it again: {was:0.0} long, now {now:0.0}");
+        d.Select(new Selection(SelKind.Body));
+        w.View.Redraw();
+        await Wait(100);
+        await GlShot(w, "devkit_obj_longer", 480);
+
+        d.CancelTo(depth);
+        await Wait(100);
+        Check(d.D!.Models[d.D.BodyModel] == bodyRel, "obj: undo puts the old body back");
+
+        // Compare and take
+        w.OpenCompare("cougar");
+        await Wait(500);
+        var c = w.Compare;
+        Check(c != null && c.Rows.Count > 20, $"compare: {c?.Rows.Count} values differ from the Cougar");
+        if (c != null)
+        {
+            var want = new Car(d.Game!, "cougar").Data;
+            c.ShowGroup(CarCompare.Groups.Engine);
+            c.TickShown();
+            await Wait(100);
+            SaveWin(c, "compare_window");
+            var name = d.D.Name;
+            int n = c.TakeTicked();
+            await Wait(100);
+            Check(n > 0 && Math.Abs(d.D.TopSpeed - want.TopSpeed) < 1e-6 && d.D.Name == name, $"compare: took {n} engine values, top speed {d.D.TopSpeed}, name kept");
+            Check(c.Rows.Count > 0 && c.Rows.All(r => r.Group != CarCompare.Groups.Engine), "compare: the list shows what still differs");
+            d.Undo();
+            await Wait(100);
+            Check(Math.Abs(d.D.TopSpeed - want.TopSpeed) > 1e-6 && c.Rows.Any(r => r.Group == CarCompare.Groups.Engine), "compare: undo takes it back, and the list follows");
+            c.Close();
+        }
+        d.CancelTo(depth);
+    }
+
     static async Task NewToolsTest(MainWindow w)
     {
         var d = w.Doc;
@@ -723,7 +953,7 @@ public static partial class AutoScenario
 
         w.ShowGuide();
         await Wait(300);
-        Check(((TabItem)w.Tabs.SelectedItem!).Content == w.GuideTab, "F1's Guide tab opens");
+        Check(((TabItem)w.Tabs.SelectedItem!).Content == w.GuideTab, "F1 opens How it drives, on Properties");
         w.GuideTab.Refresh();
         var speed = w.GuideSpeed.Text ?? "";
         Check(speed.Contains("mph"), "the Guide works out top speed: " + speed);
@@ -747,27 +977,59 @@ public static partial class AutoScenario
         // Shading by faces, as the slider moves
         var body = d.Model(d.D!.BodyModel)!;
         var old = body.Faces.Select(f => f.Colors[0]).ToArray();
-        w.Tabs.SelectedIndex = w.PaintTabIndex + 6;
+        w.Tabs.SelectedIndex = w.ShadeTabIndex;
         await Wait(100);
-        w.ShadeSmoothBox.SelectedIndex = 3;
+        w.ShadeSmoothBox.SelectedIndex = 2;
         await Wait(1500);
         Check(body.Faces.All(f => Enumerable.Range(0, f.Corners).All(k => f.Colors[k] == f.Colors[0])), "shading by faces: flat polygons");
         WindowShot(w, "tools_shading");
         w.SetShadeView(ShadeMode.VertexColours);
         await GlShot(w, "shade_faces", 500);
-        w.ShadeSmoothBox.SelectedIndex = 2;
+        w.ShadeSmoothBox.SelectedIndex = 0;
         await Wait(1500);
         Check(body.Faces.Any(f => Enumerable.Range(0, f.Corners).Any(k => f.Colors[k] != f.Colors[0])), "by angle: blended where it's smooth");
         await GlShot(w, "shade_angle", 500);
-        w.ShadeSky = Avalonia.Media.Color.Parse("#FF7030");
-        w.ShadeSunColour = Avalonia.Media.Color.Parse("#FFC080");
-        w.ShadeSmoothBox.SelectedIndex = 1;
-        await Wait(1500);
-        uint coloured = body.Faces[0].Colors[0];
-        Check(((coloured >> 16) & 255) > (coloured & 255), $"sky and sun colours: {coloured:X8}");
-        await GlShot(w, "shade_colour", 500);
+        // A clay render: open tops light, the underside and hidden places dark
+        var sw2 = System.Diagnostics.Stopwatch.StartNew();
+        w.DoAutoShade(0.45f, 0.55f, 0.85f);
+        Log($"full auto shade: {sw2.ElapsedMilliseconds} ms");
+        Check(sw2.ElapsedMilliseconds < 8000, "Auto shade in full quality is quick: " + sw2.ElapsedMilliseconds + " ms");
+        float Lum(uint c) => (((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255)) / 765f;
+        var normals = Shader.CornerNormals(body, ShadeSmooth.Faces);
+        var ups = body.Faces.Select((f, i) => (f, n: normals[i][0])).Where(x => x.n.Y < -0.8f).Select(x => Lum(x.f.Colors[0])).ToList();
+        var downs = body.Faces.Select((f, i) => (f, n: normals[i][0])).Where(x => x.n.Y > 0.8f).Select(x => Lum(x.f.Colors[0])).ToList();
+        Log($"clay: {ups.Count} faces up {(ups.Count > 0 ? ups.Average() : 0):0.00}, {downs.Count} down {(downs.Count > 0 ? downs.Average() : 0):0.00}");
+        Check(ups.Count > 0 && downs.Count > 0 && ups.Average() > downs.Average() + 0.25f && ups.Average() > 0.7f, "clay light: tops bright, underside dark");
+        w.SetShadeView(ShadeMode.VertexColours);
+        await GlShot(w, "shade_clay", 500);
+        // The light pad: the light on the right side, then the left, shades that side brighter
+        float Side(bool right) => body.Faces.Select((f, i) => (f, n: normals[i][0])).Where(x => right ? x.n.X > 0.7f : x.n.X < -0.7f).Select(x => Lum(x.f.Colors[0])).DefaultIfEmpty(0).Average();
+        w.ShadeLight.Set(90, 20, 8, false);
+        w.ShadeAround = 90; w.ShadeUp = 20; w.ShadeRadius = 8;
+        w.DoAutoShade(0.45f, 0.55f, 0.85f);
+        float rightLit = Side(true) - Side(false);
+        w.ShadeLight.Set(270, 20, 8, false);
+        w.ShadeAround = 270;
+        w.DoAutoShade(0.45f, 0.55f, 0.85f);
+        float leftLit = Side(false) - Side(true);
+        Log($"light pad: right side {rightLit:0.00} brighter with the light right, left {leftLit:0.00} with it left");
+        Check(rightLit > 0.1f && leftLit > 0.1f, $"the light pad moves the light: {rightLit:0.00}, {leftLit:0.00}");
+        // Dragged with the real mouse: the light follows to where it's dropped
+        var pad = w.ShadeLight;
+        pad.BringIntoView();
+        await Wait(200);
+        var from = pad.LightAt();
+        var to = new Point(100 - 60, 100);
+        await SendTo(w, pad, MOVE, from);
+        await SendTo(w, pad, LDOWN, from, 1);
+        for (int i = 1; i <= 5; i++) await SendTo(w, pad, MOVE, new Point(from.X + (to.X - from.X) * i / 5, from.Y + (to.Y - from.Y) * i / 5), 1);
+        await SendTo(w, pad, LUP, to);
+        await Wait(300);
+        Check(Math.Abs(pad.Around - 270) < 15 && w.ShadeAround == pad.Around, $"dragging the light on the pad: {pad.Around:0} degrees round, {pad.Elevation:0} up");
+        WindowShot(w, "tools_light_pad");
+        pad.Set(LightPad.DefaultAround, LightPad.DefaultHeight, LightPad.DefaultRadius);
+        await Wait(300);
         w.ShadeUndo();
-        w.ShadeSky = w.ShadeSunColour = Avalonia.Media.Colors.White;
         w.ShadeSmoothBox.SelectedIndex = 0;
         await Wait(60);
         w.ShadeUndo();
@@ -896,6 +1158,7 @@ public static partial class AutoScenario
             LockTest(w);
             await ViewAndToolsTest(w);
             await NewToolsTest(w);
+            await DevKitTest(w);
             await FadeTest(w);
             await PartsTest(w);
             await CopyAndHullTest(w);

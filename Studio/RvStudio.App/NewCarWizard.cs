@@ -23,9 +23,9 @@ public sealed class NewCarWizard : Window
     readonly TextBlock problem = new() { Foreground = Look.Bad, FontSize = 12, TextWrapping = TextWrapping.Wrap };
     readonly TextBlock kindNote = new() { FontSize = 12, Foreground = Page.Faint, TextWrapping = TextWrapping.Wrap };
     readonly StackPanel ownFiles = new() { Spacing = 5, IsVisible = false };
-    readonly TextBox bodyBox = new() { FontSize = 12, Watermark = "Body model, .prm" };
-    readonly TextBox wheelBox = new() { FontSize = 12, Watermark = "A wheel model, .prm (optional: keeps the base car's)" };
-    readonly TextBox textureBox = new() { FontSize = 12, Watermark = "Texture, .bmp or .png (optional)" };
+    readonly TextBox bodyBox = new() { FontSize = 12, Watermark = "Body model, .prm or .obj" };
+    readonly TextBox wheelBox = new() { FontSize = 12, Watermark = "A wheel model, .prm or .obj (optional: keeps the base car's)" };
+    readonly TextBox textureBox = new() { FontSize = 12, Watermark = "Texture, .bmp, .png or .jpg (optional)" };
     readonly GameFolder game;
     NewCarKind kind = NewCarKind.Repaint;
     bool folderTyped;
@@ -54,9 +54,11 @@ public sealed class NewCarWizard : Window
         ShowInTaskbar = false;
         Background = Look.Panel;
 
-        cars = game.ListCars().OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        baseBox.ItemsSource = cars.Select(c => c.Name + "  (" + c.Folder + ")").ToList();
-        baseBox.SelectedIndex = Math.Max(0, cars.FindIndex(c => c.Folder.Equals(current, StringComparison.OrdinalIgnoreCase)));
+        // The game's own cars first (they drive well and every player has them), then the others; Toyeca to start from
+        cars = game.ListCars().OrderBy(c => c.Stock ? 0 : 1).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        baseBox.ItemsSource = cars.Select(c => c.Name + "  (" + c.Folder + ")" + (c.Stock ? "" : "  -  yours")).ToList();
+        int toyeca = cars.FindIndex(c => c.Folder.Equals("toyeca", StringComparison.OrdinalIgnoreCase));
+        baseBox.SelectedIndex = Math.Max(0, toyeca);
 
         var repaint = new RadioButton { IsChecked = true };
         var remodel = new RadioButton();
@@ -68,21 +70,15 @@ public sealed class NewCarWizard : Window
         nameBox.TextChanged += (_, _) => { if (!folderTyped) { filling = true; folderBox.Text = Suggest(nameBox.Text); filling = false; } Validate(); };
         folderBox.TextChanged += (_, _) => { if (!filling) folderTyped = true; Validate(); };
 
+        foreach (var b in new[] { bodyBox, wheelBox, textureBox }) b.TextChanged += (_, _) => { if (tried) Validate(); };
         ownFiles.Children.Add(FileRow("Body", bodyBox));
         ownFiles.Children.Add(FileRow("Wheel", wheelBox));
         ownFiles.Children.Add(FileRow("Texture", textureBox));
 
         var ok = Look.Primary(new Button { Content = "Make the car", MinWidth = 110, HorizontalContentAlignment = HorizontalAlignment.Center, IsDefault = true });
         var cancel = new Button { Content = "Cancel", MinWidth = 80, HorizontalContentAlignment = HorizontalAlignment.Center, IsCancel = true };
-        ok.Click += (_, _) =>
-        {
-            if (!Validate()) return;
-            Result = new NewCarChoice(kind, cars[baseBox.SelectedIndex].Folder, folderBox.Text!.Trim(), nameBox.Text!.Trim(),
-                kind == NewCarKind.Original ? bodyBox.Text : null,
-                kind == NewCarKind.Original && !string.IsNullOrWhiteSpace(wheelBox.Text) ? wheelBox.Text : null,
-                kind == NewCarKind.Original && !string.IsNullOrWhiteSpace(textureBox.Text) ? textureBox.Text : null);
-            Close();
-        };
+        radios = new[] { repaint, remodel, original };
+        ok.Click += (_, _) => Confirm();
         cancel.Click += (_, _) => Close();
 
         Content = new ScrollViewer
@@ -114,6 +110,33 @@ public sealed class NewCarWizard : Window
     }
 
     bool filling;
+    readonly RadioButton[] radios;
+
+    /// <summary>What Make the car does</summary>
+    public bool Confirm()
+    {
+        tried = true;
+        if (!Validate() || !CheckFiles()) return false;
+        Result = new NewCarChoice(kind, cars[baseBox.SelectedIndex].Folder, folderBox.Text!.Trim(), nameBox.Text!.Trim(),
+            kind == NewCarKind.Original ? bodyBox.Text : null,
+            kind == NewCarKind.Original && !string.IsNullOrWhiteSpace(wheelBox.Text) ? wheelBox.Text : null,
+            kind == NewCarKind.Original && !string.IsNullOrWhiteSpace(textureBox.Text) ? textureBox.Text : null);
+        Close();
+        return true;
+    }
+
+    /// <summary>Fills the boxes as a person would, for the release test</summary>
+    public void Fill(NewCarKind k, string baseFolder, string name, string? body = null, string? wheel = null, string? texture = null)
+    {
+        radios[(int)k].IsChecked = true;
+        baseBox.SelectedIndex = Math.Max(0, cars.FindIndex(c => c.Folder.Equals(baseFolder, StringComparison.OrdinalIgnoreCase)));
+        nameBox.Text = name;
+        bodyBox.Text = body; wheelBox.Text = wheel; textureBox.Text = texture;
+    }
+
+    public string Problem => problem.Text ?? "";
+    public string BaseFolder => baseBox.SelectedIndex >= 0 ? cars[baseBox.SelectedIndex].Folder : "";
+    public IReadOnlyList<CarEntry> BaseList => cars;
 
     static string Suggest(string? name)
     {
@@ -151,16 +174,51 @@ public sealed class NewCarWizard : Window
         Validate();
     }
 
+    // Make the car was pressed: from then on every missing answer is said, not only the wrong ones
+    bool tried;
+
     bool Validate()
     {
         problem.Text = "";
         var name = nameBox.Text?.Trim() ?? "";
         var folder = folderBox.Text?.Trim() ?? "";
-        if (name == "" && folder == "") return false;
-        if (name == "") problem.Text = "It needs a name";
-        else if (!Car.ValidFolderName(folder)) problem.Text = "That isn't a good folder name";
-        else if (Directory.Exists(Path.Combine(game.CarsDir, folder))) problem.Text = "There already is a car in cars\\" + folder;
-        else if (kind == NewCarKind.Original && !File.Exists(bodyBox.Text ?? "")) problem.Text = "Choose the body model";
+        if (name == "" && folder == "" && !tried) return false;
+        if (name == "") problem.Text = "Give the car a name";
+        else if (!Car.ValidFolderName(folder)) problem.Text = "That isn't a good folder name: letters and numbers, no \\ / ; or \"";
+        else if (game.CarLayer(folder) != null || Directory.Exists(Path.Combine(game.CarsDir, folder))) problem.Text = "There already is a car in cars\\" + folder + ": choose another folder";
+        else if (baseBox.SelectedIndex < 0) problem.Text = "Choose the base car";
+        else if (kind == NewCarKind.Original && string.IsNullOrWhiteSpace(bodyBox.Text)) problem.Text = "Choose the body model (.obj or .prm)";
+        else if (kind == NewCarKind.Original && !File.Exists(bodyBox.Text!.Trim())) problem.Text = "There's no body model at " + bodyBox.Text;
+        else if (kind == NewCarKind.Original && !string.IsNullOrWhiteSpace(wheelBox.Text) && !File.Exists(wheelBox.Text.Trim())) problem.Text = "There's no wheel model at " + wheelBox.Text;
+        else if (kind == NewCarKind.Original && !string.IsNullOrWhiteSpace(textureBox.Text) && !File.Exists(textureBox.Text.Trim())) problem.Text = "There's no texture at " + textureBox.Text;
         return problem.Text == "";
+    }
+
+    /// <summary>The files read for real before anything is made: a model that isn't one, or a picture that isn't one, is said here</summary>
+    bool CheckFiles()
+    {
+        if (kind != NewCarKind.Original) return true;
+        string? Model(string what, string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            if (ext is not (".obj" or ".prm")) return $"The {what} model must be an .obj or a .prm file, not {(ext == "" ? "a file without an ending" : ext)}";
+            try
+            {
+                var m = CarTools.LoadModelFile(path.Trim());
+                if (m.Faces.Length == 0) return $"The {what} model has no polygons in it: is it really a model? ({Path.GetFileName(path)})";
+                if (!m.IsValid()) return $"The {what} model is damaged: some polygons point at corners it doesn't have ({Path.GetFileName(path)})";
+                return null;
+            }
+            catch (Exception ex) { return $"The {what} model can't be read ({Path.GetFileName(path)}): {ex.Message}"; }
+        }
+        var bad = Model("body", bodyBox.Text) ?? Model("wheel", wheelBox.Text);
+        if (bad == null && !string.IsNullOrWhiteSpace(textureBox.Text))
+        {
+            try { using var b = Images.Load(textureBox.Text.Trim()); if (b == null) bad = "The texture can't be read as a picture (" + Path.GetFileName(textureBox.Text) + "): use a .bmp, .png or .jpg"; }
+            catch (Exception ex) { bad = "The texture can't be read (" + Path.GetFileName(textureBox.Text) + "): " + ex.Message; }
+        }
+        problem.Text = bad ?? "";
+        return bad == null;
     }
 }

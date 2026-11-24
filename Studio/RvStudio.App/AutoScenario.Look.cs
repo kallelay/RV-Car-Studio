@@ -2,6 +2,8 @@ using System.Numerics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
@@ -358,6 +360,42 @@ public static partial class AutoScenario
 
     // ------------------------------------------------------------------ themes
 
+
+    /// <summary>The Run menu and a drop-down list open and close: what's in a closed popup must survive a change of look</summary>
+    static async Task OpenPopups(MainWindow w, string when)
+    {
+        string? bad = null;
+        try
+        {
+            w.RunFlyout.ShowAt(w.ThemeButton);
+            await Wait(250);
+            var boxes = ((Control)w.RunFlyout.Content!).GetLogicalDescendants().OfType<ComboBox>().Where(b => b.IsEffectivelyVisible && b.ItemCount > 0).ToList();
+            foreach (var b in boxes) { b.IsDropDownOpen = true; await Wait(120); b.IsDropDownOpen = false; await Wait(60); }
+            if (boxes.Count == 0) bad = "no drop-down in the Run menu";
+            w.RunFlyout.Hide();
+            await Wait(120);
+            // A drop-down of the page too: these stay in the window between looks
+            w.Tabs.SelectedIndex = w.PropertiesTabIndex;
+            await Wait(200);
+            var pageBoxes = w.GetVisualDescendants().OfType<ComboBox>().Where(b => b.IsEffectivelyVisible && b.ItemCount > 0).Take(4).ToList();
+            foreach (var b in pageBoxes) { b.IsDropDownOpen = true; await Wait(120); b.IsDropDownOpen = false; await Wait(60); }
+            if (pageBoxes.Count == 0) bad = "no drop-down on the page";
+            w.Tabs.SelectedIndex = 0;
+        }
+        catch (Exception ex) { bad = ex.GetType().Name + ": " + ex.Message; }
+        Check(bad == null, when + ": the Run menu and drop-down lists open" + (bad == null ? "" : ": " + bad));
+    }
+
+    /// <summary>Fluent's own colours (lists, sliders, check boxes) are the look's, not the last look's</summary>
+    static void FluentFollows(ThemeKind kind)
+    {
+        var app = Application.Current!;
+        Color? Res(string key) => app.TryGetResource(key, app.ActualThemeVariant, out var v) ? v is ISolidColorBrush b ? b.Color : v as Color? : null;
+        Check(Res("SystemControlBackgroundChromeMediumLowBrush") == Look.Card.Color, $"{kind}: Fluent's cards: {Res("SystemControlBackgroundChromeMediumLowBrush")} for {Look.Card.Color}");
+        Check(Res("SystemControlBackgroundChromeMediumBrush") == Look.Card.Color, $"{kind}: Fluent's panels: {Res("SystemControlBackgroundChromeMediumBrush")}");
+        Check(Res("SystemControlBackgroundAccentBrush") == Res("SystemAccentColor") && Res("SliderThumbBackground") == Res("SystemAccentColor"), $"{kind}: Fluent's accent: {Res("SliderThumbBackground")} for {Res("SystemAccentColor")}");
+    }
+
     static async Task LookTest(MainWindow w)
     {
         var d = w.Doc;
@@ -376,10 +414,13 @@ public static partial class AutoScenario
         Check(Near(classicPanel, Color.Parse("#23262D")), "classic panels as they were: " + classicPanel);
         Check(Near(classicView, new Vector3(0.17f, 0.19f, 0.22f)), "classic view background as it was: " + classicView);
 
+        await OpenPopups(w, "before any look");
         foreach (var kind in new[] { ThemeKind.Dark, ThemeKind.Light })
         {
             w.SetTheme(kind);
             await Wait(400);
+            FluentFollows(kind);
+            await OpenPopups(w, kind + " look");
             bool light = kind == ThemeKind.Light;
             Check(Look.Kind == kind, "theme set: " + kind);
             Check(Application.Current!.ActualThemeVariant == (light ? ThemeVariant.Light : ThemeVariant.Dark), "the controls follow: " + Application.Current.ActualThemeVariant);
@@ -528,6 +569,9 @@ public static partial class AutoScenario
         Check(Look.Kind == ThemeKind.Dark, "and on to dark");
         Check(w.ThemeMenuChecked == ThemeKind.Dark, "the View menu marks it: " + w.ThemeMenuChecked);
         w.SetTheme(ThemeKind.Classic);
+        await Wait(400);
+        FluentFollows(ThemeKind.Classic);
+        await OpenPopups(w, "classic look again");
         await Wait(300);
         d.Select(new Selection(SelKind.None));
     }

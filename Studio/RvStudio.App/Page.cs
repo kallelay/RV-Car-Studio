@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 
 namespace RvStudio.App;
@@ -11,7 +12,8 @@ namespace RvStudio.App;
 /// <summary>A panel of rows connected to the car: labels, numbers, vectors, switches. Everything edits live with undo</summary>
 public sealed class Page : ScrollViewer
 {
-    readonly StackPanel stack = new() { Spacing = 6, Margin = new Thickness(14, 8, 16, 14) };
+    readonly StackPanel root = new() { Spacing = 6, Margin = new Thickness(14, 8, 16, 14) };
+    StackPanel stack;
     readonly List<Action> loaders = new();
     readonly Doc doc;
     bool loading;
@@ -22,7 +24,8 @@ public sealed class Page : ScrollViewer
     public Page(Doc d)
     {
         doc = d;
-        Content = stack;
+        stack = root;
+        Content = root;
         HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled;
         VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto;
         AllowAutoHide = false;
@@ -45,18 +48,144 @@ public sealed class Page : ScrollViewer
         // A line between sections, none above the first
         if (stack.Children.Count > 0)
             stack.Children.Add(new Border { Height = 1, Background = Look.Line, Margin = new Thickness(0, 10, 0, 0) });
-        stack.Children.Add(Look.Heading(text, new Thickness(0, 6, 0, 3)));
+        var h = Look.Heading(text, new Thickness(0, 6, 0, 3));
+        stack.Children.Add(h);
+        marks.Add((text, h, false));
     }
 
-    public void Hint(Func<string> text)
+    /// <summary>A bigger title over a group of sections, on a page that holds several (Properties: Car, Handling, Menu, AI)</summary>
+    public void Section(string text)
+    {
+        if (stack.Children.Count > 0)
+            stack.Children.Add(new Border { Height = 2, Background = Look.Accent, Opacity = 0.6, Margin = new Thickness(0, 18, 0, 0) });
+        var title = new TextBlock { Text = text, FontSize = 17, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 2) };
+        stack.Children.Add(title);
+        marks.Add((text, title, true));
+    }
+
+    // ---------------------------- Easy and Pro ----------------------------
+
+    readonly List<StackPanel> proBoxes = new();
+    StackPanel? outside;
+
+    /// <summary>What's added from here to ProEnd shows only in Pro mode (Easy keeps the page to what most car makers need)</summary>
+    public void ProStart()
+    {
+        var box = new StackPanel { Spacing = 6 };
+        stack.Children.Add(box);
+        outside = stack;
+        stack = box;
+        proBoxes.Add(box);
+    }
+
+    public void ProEnd()
+    {
+        if (outside != null) stack = outside;
+        outside = null;
+    }
+
+    public bool HasPro => proBoxes.Count > 0;
+
+    public void SetEasy(bool easy)
+    {
+        foreach (var b in proBoxes) b.IsVisible = !easy;
+        // A section that's all Pro has no button in the bar in Easy mode
+        foreach (var (b, at) in jumpButtons) b.IsVisible = !(easy && proBoxes.Any(x => at.GetLogicalAncestors().Contains(x)));
+    }
+
+    /// <summary>A link to where something lives (another tab or section): one place for each thing, links elsewhere</summary>
+    public Button Link(string text, Action go, string? tip = null)
+    {
+        var b = new Button
+        {
+            Content = "→  " + text, FontSize = 12, Padding = new Thickness(0, 2), Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+            Foreground = Look.Accent, HorizontalAlignment = HorizontalAlignment.Left, Cursor = new Cursor(StandardCursorType.Hand)
+        };
+        if (tip != null) ToolTip.SetTip(b, tip);
+        b.Click += (_, _) => go();
+        stack.Children.Add(b);
+        return b;
+    }
+
+    // ---------------------------- section jumps ----------------------------
+
+    readonly List<(string Text, Control At, bool Big)> marks = new();
+    WrapPanel? jumps;
+    readonly List<(Button B, Control At)> jumpButtons = new();
+
+    /// <summary>The sections this page jumps to (empty: no bar)</summary>
+    public IReadOnlyList<string> JumpNames => jumpButtons.Select(j => (string)j.B.Content!).ToList();
+
+    /// <summary>
+    /// A bar of the page's sections at its top, staying there as the page scrolls: a click jumps to a section, the one
+    /// you're in is lit. The big titles when the page has several (Properties), else its headers when there are many.
+    /// </summary>
+    public void AddJumps()
+    {
+        var big = marks.Where(m => m.Big).ToList();
+        var list = big.Count >= 2 ? big : marks.Count >= 4 ? marks : new();
+        if (list.Count == 0 || jumps != null) return;
+        jumps = new WrapPanel { Orientation = Orientation.Horizontal, Background = Look.Panel, ZIndex = 10, Margin = new Thickness(0, 0, 0, 4) };
+        foreach (var (text, at, _) in list)
+        {
+            var b = new Button { Content = text, FontSize = 11, Padding = new Thickness(8, 2), Margin = new Thickness(0, 0, 4, 4), MinHeight = 22, Background = Look.Card };
+            b.Click += (_, _) => JumpTo(at);
+            jumpButtons.Add((b, at));
+            jumps.Children.Add(b);
+        }
+        root.Children.Insert(0, jumps);
+        ScrollChanged += (_, _) => KeepJumps();
+        jumps.LayoutUpdated += (_, _) => { if (CurrentSection == null) KeepJumps(); };
+    }
+
+    double Y(Control c) => c.TranslatePoint(new Point(0, 0), root)?.Y ?? 0;
+
+    public void JumpTo(Control at)
+    {
+        double bar = jumps?.Bounds.Height ?? 0;
+        Offset = new Avalonia.Vector(0, Math.Max(0, Y(at) - bar - 8));
+    }
+
+    /// <summary>Jump to a section by its name</summary>
+    public bool JumpTo(string name)
+    {
+        var j = jumpButtons.FirstOrDefault(x => (string)x.B.Content! == name);
+        if (j.B == null) return false;
+        JumpTo(j.At);
+        return true;
+    }
+
+    /// <summary>The section the page is in now</summary>
+    public string? CurrentSection { get; private set; }
+
+    void KeepJumps()
+    {
+        if (jumps == null) return;
+        // The bar rides along with the scroll: always at the top of what's seen
+        jumps.RenderTransform = new TranslateTransform(0, Math.Max(0, Offset.Y - jumps.Bounds.Y));
+        double bar = jumps.Bounds.Height;
+        (Button B, Control At)? now = null;
+        foreach (var j in jumpButtons) if (Y(j.At) - bar - 12 <= Offset.Y) now = j;
+        now ??= jumpButtons.FirstOrDefault();
+        foreach (var j in jumpButtons)
+        {
+            bool on = now != null && j.B == now.Value.B;
+            j.B.Foreground = on ? Look.OnAccent : Look.Text;
+            j.B.Background = on ? Look.AccentFill : Look.Card;
+        }
+        CurrentSection = now?.B.Content as string;
+    }
+
+    public TextBlock Hint(Func<string> text)
     {
         var t = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = Faint, Margin = new Thickness(112, -3, 0, 2) };
         loaders.Add(() => t.Text = text());
         stack.Children.Add(t);
+        return t;
     }
 
     /// <summary>A path with a button beside it</summary>
-    public void TextWithButton(string label, Func<string> get, Action<string> set, string button, Action click, string? tip = null)
+    public Control TextWithButton(string label, Func<string> get, Action<string> set, string button, Action click, string? tip = null)
     {
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("*,3,Auto") };
         var b = new TextBox { MinHeight = 26, Height = 26, Padding = new Thickness(5, 2), FontSize = 12 };
@@ -67,11 +196,12 @@ public sealed class Page : ScrollViewer
             doc.Edit(label, () => set(b.Text ?? ""));
         };
         var pick = new Button { Content = button, FontSize = 12, Padding = new Thickness(7, 3), VerticalAlignment = VerticalAlignment.Stretch };
+        Sym.Add(pick);
         pick.Click += (_, _) => click();
         g.Children.Add(b);
         Grid.SetColumn(pick, 2);
         g.Children.Add(pick);
-        Row(label, g, tip);
+        return Row(label, g, tip);
     }
 
     public void Note(string text) =>
@@ -85,7 +215,7 @@ public sealed class Page : ScrollViewer
         return t;
     }
 
-    void Row(string label, Control c, string? tip)
+    Control Row(string label, Control c, string? tip)
     {
         var g = new Grid { ColumnDefinitions = new ColumnDefinitions("112,*") };
         var l = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -94,6 +224,7 @@ public sealed class Page : ScrollViewer
         Grid.SetColumn(c, 1);
         g.Children.Add(c);
         stack.Children.Add(g);
+        return g;
     }
 
     static string Show(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
@@ -188,6 +319,7 @@ public sealed class Page : ScrollViewer
         var b = new Button { Content = text, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center, Padding = new Thickness(8, 5) };
         if (primary) Look.Primary(b);
         if (tip != null) ToolTip.SetTip(b, tip);
+        Sym.Add(b);
         b.Click += (_, _) => click();
         stack.Children.Add(b);
         return b;
@@ -215,7 +347,7 @@ public sealed class Page : ScrollViewer
     public void Add(Control c) => stack.Children.Add(c);
 
     /// <summary>Any control beside a label, not connected to the car</summary>
-    public void Labeled(string label, Control c, string? tip = null) => Row(label, c, tip);
+    public void Labeled(string label, Control c, string? tip = null) => _ = Row(label, c, tip);
 
     /// <summary>Something else to bring up to date when the car changes</summary>
     public void Live(Action load) => loaders.Add(load);

@@ -42,9 +42,9 @@ Copy-Item (Join-Path $repo 'LICENSE') (Join-Path $stage 'LICENSE.txt')
 
 # The source: the files the exe was built from, as they are now (tracked and new, not what git ignores)
 $head = (git -C $repo rev-parse --short HEAD).Trim()
-$dirty = git -C $repo status --porcelain -- Studio RvCarStudio/data/readme
+$dirty = git -C $repo status --porcelain -- Studio RvCarStudio/data/readme RvCarStudio/data/Tips
 if ($dirty) { $head += '+changes' }
-$files = git -C $repo ls-files -co --exclude-standard -- Studio RvCarStudio/data/readme LICENSE
+$files = git -C $repo ls-files -co --exclude-standard -- Studio RvCarStudio/data/readme RvCarStudio/data/Tips LICENSE
 if ($LASTEXITCODE -ne 0) { throw "git ls-files failed ($LASTEXITCODE)" }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
