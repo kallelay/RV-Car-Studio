@@ -18,7 +18,7 @@ for your RVGL folder (the one holding `cars`) the first time.
 | Linux, 64-bit | `RvCarStudio-…-linux-x64.tar.gz`, tested on Ubuntu 24.04 |
 | macOS | builds from source, not tested on a Mac yet |
 
-**[Documentation](docs/index.html)** is in the download too, as `docs/index.html` (Help > Documentation).
+**[Documentation](https://kallelay.github.io/RV-Car-Studio/)** is in the download too, as `docs/index.html` (Help > Documentation).
 
 ## What it does
 
