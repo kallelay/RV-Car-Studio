@@ -59,7 +59,7 @@ public sealed class ReadmeWindow : Window
             form.Children.Add(c);
         }
         form.Children.Add(new TextBlock { Text = "The readme travels with your car: players see who made it, how to install it and what they may do with it. The numbers come from the car itself.", TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = Look.Faint });
-        layout.ItemsSource = new[] { "RV Car Studio 3 (recommended)" }.Concat(templates.Select(f => "Template: " + Path.GetFileNameWithoutExtension(f))).ToList();
+        layout.ItemsSource = new[] { "RV Car Studio 3 (recommended)" }.Concat(templates.Select(f => "Template: " + Names.Stem(f))).ToList();
         layout.SelectedIndex = 0;
         Row("Layout", layout, "RV Car Studio 3's readme, or a template from data/readme (the old Car Studio's, or your own with its [CARNAME], [AUTHOR]... tags)");
         Row("Made by", author);

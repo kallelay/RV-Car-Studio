@@ -1032,7 +1032,7 @@ void DevKit()
             var f = game.Find(rel);
             if (f == null) { Check(false, "found " + rel); continue; }
             var m = Prm.Load(f);
-            var obj = Path.Combine(dir, Path.GetFileNameWithoutExtension(rel) + ".obj");
+            var obj = Path.Combine(dir, Names.Stem(rel) + ".obj");
             ObjModel.Export(m, obj, game.Find(@"cars\rc\car.bmp"));
             var back = ObjModel.Import(obj, out var rep);
             Check(back.Faces.Length == m.Faces.Length, $"obj {rel}: {back.Faces.Length} polygons back of {m.Faces.Length}");

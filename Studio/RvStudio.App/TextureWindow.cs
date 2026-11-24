@@ -296,7 +296,7 @@ public sealed class TextureWindow : Window
             if (!doc.HasModel(s)) return;
             foreach (var m in doc.ModelsOf(s))
                 if (seen.Add(m) && m.Faces.Any(UvKit.Textured))
-                    Parts.Add(new PartEntry(label + "  (" + Path.GetFileName(doc.ModelName(m) ?? "?") + ")", s, m));
+                    Parts.Add(new PartEntry(label + "  (" + Names.File(doc.ModelName(m) ?? "?") + ")", s, m));
         }
         if (doc.D != null)
         {
@@ -544,13 +544,13 @@ public sealed class TextureWindow : Window
         });
         if (files.Count == 0 || files[0].TryGetLocalPath() is not { } path) return;
         using var src = Images.Load(path);
-        if (src == null) { Say("Couldn't read " + Path.GetFileName(path)); return; }
+        if (src == null) { Say("Couldn't read " + Names.File(path)); return; }
         PushUndo();
         var b = TexturePaint.Blank(Pic.Width, Pic.Height, SKColors.Black);
         using (var c = new SKCanvas(b)) c.DrawBitmap(src, new SKRect(0, 0, b.Width, b.Height), new SKPaint { FilterQuality = SKFilterQuality.High });
         Pic = b;
         Changed();
-        Say("Brought in " + Path.GetFileName(path));
+        Say("Brought in " + Names.File(path));
     }
 
     async Task ExportTemplate()
@@ -559,7 +559,7 @@ public sealed class TextureWindow : Window
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save the layout",
-            SuggestedFileName = Path.GetFileNameWithoutExtension(doc.ModelName(Model) ?? "layout") + "_uv.png",
+            SuggestedFileName = Names.Stem(doc.ModelName(Model) ?? "layout") + "_uv.png",
             FileTypeChoices = new[] { new FilePickerFileType("PNG") { Patterns = new[] { "*.png" } } }
         });
         if (file?.TryGetLocalPath() is not { } path) return;
@@ -613,7 +613,7 @@ public sealed class TextureWindow : Window
         TexDirty = false;
         original.Dispose(); original = Pic.Copy();
         PushPreview();
-        Say("Saved as a skin: " + Path.GetFileName(path));
+        Say("Saved as a skin: " + Names.File(path));
         return true;
     }
 

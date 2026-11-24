@@ -1537,6 +1537,7 @@ void main() { fragColor = uOverride.a > 0.0 ? uOverride : vColor; }";
     {
         gl = GL.GetApi(gi.GetProcAddress);
         es = gi.ContextInfo.Version.Type == GlProfileType.OpenGLES;
+        if (!es) gl.Enable((EnableCap)0x8642); // desktop OpenGL: points as big as the shader says (ES always does)
         meshProg = Program(VsMesh, FsMesh, "aPos", "aNormal", "aUv", "aColor");
         lineProg = Program(VsLine, FsLine, "aPos", "", "", "aColor");
         uMvp = gl.GetUniformLocation(meshProg, "uMvp");

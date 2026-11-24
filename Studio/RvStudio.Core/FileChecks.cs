@@ -14,11 +14,11 @@ public static class FileChecks
         try
         {
             using var b = Images.Load(path);
-            if (b == null) return Path.GetFileName(path) + " isn't a picture this can read (use .bmp, .png or .jpg)";
-            if (b.Width < 8 || b.Height < 8) return Path.GetFileName(path) + " is too small: " + b.Width + " x " + b.Height;
+            if (b == null) return Names.File(path) + " isn't a picture this can read (use .bmp, .png or .jpg)";
+            if (b.Width < 8 || b.Height < 8) return Names.File(path) + " is too small: " + b.Width + " x " + b.Height;
             return null;
         }
-        catch (Exception ex) { return Path.GetFileName(path) + " can't be read: " + ex.Message; }
+        catch (Exception ex) { return Names.File(path) + " can't be read: " + ex.Message; }
     }
 
     /// <summary>A texture page: a picture, square with a power of two side (other sizes are made so when copied in)</summary>
@@ -31,11 +31,11 @@ public static class FileChecks
         try
         {
             var h = Core.Hull.Load(path);
-            if (h.Convex.Count == 0 && h.Spheres.Count == 0) return Path.GetFileName(path) + " has no hull parts and no spheres in it";
-            if (h.Convex.Any(c => c.Points.Length < 4 || c.Faces.Length < 4)) return Path.GetFileName(path) + " has a hull part that isn't a solid";
+            if (h.Convex.Count == 0 && h.Spheres.Count == 0) return Names.File(path) + " has no hull parts and no spheres in it";
+            if (h.Convex.Any(c => c.Points.Length < 4 || c.Faces.Length < 4)) return Names.File(path) + " has a hull part that isn't a solid";
             return null;
         }
-        catch (Exception) { return Path.GetFileName(path) + " isn't a hull the game can read"; }
+        catch (Exception) { return Names.File(path) + " isn't a hull the game can read"; }
     }
 
     /// <summary>A model: a .prm (or an .obj, made into one) with polygons</summary>
@@ -46,11 +46,11 @@ public static class FileChecks
         try
         {
             var m = CarTools.LoadModelFile(path);
-            if (m.Faces.Length == 0) return Path.GetFileName(path) + " has no polygons in it";
-            if (!m.IsValid()) return Path.GetFileName(path) + " is damaged: polygons point at corners it doesn't have";
+            if (m.Faces.Length == 0) return Names.File(path) + " has no polygons in it";
+            if (!m.IsValid()) return Names.File(path) + " is damaged: polygons point at corners it doesn't have";
             return null;
         }
-        catch (Exception ex) { return Path.GetFileName(path) + " can't be read: " + ex.Message; }
+        catch (Exception ex) { return Names.File(path) + " can't be read: " + ex.Message; }
     }
 
     /// <summary>
@@ -59,7 +59,7 @@ public static class FileChecks
     /// </summary>
     public static string? Wav(string path)
     {
-        var name = Path.GetFileName(path);
+        var name = Names.File(path);
         if (!Path.GetExtension(path).Equals(".wav", StringComparison.OrdinalIgnoreCase)) return "A sound is a .wav file, not " + Path.GetExtension(path);
         try
         {

@@ -60,7 +60,7 @@ public sealed class InstallPlan : IDisposable
     public string Describe()
     {
         var sb = new StringBuilder();
-        sb.Append(Path.GetFileName(Source)).Append(": ");
+        sb.Append(Names.File(Source)).Append(": ");
         sb.AppendLine(Cars.Count == 0 ? "no car found" : Cars.Count == 1 ? "1 car" : Cars.Count + " cars");
         foreach (var c in Cars)
         {
@@ -150,7 +150,7 @@ public static class CarInstaller
     static bool Taken(GameFolder game, string folder) =>
         GameFolder.IsStock(folder) || game.CarLayer(folder) != null ||
         game.Layers.Append(game.Root).Any(l => Directory.Exists(Path.Combine(l, "cars")) &&
-            Directory.EnumerateFileSystemEntries(Path.Combine(l, "cars")).Any(e => Path.GetFileName(e).Equals(folder, StringComparison.OrdinalIgnoreCase)));
+            Directory.EnumerateFileSystemEntries(Path.Combine(l, "cars")).Any(e => Names.File(e).Equals(folder, StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>A folder name nothing uses yet: name, name2, name3...</summary>
     public static string FreeFolder(GameFolder game, string wanted, IEnumerable<string>? alsoTaken = null)
@@ -213,7 +213,7 @@ public static class CarInstaller
         files = files.Where(f => !Junk(f.Rel)).GroupBy(f => f.Rel, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
 
         // Every folder with a parameters.txt is a car. A file belongs to the deepest car folder above it
-        var carDirs = files.Where(f => Path.GetFileName(f.Rel).Equals("parameters.txt", StringComparison.OrdinalIgnoreCase))
+        var carDirs = files.Where(f => Names.File(f.Rel).Equals("parameters.txt", StringComparison.OrdinalIgnoreCase))
             .Select(f => f.Rel.Contains('\\') ? f.Rel[..f.Rel.LastIndexOf('\\')] : "")
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(d => d.Length).ToList();
         var cars = carDirs.ToDictionary(d => d, d => new FoundCar { SourceDir = d }, StringComparer.OrdinalIgnoreCase);
@@ -262,8 +262,8 @@ public static class CarInstaller
             .GroupBy(p => p[1], StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key;
         if (declared != null) return declared;
         if (parts.Length > 0 && ValidFolder(parts[^1])) return parts[^1];
-        var stem = Path.GetFileNameWithoutExtension(source.TrimEnd('\\', '/'));
-        if (Directory.Exists(source)) stem = Path.GetFileName(source.TrimEnd('\\', '/'));
+        var stem = Names.Stem(source.TrimEnd('\\', '/'));
+        if (Directory.Exists(source)) stem = Names.File(source.TrimEnd('\\', '/'));
         return ValidFolder(stem) ? stem : "newcar";
     }
 
@@ -504,7 +504,7 @@ public static class CarInstaller
         var dir = RecordFolder(game);
         Directory.CreateDirectory(dir);
         // Numbered, so the newest is always the last by name
-        int next = Directory.GetFiles(dir, "*.txt").Select(f => int.TryParse(Path.GetFileNameWithoutExtension(f), out var n) ? n : 0).DefaultIfEmpty(0).Max() + 1;
+        int next = Directory.GetFiles(dir, "*.txt").Select(f => int.TryParse(Names.Stem(f), out var n) ? n : 0).DefaultIfEmpty(0).Max() + 1;
         var file = Path.Combine(dir, next.ToString("D6") + ".txt");
         var sb = new StringBuilder("RV Car Studio install\n");
         sb.Append("when\t").Append(rec.When).Append('\n');
@@ -521,7 +521,7 @@ public static class CarInstaller
     {
         var dir = RecordFolder(game);
         if (!Directory.Exists(dir)) return null;
-        foreach (var file in Directory.GetFiles(dir, "*.txt").OrderByDescending(Path.GetFileName, StringComparer.Ordinal))
+        foreach (var file in Directory.GetFiles(dir, "*.txt").OrderByDescending(Names.File, StringComparer.Ordinal))
         {
             string[] lines;
             try { lines = File.ReadAllLines(file, Encoding.UTF8); } catch (IOException) { continue; }

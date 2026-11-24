@@ -45,8 +45,8 @@ public sealed partial class MainWindow
     /// <summary>The car's readme: readme.txt, else any .txt with "read" in its name, one that isn't the original's first</summary>
     public static string? ReadmeOf(Car c)
     {
-        var files = c.Game.CarFiles(c.Folder).Values.Where(f => f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(f).Contains("read", StringComparison.OrdinalIgnoreCase)).ToList();
-        return files.FirstOrDefault(f => !Path.GetFileName(f).Contains("original", StringComparison.OrdinalIgnoreCase)) ?? files.FirstOrDefault();
+        var files = c.Game.CarFiles(c.Folder).Values.Where(f => f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) && Names.File(f).Contains("read", StringComparison.OrdinalIgnoreCase)).ToList();
+        return files.FirstOrDefault(f => !Names.File(f).Contains("original", StringComparison.OrdinalIgnoreCase)) ?? files.FirstOrDefault();
     }
 
     void ShowCarDetails()
@@ -74,7 +74,7 @@ public sealed partial class MainWindow
             Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, FontSize = 12,
             FontFamily = new FontFamily("Consolas, Cascadia Mono, Courier New, monospace")
         };
-        var w = new Window { Title = Path.GetFileName(f) + " - " + c.Data.Name, Width = 720, Height = 640, Content = box, Background = Look.Panel, Foreground = Look.Text, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var w = new Window { Title = Names.File(f) + " - " + c.Data.Name, Width = 720, Height = 640, Content = box, Background = Look.Panel, Foreground = Look.Text, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         await w.ShowDialog(this);
     }
 
@@ -226,7 +226,7 @@ public sealed partial class MainWindow
         paramWatcher = null;
         if (Doc.Car is not { } c || !File.Exists(c.ParamPath)) return;
         var path = c.ParamPath;
-        paramWatcher = new FileSystemWatcher(Path.GetDirectoryName(path)!, Path.GetFileName(path)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size };
+        paramWatcher = new FileSystemWatcher(Path.GetDirectoryName(path)!, Names.File(path)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size };
         paramWatcher.Changed += (_, _) => Dispatcher.UIThread.Post(async () =>
         {
             // Our own Save is not an outside edit

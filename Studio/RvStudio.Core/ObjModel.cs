@@ -19,13 +19,13 @@ public static class ObjModel
 
     /// <summary>Write the model's first LOD as .obj, with a .mtl naming the texture when one is given.</summary>
     public static void Export(Prm m, string objPath, string? texturePath = null) =>
-        Export(new[] { (Path.GetFileNameWithoutExtension(objPath), m, Matrix4x4.Identity) }, objPath, texturePath);
+        Export(new[] { (Names.Stem(objPath), m, Matrix4x4.Identity) }, objPath, texturePath);
 
     /// <summary>Several models in one .obj, each its own object, placed by its matrix: the whole car to model around.</summary>
     public static void Export(IEnumerable<(string Name, Prm Model, Matrix4x4 World)> parts, string objPath, string? texturePath = null)
     {
         var sb = new StringBuilder();
-        string name = Path.GetFileNameWithoutExtension(objPath);
+        string name = Names.Stem(objPath);
         sb.AppendLine("# RV Car Studio: 1 unit = 100 game units, Y up, the car's front towards -Z");
         string? mtl = null;
         if (texturePath != null)
@@ -88,7 +88,7 @@ public static class ObjModel
         if (mtl != null)
         {
             var dir = Path.GetDirectoryName(Path.GetFullPath(objPath))!;
-            var tex = Path.GetFileName(texturePath!);
+            var tex = Names.File(texturePath!);
             try
             {
                 var copy = Path.Combine(dir, tex);

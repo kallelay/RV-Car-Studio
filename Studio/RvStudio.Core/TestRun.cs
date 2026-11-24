@@ -42,7 +42,7 @@ public sealed class TestRun
             if (!Directory.Exists(dir)) continue;
             foreach (var d in Directory.GetDirectories(dir))
             {
-                var folder = Path.GetFileName(d);
+                var folder = Names.File(d);
                 var inf = Path.Combine(d, folder + ".inf");
                 if (!File.Exists(inf) || !seen.Add(folder)) continue;
                 string name = folder;

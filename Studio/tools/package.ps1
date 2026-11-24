@@ -1,6 +1,7 @@
 # Builds the portable zip and the source zip: Studio\tools\package.ps1 [-Keep]
 # A self-contained single-file RvCarStudio.exe for win-x64 (no .NET install needed) with the native DLLs beside it,
 # the readme templates, README, licence and notices; and, for the GPL, the source of the commit it was built from.
+# And the same for Linux, as a .tar.gz (its program marked as one to run).
 # The source zip holds the working files, so it always matches the exe.
 # The build goes outside Dropbox (RVS_OBJ and the artifacts path in %TEMP%), so a sync client doesn't fight it.
 param([switch]$Keep)
@@ -17,13 +18,15 @@ $work = Join-Path $env:TEMP 'RvCarStudio-package'
 $stage = Join-Path $dist $name
 $zip = Join-Path $dist "$name.zip"
 $src = Join-Path $dist "RvCarStudio-$version-source.zip"
+$lname = "RvCarStudio-$version-linux-x64"
+$tgz = Join-Path $dist "$lname.tar.gz"
 function Retry([scriptblock]$do) {
     for ($try = 1; ; $try++) {
         try { & $do; return }
         catch { if ($try -ge 15) { throw }; Start-Sleep -Seconds 2 }
     }
 }
-foreach ($old in @($stage, $zip, $src, $work)) { Retry { if (Test-Path $old) { Remove-Item $old -Recurse -Force -Confirm:$false } } }
+foreach ($old in @($stage, $zip, $src, $tgz, $work)) { Retry { if (Test-Path $old) { Remove-Item $old -Recurse -Force -Confirm:$false } } }
 New-Item -ItemType Directory -Force $stage | Out-Null
 
 $env:RVS_OBJ = Join-Path $work 'obj'
@@ -39,12 +42,27 @@ Get-ChildItem $stage -Filter *.pdb -Recurse | Remove-Item -Force -Confirm:$false
 Copy-Item (Join-Path $studio 'README.md') $stage
 Copy-Item (Join-Path $studio 'THIRD_PARTY.md') $stage
 Copy-Item (Join-Path $repo 'LICENSE') (Join-Path $stage 'LICENSE.txt')
+Copy-Item (Join-Path $repo 'docs') $stage -Recurse
+
+# Linux: the same, in a folder of its own outside dist
+dotnet publish $project -c Release -r linux-x64 --self-contained true `
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=false -p:EnableCompressionInSingleFile=true `
+    -p:DebugType=none -p:DebugSymbols=false -o (Join-Path $work "linux\$lname") --nologo -v:q
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish for Linux failed ($LASTEXITCODE)" }
+$lstage = Join-Path $work "linux\$lname"
+Get-ChildItem $lstage -Filter *.pdb -Recurse | Remove-Item -Force -Confirm:$false
+Copy-Item (Join-Path $studio 'README.md') $lstage
+Copy-Item (Join-Path $studio 'THIRD_PARTY.md') $lstage
+Copy-Item (Join-Path $repo 'LICENSE') (Join-Path $lstage 'LICENSE.txt')
+Copy-Item (Join-Path $repo 'docs') $lstage -Recurse
+python -I (Join-Path $PSScriptRoot 'tar_linux.py') $lstage $tgz
+if ($LASTEXITCODE -ne 0) { throw "the Linux archive failed ($LASTEXITCODE)" }
 
 # The source: the files the exe was built from, as they are now (tracked and new, not what git ignores)
 $head = (git -C $repo rev-parse --short HEAD).Trim()
 $dirty = git -C $repo status --porcelain -- Studio RvCarStudio/data/readme RvCarStudio/data/Tips
 if ($dirty) { $head += '+changes' }
-$files = git -C $repo ls-files -co --exclude-standard -- Studio RvCarStudio/data/readme RvCarStudio/data/Tips LICENSE
+$files = git -C $repo ls-files -co --exclude-standard -- Studio docs README.md RvCarStudio/data/readme RvCarStudio/data/Tips LICENSE
 if ($LASTEXITCODE -ne 0) { throw "git ls-files failed ($LASTEXITCODE)" }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem

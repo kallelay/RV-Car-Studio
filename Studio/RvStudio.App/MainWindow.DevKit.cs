@@ -27,7 +27,7 @@ public sealed partial class MainWindow
         if (Doc.D == null) return;
         var m = Doc.ModelsOf(Doc.Sel).FirstOrDefault();
         if (m == null) { Say("Select a part with a model first (the body, a wheel...)"); return; }
-        var name = Path.GetFileNameWithoutExtension(Doc.ModelName(m) ?? "model");
+        var name = Names.Stem(Doc.ModelName(m) ?? "model");
         var f = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Save " + Doc.Sel.Label + " as .obj", SuggestedFileName = name + ".obj", DefaultExtension = "obj", FileTypeChoices = new[] { ObjFiles }
@@ -43,7 +43,7 @@ public sealed partial class MainWindow
         try
         {
             ObjModel.Export(m, path, TexturePath());
-            Say($"Saved {Path.GetFileName(path)}: {m.Faces.Length} polygons. 1 metre there is 100 units here; bring it back with Import from .obj");
+            Say($"Saved {Names.File(path)}: {m.Faces.Length} polygons. 1 metre there is 100 units here; bring it back with Import from .obj");
             return true;
         }
         catch (Exception ex) { Say("Can't save the .obj: " + ex.Message); return false; }
@@ -70,7 +70,7 @@ public sealed partial class MainWindow
         try
         {
             ObjModel.Export(parts, path, TexturePath());
-            Say($"Saved the car as {Path.GetFileName(path)}: {parts.Count} parts where they stand");
+            Say($"Saved the car as {Names.File(path)}: {parts.Count} parts where they stand");
         }
         catch (Exception ex) { Say("Can't save the .obj: " + ex.Message); return 0; }
         return parts.Count;
@@ -106,13 +106,13 @@ public sealed partial class MainWindow
         ObjModel.ImportReport rep;
         try { m = ObjModel.Import(objPath, out rep); }
         catch (Exception ex) { Say("Can't read the .obj: " + ex.Message); return false; }
-        if (m.Faces.Length == 0) { Say("No polygons in " + Path.GetFileName(objPath)); return false; }
-        var name = string.Concat(Path.GetFileNameWithoutExtension(objPath).Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
+        if (m.Faces.Length == 0) { Say("No polygons in " + Names.File(objPath)); return false; }
+        var name = string.Concat(Names.Stem(objPath).Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'));
         // Never over another part's model: a file of that name that isn't this part's own gets a new name (name_2...)
         var own = Doc.ModelsOf(s).Select(x => Doc.ModelName(x)).Where(x => x != null).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var rel = $"cars\\{car.Folder}\\{name}.prm";
         for (int k = 2; !own.Contains(rel) && car.Game.Find(rel) != null; k++) rel = $"cars\\{car.Folder}\\{name}_{k}.prm";
-        name = Path.GetFileNameWithoutExtension(rel);
+        name = Names.Stem(rel);
         if (!WriteModel(rel, m)) return false;
         Doc.SetPartModel(s, rel);
         Doc.Select(s);
@@ -144,7 +144,7 @@ public sealed partial class MainWindow
     {
         objPath = Path.GetFullPath(objPath);
         if (objLinks.Remove(objPath, out var old)) old.Watch.Dispose();
-        var w = new FileSystemWatcher(Path.GetDirectoryName(objPath)!, Path.GetFileName(objPath))
+        var w = new FileSystemWatcher(Path.GetDirectoryName(objPath)!, Names.File(objPath))
         {
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName
         };
@@ -181,13 +181,13 @@ public sealed partial class MainWindow
             Prm m;
             try { m = ObjModel.Import(path); }
             catch (IOException) { objTimer?.Start(); continue; } // still being written
-            catch (Exception ex) { objChanged.Remove(path); Say("Can't read " + Path.GetFileName(path) + ": " + ex.Message); continue; }
+            catch (Exception ex) { objChanged.Remove(path); Say("Can't read " + Names.File(path) + ": " + ex.Message); continue; }
             objChanged.Remove(path);
             if (m.Faces.Length == 0) continue;
             if (!WriteModel(link.Rel, m)) continue;
             Doc.ReloadModel(link.Rel);
             ObjReloads++;
-            Say($"{Path.GetFileName(path)} changed: {Path.GetFileName(link.Rel)} read again, {m.Faces.Length} polygons");
+            Say($"{Names.File(path)} changed: {Names.File(link.Rel)} read again, {m.Faces.Length} polygons");
         }
     }
 

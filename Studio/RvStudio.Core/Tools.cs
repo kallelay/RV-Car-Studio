@@ -201,7 +201,7 @@ public static class CarChecker
         r.Infos.Add($"Center of Mass {d.CoM.X:0.00} {d.CoM.Y:0.00} {d.CoM.Z:0.00}");
 
         if (!GameFolder.IsStock(c.Folder) &&
-            !c.Game.CarFiles(c.Folder).Values.Any(f => Path.GetFileName(f).Contains("read", StringComparison.OrdinalIgnoreCase) && Path.GetFileName(f).Contains("me", StringComparison.OrdinalIgnoreCase)))
+            !c.Game.CarFiles(c.Folder).Values.Any(f => Names.File(f).Contains("read", StringComparison.OrdinalIgnoreCase) && Names.File(f).Contains("me", StringComparison.OrdinalIgnoreCase)))
             r.Warnings.Add("No readme (Package tab > Readme..., or Pack as zip writes one)");
         return r;
     }
@@ -814,11 +814,11 @@ public static class CarTools
         d.TCarBox = "";
 
         var now = new HashSet<string>(d.Models.Concat(new[] { d.TPage, d.Coll }).Where(p => !string.IsNullOrWhiteSpace(p))
-            .Select(p => Path.GetFileName(p.Trim())), StringComparer.OrdinalIgnoreCase);
-        if (!string.IsNullOrWhiteSpace(d.TPage)) now.Add(Path.GetFileName(Path.ChangeExtension(d.TPage, ".bmq")));
+            .Select(p => Names.File(p.Trim())), StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(d.TPage)) now.Add(Names.File(Path.ChangeExtension(d.TPage, ".bmq")));
         foreach (var old in before)
         {
-            var name = Path.GetFileName(old.Trim());
+            var name = Names.File(old.Trim());
             var file = Path.Combine(c.Dir, name);
             if (name == "" || now.Contains(name) || !File.Exists(file)) continue;
             File.Delete(file);

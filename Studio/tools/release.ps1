@@ -11,13 +11,14 @@ $version = ($xml.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-O
 $tag = "v$version"
 $zip = Join-Path $dist "RvCarStudio-$version-win-x64.zip"
 $src = Join-Path $dist "RvCarStudio-$version-source.zip"
+$tgz = Join-Path $dist "RvCarStudio-$version-linux-x64.tar.gz"
 $notes = Join-Path $studio 'RELEASE_NOTES.md'
 $exe = Join-Path $dist "RvCarStudio-$version-win-x64\RvCarStudio.exe"
 $wrong = @()
 
-foreach ($f in @($zip, $src, $notes, $exe)) { if (-not (Test-Path $f)) { $wrong += "Missing: $f (run package.ps1)" } }
+foreach ($f in @($zip, $tgz, $src, $notes, $exe)) { if (-not (Test-Path $f)) { $wrong += "Missing: $f (run package.ps1)" } }
 $head = (git -C $repo rev-parse HEAD).Trim()
-if (git -C $repo status --porcelain -- Studio RvCarStudio/data/readme RvCarStudio/data/Tips) { $wrong += 'Studio has changes that are not committed' }
+if (git -C $repo status --porcelain -- Studio docs README.md RvCarStudio/data/readme RvCarStudio/data/Tips) { $wrong += 'Studio has changes that are not committed' }
 if (Test-Path $exe) {
     $built = (Get-Item $exe).VersionInfo.ProductVersion
     if ($built -ne "$version+$head") { $wrong += "The exe is $built, the commit is ${head}: run package.ps1 again" }
@@ -34,14 +35,14 @@ if (git -C $repo ls-remote --tags origin "refs/tags/$tag") { $wrong += "$tag is 
 $there = gh release list --json tagName --jq '.[].tagName'
 if ($there -contains $tag) { $wrong += "There is a release $tag already (a draft, perhaps)" }
 
-# Checksums of both zips, to download beside them
+# Checksums of the archives, to download beside them
 $sums = Join-Path $dist 'SHA256SUMS.txt'
-if ((Test-Path $zip) -and (Test-Path $src)) {
-    $lines = foreach ($f in @($zip, $src)) { (Get-FileHash $f -Algorithm SHA256).Hash.ToLower() + '  ' + (Split-Path -Leaf $f) }
+if ((Test-Path $zip) -and (Test-Path $src) -and (Test-Path $tgz)) {
+    $lines = foreach ($f in @($zip, $tgz, $src)) { (Get-FileHash $f -Algorithm SHA256).Hash.ToLower() + '  ' + (Split-Path -Leaf $f) }
     [IO.File]::WriteAllText($sums, ($lines -join "`n") + "`n")
 }
 
-$args2 = @('release', 'create', $tag, $zip, $src, $sums, '--repo', $name, '--target', $head, '--title', "RV Car Studio $version", '--notes-file', $notes)
+$args2 = @('release', 'create', $tag, $zip, $tgz, $src, $sums, '--repo', $name, '--target', $head, '--title', "RV Car Studio $version", '--notes-file', $notes)
 if (-not $Publish) { $args2 += '--draft' }
 if ($PreRelease) { $args2 += '--prerelease' } else { $args2 += '--latest' }
 

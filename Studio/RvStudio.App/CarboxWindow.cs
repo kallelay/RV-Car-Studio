@@ -190,7 +190,7 @@ public sealed class CarboxWindow : Window
         var back = Pick("Background", Carbox.BackNames, (int)Style.Background, i => Set(Style with { Background = (Carbox.Back)i }));
         var col1 = Colour("Colour", Style.Colour1 ?? SKColors.White, c => Set(Style with { Colour1 = c }));
         var col2 = Colour("Second colour", Style.Colour2 ?? new SKColor(0xB8, 0xC8, 0xE0), c => Set(Style with { Colour2 = c }));
-        var picBtn = new Button { Content = Style.Picture != null ? Path.GetFileName(Style.Picture) : "Choose a picture...", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var picBtn = new Button { Content = Style.Picture != null ? Names.File(Style.Picture) : "Choose a picture...", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch };
         picBtn.Click += async (_, _) =>
         {
             var f = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -199,7 +199,7 @@ public sealed class CarboxWindow : Window
                 FileTypeFilter = new[] { new FilePickerFileType("Pictures") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp" } } }
             });
             if (f.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
-            picBtn.Content = Path.GetFileName(path);
+            picBtn.Content = Names.File(path);
             Set(Style with { Picture = path, Background = Carbox.Back.Picture });
         };
         Row("Picture", picBtn);

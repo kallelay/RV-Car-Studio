@@ -128,7 +128,7 @@ public sealed partial class Doc
     {
         if (Car is not { } c) return;
         var own = c.CopyToOwn(rel);
-        Edit("Copy " + Path.GetFileName(rel), () =>
+        Edit("Copy " + Names.File(rel), () =>
         {
             for (int i = 0; i < 19; i++)
                 if (c.Data.Models[i].Trim().Equals(rel.Trim(), StringComparison.OrdinalIgnoreCase)) c.Data.Models[i] = own;
@@ -646,12 +646,12 @@ public sealed partial class Doc
         if (asName == null && Car!.Game.RelOf(file) is { } rel) return rel;
         Directory.CreateDirectory(Car!.Dir);
         // The file picked, always: a different file of the same name already there gets a new name (name_2.prm)
-        var name = asName ?? Path.GetFileName(file);
+        var name = asName ?? Names.File(file);
         var dest = Path.Combine(Car.Dir, name);
         for (int k = 2; File.Exists(dest) && !File.ReadAllBytes(dest).AsSpan().SequenceEqual(File.ReadAllBytes(file)); k++)
-            dest = Path.Combine(Car.Dir, Path.GetFileNameWithoutExtension(name) + "_" + k + Path.GetExtension(name));
+            dest = Path.Combine(Car.Dir, Names.Stem(name) + "_" + k + Path.GetExtension(name));
         if (!File.Exists(dest)) File.Copy(file, dest);
-        return "cars\\" + Car.Folder + "\\" + Path.GetFileName(dest);
+        return "cars\\" + Car.Folder + "\\" + Names.File(dest);
     }
 
     /// <summary>Give a part a model. With nothing there yet it gets sensible values to start from. Follows the corner mode</summary>

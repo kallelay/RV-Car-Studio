@@ -611,7 +611,7 @@ public sealed partial class MainWindow
         {
             if (Doc.Car == null) return "";
             var skins = Doc.Car.FindSkins();
-            return skins.Count > 1 ? "Skins: " + string.Join(", ", skins.Select(Path.GetFileNameWithoutExtension)) : "No other skins";
+            return skins.Count > 1 ? "Skins: " + string.Join(", ", skins.Select(Names.Stem)) : "No other skins";
         });
         return p;
     }
@@ -625,7 +625,7 @@ public sealed partial class MainWindow
         int i = skins.FindIndex(s => string.Equals(s, cur, StringComparison.OrdinalIgnoreCase));
         Doc.SkinOverride = skins[(i + 1) % skins.Count];
         ResetPaintKeepSkin();
-        Say("Showing " + Path.GetFileName(Doc.SkinOverride));
+        Say("Showing " + Names.File(Doc.SkinOverride));
     }
 
     string? PaintFile() => Doc.Car == null ? null : Doc.SkinOverride ?? Doc.Car.Game.Find(Doc.D!.TPage);
@@ -826,7 +826,7 @@ public sealed partial class MainWindow
         var mainRel = Doc.D!.TPage.Replace('/', '\\');
         var cut = mainRel.LastIndexOf('\\');
         var relDir = cut >= 0 ? mainRel[..cut] : "";
-        var stem = Path.GetFileNameWithoutExtension(mainRel);
+        var stem = Names.Stem(mainRel);
         int n = 1;
         string rel;
         do rel = relDir + "\\" + stem + "-alt" + n++ + ".bmp"; while (game.Find(rel) != null);
@@ -834,7 +834,7 @@ public sealed partial class MainWindow
         CarTools.SaveTexture(o, path, keepAlpha ?? (paintSrc != null && paintSrc.AlphaType != SkiaSharp.SKAlphaType.Opaque));
         Doc.SkinOverride = path;
         ResetPaintKeepSkin();
-        Say("Skin saved: " + Path.GetFileName(path) + ". RVGL shows it on the car selection screen");
+        Say("Skin saved: " + Names.File(path) + ". RVGL shows it on the car selection screen");
         Did("Skin");
         return path;
     }
@@ -868,7 +868,7 @@ public sealed partial class MainWindow
         Files.Backup(target);
         CarTools.SaveTexture(o, target, keepAlpha ?? (paintSrc != null && paintSrc.AlphaType != SkiaSharp.SKAlphaType.Opaque));
         ResetPaintKeepSkin();
-        Say("Texture changed: " + Path.GetFileName(tex) + ". The first version stays as .bak");
+        Say("Texture changed: " + Names.File(tex) + ". The first version stays as .bak");
         Did("Texture");
     }
 
@@ -884,7 +884,7 @@ public sealed partial class MainWindow
         if (paintSrc == null) ReloadPaintSource();
         using var start = paintSrc != null ? PaintResult(paintSrc) : null;
         bool alpha = paintSrc != null && paintSrc.AlphaType != SkiaSharp.SKAlphaType.Opaque;
-        var w = new TextureWindow(this, Doc, start, PaintFile() is { } f ? Path.GetFileName(f) : null, alpha);
+        var w = new TextureWindow(this, Doc, start, PaintFile() is { } f ? Names.File(f) : null, alpha);
         TextureEditor = w;
         w.Show(this);
         Did("TextureEditor");
@@ -905,13 +905,13 @@ public sealed partial class MainWindow
         WatchTexture(tex);
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(tex) { UseShellExecute = true }); }
         catch (Exception ex) { Say("Couldn't open it: " + ex.Message + ". It's still being watched: " + tex); return; }
-        Say("Watching " + Path.GetFileName(tex) + ": save in your editor and it shows here");
+        Say("Watching " + Names.File(tex) + ": save in your editor and it shows here");
     }
 
     public void WatchTexture(string tex)
     {
         texWatcher?.Dispose();
-        texWatcher = new FileSystemWatcher(Path.GetDirectoryName(tex)!, Path.GetFileName(tex)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName };
+        texWatcher = new FileSystemWatcher(Path.GetDirectoryName(tex)!, Names.File(tex)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName };
         FileSystemEventHandler onChange = (_, _) => Avalonia.Threading.DispatcherTimer.RunOnce(() =>
         {
             ResetPaintKeepSkin(); // an editor may still be writing: this comes a moment later

@@ -206,17 +206,17 @@ public sealed class NewCarWizard : Window
             try
             {
                 var m = CarTools.LoadModelFile(path.Trim());
-                if (m.Faces.Length == 0) return $"The {what} model has no polygons in it: is it really a model? ({Path.GetFileName(path)})";
-                if (!m.IsValid()) return $"The {what} model is damaged: some polygons point at corners it doesn't have ({Path.GetFileName(path)})";
+                if (m.Faces.Length == 0) return $"The {what} model has no polygons in it: is it really a model? ({Names.File(path)})";
+                if (!m.IsValid()) return $"The {what} model is damaged: some polygons point at corners it doesn't have ({Names.File(path)})";
                 return null;
             }
-            catch (Exception ex) { return $"The {what} model can't be read ({Path.GetFileName(path)}): {ex.Message}"; }
+            catch (Exception ex) { return $"The {what} model can't be read ({Names.File(path)}): {ex.Message}"; }
         }
         var bad = Model("body", bodyBox.Text) ?? Model("wheel", wheelBox.Text);
         if (bad == null && !string.IsNullOrWhiteSpace(textureBox.Text))
         {
-            try { using var b = Images.Load(textureBox.Text.Trim()); if (b == null) bad = "The texture can't be read as a picture (" + Path.GetFileName(textureBox.Text) + "): use a .bmp, .png or .jpg"; }
-            catch (Exception ex) { bad = "The texture can't be read (" + Path.GetFileName(textureBox.Text) + "): " + ex.Message; }
+            try { using var b = Images.Load(textureBox.Text.Trim()); if (b == null) bad = "The texture can't be read as a picture (" + Names.File(textureBox.Text) + "): use a .bmp, .png or .jpg"; }
+            catch (Exception ex) { bad = "The texture can't be read (" + Names.File(textureBox.Text) + "): " + ex.Message; }
         }
         problem.Text = bad ?? "";
         return bad == null;

@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RV Car Studio 3 - Documentation</title>
+<style>
+:root{--bg:#f8f8ff;--panel:#fff;--bar:#ececf5;--line:#dadae6;--text:#15151c;--faint:#565c6e;--accent:#c2410c;--soft:#fdeee5;--code:#eeeef6}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0d0d10;--panel:#15151a;--bar:#08080a;--line:#2a2a33;--text:#f0f0f4;--faint:#a3a3af;--accent:#ff9440;--soft:#2a1a10;--code:#1f1f26}}
+:root[data-theme=dark]{--bg:#0d0d10;--panel:#15151a;--bar:#08080a;--line:#2a2a33;--text:#f0f0f4;--faint:#a3a3af;--accent:#ff9440;--soft:#2a1a10;--code:#1f1f26}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.62 "Segoe UI",Inter,system-ui,sans-serif;display:grid;grid-template-columns:270px minmax(0,1fr)}
+nav{position:sticky;top:0;height:100vh;overflow:auto;background:var(--bar);border-right:1px solid var(--line);padding:22px 16px 40px;font-size:14px}
+nav h1{font-size:18px;margin:0 0 2px}
+nav p{margin:0 0 14px;color:var(--faint);font-size:12.5px}
+nav input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font:inherit;margin-bottom:12px}
+nav a{display:block;padding:4px 10px;border-radius:7px;color:var(--text);text-decoration:none}
+nav a.sub{padding-left:24px;color:var(--faint);font-size:13px}
+nav a:hover{background:var(--soft)}
+nav a.on{background:var(--soft);color:var(--accent);font-weight:600}
+nav button{margin-top:14px;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+main{max-width:940px;padding:40px 44px 120px;width:100%}
+h2{font-size:27px;margin:64px 0 10px;padding-top:18px;border-top:1px solid var(--line);line-height:1.25}
+h3{font-size:19px;margin:34px 0 6px}
+section:first-of-type h2{border:0;margin-top:0;padding-top:0}
+p,li{max-width:74ch}
+a{color:var(--accent)}
+figure{margin:20px 0}
+figure img{width:100%;height:auto;border:1px solid var(--line);border-radius:10px;display:block;cursor:zoom-in;background:#000}
+figcaption{color:var(--faint);font-size:13.5px;margin-top:6px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.two figure{margin:0}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:15px}
+th,td{text-align:left;padding:7px 12px 7px 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--faint);font-weight:600;font-size:13px}
+kbd{background:var(--code);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 6px;font:13px Consolas,monospace;white-space:nowrap}
+code{background:var(--code);border-radius:5px;padding:1px 5px;font:14px Consolas,monospace}
+pre{background:var(--code);border-radius:9px;padding:13px 16px;overflow:auto;font:14px/1.5 Consolas,monospace}
+pre code{background:none;padding:0}
+.tip{background:var(--soft);border-left:3px solid var(--accent);border-radius:0 9px 9px 0;padding:10px 16px;margin:16px 0}
+.tip p{margin:0}
+.scroll{overflow-x:auto}
+dialog{border:0;padding:0;background:transparent;max-width:96vw;max-height:96vh}
+dialog img{max-width:96vw;max-height:94vh;display:block;border-radius:8px;cursor:zoom-out}
+dialog::backdrop{background:#000c}
+@media (max-width:860px){body{display:block}nav{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}main{padding:24px 18px 80px}.two{grid-template-columns:1fr}}
+@media print{nav{display:none}body{display:block}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<nav aria-label="Contents">
+<h1>RV Car Studio 3</h1>
+<p>Documentation</p>
+<input id="q" type="search" placeholder="Search" aria-label="Search the documentation">
+<div id="toc"></div>
+<button id="theme" type="button">Light / dark</button>
+</nav>
+<main>
+
+<section id="start"><h2>Start</h2>
+<p>RV Car Studio makes and changes cars for Re-Volt and RVGL. You work on the car in the 3D view, and everything you change shows at once. It covers the whole way: models, paint, shading, collision, handling, menu entry, carbox, readme and the zip you share.</p>
+<figure><img src="img/pro.webp" alt="The Studio in Pro mode with a red car and the Handling section open" loading="lazy"><figcaption>Pro mode: the car's parts on the left, the car in the middle, everything about it on the right, the car check below.</figcaption></figure>
+<h3>Installing</h3>
+<table>
+<tr><th>System</th><th>How</th></tr>
+<tr><td>Windows (64-bit)</td><td>Unzip <code>RvCarStudio-…-win-x64.zip</code> anywhere and run <code>RvCarStudio.exe</code>. It isn't signed, so Windows may ask before it runs the first time.</td></tr>
+<tr><td>Linux (64-bit)</td><td><code>tar -xzf RvCarStudio-…-linux-x64.tar.gz</code>, then run <code>./RvCarStudio</code> inside. It needs X11 (or XWayland), OpenGL and fontconfig, which a desktop has.</td></tr>
+<tr><td>macOS</td><td>No download yet: it builds, but hasn't been tested on a Mac.</td></tr>
+</table>
+<p>No .NET is needed. The first start asks for your game's folder: the one that holds <code>cars</code>. <em>File &gt; Open Re-Volt folder</em> changes it.</p>
+<h3>The first minutes</h3>
+<ol>
+<li>Pick a car in the list. It opens and stays open until you choose <em>Change car</em> (<kbd>Ctrl</kbd>+<kbd>O</kbd>).</li>
+<li>Click a part of the car. Its values are on the <em>Selected</em> tab; drag the handles in the view to move it.</li>
+<li>Try a colour on <em>Paint</em>, drive it with <kbd>F6</kbd>, undo with <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</li>
+<li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves. Nothing is written before that, except by the buttons that say so.</li>
+</ol>
+<h3>Tours</h3>
+<p><em>Help &gt; Tours</em> has three: make a new car, remodel a car, repaint a car. A card tells you each step and points at what to click. <em>Do it for me</em> does the step, and the tour goes on when you've done it.</p>
+<figure><img src="img/tour.webp" alt="A tour card over the 3D view" loading="lazy"><figcaption>A tour starts with a card in the view.</figcaption></figure>
+</section>
+
+<section id="modes"><h2>Pro and Easy</h2>
+<p>The switch is on the top bar, and the choice is remembered. The Studio starts in Pro.</p>
+<p><strong>Pro</strong> has every tab, the model slots, <code>parameters.txt</code> as text, menu stats, AI values, vertex normals and RVGL's own values.</p>
+<p><strong>Easy</strong> has the layout of the old RV Car Studio. The <em>Edit Menu</em> lists its modes in the old order, with &lt; and &gt; to go through them: Main, Texture, Handling, Frontend Stuffs, Body, Wheels, Suspensions, Spinner, Aerial, AI, Camera, Collision, Carbox, Shade, Shadow, Misc., Readme, Packing, About and Console. Click a part in the view and its mode comes up. <em>Pro editor</em> goes back to Pro.</p>
+<figure><img src="img/easy.webp" alt="Easy mode with the Edit Menu and Render Settings" loading="lazy"><figcaption>Easy mode. Tips are under the view, Auto save parameters is above Render Settings.</figcaption></figure>
+<h3>Render Settings</h3>
+<p>The drawing shows the car from above, its front to the left. Click a part to change how it's drawn: solid, wire, points, not shown, half see-through. Right click selects it. <em>All solid</em> puts everything back. This changes only the view, never the car.</p>
+<figure><img src="img/easy_wire.webp" alt="The body drawn in wire" loading="lazy"><figcaption>The body in wire, the Wheels mode open.</figcaption></figure>
+</section>
+
+<section id="view"><h2>The 3D view</h2>
+<h3>Looking</h3>
+<table>
+<tr><th>Mouse</th><th></th></tr>
+<tr><td>Right drag, or drag on nothing</td><td>turn round the car</td></tr>
+<tr><td>Middle drag</td><td>move sideways</td></tr>
+<tr><td>Wheel</td><td>nearer, farther</td></tr>
+<tr><td>Click</td><td>select a part</td></tr>
+<tr><td>Double click</td><td>select it and frame it</td></tr>
+<tr><td>Right click</td><td>the part's menu</td></tr>
+</table>
+<p><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> are the 3D, top, front and side views, <kbd>F</kbd> frames the car. The cube in the corner turns the view too, and <em>Home</em> goes back to the start. <em>Show</em> on the toolbar switches reflections, shadow, wireframe, hull, suspension travel, vertex normals, markers, grid, soft light and the cube. <em>Texture</em>, <em>Shading</em> and <em>Clay</em> choose what the surface shows.</p>
+<h3>Moving, turning and sizing</h3>
+<p><kbd>W</kbd> moves, <kbd>E</kbd> turns, <kbd>R</kbd> sizes. Drag a handle, or type an amount: <kbd>W</kbd>, then <kbd>X</kbd>, <kbd>Y</kbd> or <kbd>Z</kbd>, a number, <kbd>Enter</kbd>. Arrow keys and <kbd>PgUp</kbd> <kbd>PgDn</kbd> nudge, with <kbd>Shift</kbd> in bigger steps. Snap sets the step.</p>
+<p>Turning and sizing change the model itself, with all its levels of detail, and the radius or length that goes with its size.</p>
+<table>
+<tr><th>Corners</th><th>What moves</th></tr>
+<tr><td>Single</td><td>only this one</td></tr>
+<tr><td>Mirror L/R</td><td>the other side, mirrored</td></tr>
+<tr><td>Front/Back</td><td>the other end, mirrored: changes the wheelbase</td></tr>
+<tr><td>All four</td><td>all corners, mirrored both ways</td></tr>
+</table>
+<p>The crosses are the centre of mass, the weapon points, the aerial, the cameras and the suspension mounts. They can be dragged too.</p>
+<figure><img src="img/selected.webp" alt="A selected wheel with handles" loading="lazy"><figcaption>The front left wheel selected.</figcaption></figure>
+<h3>Parts</h3>
+<p>The list on the left has the car's parts, its points and the collision hull as a row that opens. <em>Add a part</em> adds what the car doesn't have; <em>Replace</em>, <em>Hide</em> and <em>Remove</em> are on the part's own page. Hide only changes the view.</p>
+</section>
+
+<section id="newcar"><h2>New car</h2>
+<figure><img src="img/newcar.webp" alt="The New car window" loading="lazy" style="max-width:420px"></figure>
+<table>
+<tr><th>What you make</th><th>What you get</th></tr>
+<tr><td>Repaint</td><td>A copy of a car, opened on Paint. The handling stays.</td></tr>
+<tr><td>Remodel</td><td>A copy of a car whose settings, parts and models you change.</td></tr>
+<tr><td>Original car</td><td>Your own body, one wheel for all four (the right side mirrored) and a texture. The wheels are placed, sizes fitted and a first hull made. The handling comes from the base car.</td></tr>
+</table>
+<p>Models can be <code>.prm</code> or <code>.obj</code>, the texture <code>.bmp</code>, <code>.png</code> or <code>.jpg</code>. Stock cars come first in the list, and Toyeca is the one it starts from. A file that can't be used is named, with the reason, and the window stays open.</p>
+<h3>Installing a downloaded car</h3>
+<p><em>File &gt; Install a car from a zip or folder</em>, or drop it on the window. First you see what's inside: each car, its folder and what's wrong with it. Nothing that exists is replaced: if the folder's name is taken, the car gets another one and only its own paths are changed. <em>Undo the last install</em> takes out exactly the files it wrote.</p>
+<h3>Stock cars and shared files</h3>
+<p>The first change to a stock car offers a copy that keeps what you've done. If you go on with the original, your changes go to <code>packs\local</code>, on top of the game's files. Before a file that other cars use is changed, the Studio asks: your own copy, for all, or cancel.</p>
+</section>
+
+<section id="files"><h2>Files</h2>
+<figure><img src="img/files.webp" alt="The Files tab" loading="lazy"></figure>
+<p>The car's texture, hull, shadow, carbox and sounds, each with <em>Pick</em>. Pick takes a file from anywhere, copies it into the car's folder and turns it into what the game needs. It's picky: a file the game couldn't use is refused, with the reason. In Pro the tab also has the model slots, everything in the folder, and <code>parameters.txt</code> as text. Text you type there reaches the car a moment after you stop.</p>
+<table>
+<tr><th>File</th><th>Takes</th></tr>
+<tr><td>Texture</td><td><code>.bmp .png .jpg</code>, made into a <code>.bmp</code></td></tr>
+<tr><td>Hull</td><td><code>.hul</code></td></tr>
+<tr><td>Shadow</td><td><code>.bmp .png</code></td></tr>
+<tr><td>Carbox</td><td>any picture, fitted into a square</td></tr>
+<tr><td>Engine, horn, servo</td><td>a plain <code>.wav</code></td></tr>
+<tr><td>Models</td><td><code>.prm</code>, <code>.m</code>, or <code>.obj</code> from Blender</td></tr>
+</table>
+</section>
+
+<section id="properties"><h2>Properties</h2>
+<figure><img src="img/properties.webp" alt="The Properties tab" loading="lazy"></figure>
+<h3>How it drives</h3>
+<p>At the top of the tab (<kbd>F1</kbd>): real top speed, time to top speed, weight, how far the springs sit down, bounce and damping, grip and turning, worked out from the original car physics as you edit. <em>Try it, nothing changes</em> shows what a change would do before you make it. There's a unit converter and a search through what each value does.</p>
+<h3>Handling like another car</h3>
+<p>Choose a car whose feel you like. One click takes its engine, steering, weight, grip and springs, and how CPU drivers drive it if you want. Your models, looks and menu stay. <em>Compare first</em> opens the list of every value that differs, to take one by one.</p>
+<figure><img src="img/compare.webp" alt="The Compare window" loading="lazy"><figcaption>Compare with another car: tick values or a whole group, then take them in one step.</figcaption></figure>
+<h3>The car and its handling</h3>
+<p>Name and reflection, engine and steering, centre of mass, the springs, grip, and which wheels drive. A value tells you what it does when the mouse rests on it. The centre of mass can also be worked out: in the middle of the wheels, balanced, by weight, or low and stable.</p>
+<h3>Menu</h3>
+<figure><img src="img/menu.webp" alt="The menu card with the stat bars" loading="lazy"></figure>
+<p>What players see: class, rating, when it's unlocked, and the stat bars. <em>Fill the stat bars from a simulated run</em> measures them. RVGL's own dev mode (<em>Calc Car Stats</em>) has the exact numbers.</p>
+<h3>AI</h3>
+<p>How CPU drivers drive the car, with the range of the stock cars beside each value, and <em>Copy the AI values</em> of another car.</p>
+<h3>Properties (RVGL)</h3>
+<figure><img src="img/rvgl.webp" alt="The Properties (RVGL) tab" loading="lazy"></figure>
+<p>What only RVGL reads: flippable, flying and cloth cars, the shadow's place and stock index, own cameras and the weapon points.</p>
+</section>
+
+<section id="model"><h2>Model</h2>
+<h3>Vertices</h3>
+<figure><img src="img/vertices.webp" alt="The vertices of a body" loading="lazy"><figcaption>The body's vertices, some of them picked.</figcaption></figure>
+<p>Select a part and press <kbd>Tab</kbd>. Click a vertex to pick it, <kbd>Shift</kbd> adds, <kbd>Ctrl</kbd> takes away, a drag picks all in a box, <kbd>A</kbd> picks all. Move them with the handles, the arrows, or <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> and a number. <kbd>Esc</kbd> lets go of them, and again leaves vertex editing. The hull's points work the same way and it stays a closed solid.</p>
+<h3>Collision hull</h3>
+<figure><img src="img/hull.webp" alt="A collision hull with spheres" loading="lazy"><figcaption>Spheres (yellow) and the convex part (green) of a made hull.</figcaption></figure>
+<p>In the game a car has spheres, which touch the world, and convex parts, which other cars bump into. <em>Make a hull from the body</em> makes both: spheres that together have the body's outline, never lower than the road clearance, and a convex part (two, when the body needs them). They needn't be inside the body.</p>
+<ul>
+<li><strong>Spheres</strong>: Few (8 to 12), Normal (up to 22) or Fine (up to 34). The stock cars have 10 to 34.</li>
+<li><strong>Fill with spheres again</strong> makes only the spheres and leaves your parts.</li>
+<li>The line below says how well they follow the body.</li>
+<li>Every part and sphere can be moved, sized, added or removed. With Mirror L/R the other side follows.</li>
+</ul>
+<div class="tip"><p>A made hull is a good start. Race it in RVGL before you share the car.</p></div>
+<h3>Fitting</h3>
+<p>Radius, skid width, spring and axle lengths from the models; the inertia from the body's shape; the wheels placed on a new body; the right side made like the left.</p>
+<h3>.obj and other programs</h3>
+<p><em>File</em> exports the selected part or the whole car as <code>.obj</code> and imports one for the selected part. 1 metre there is 100 game units, Y is up and the front is towards -Z, as in Blender's Re-Volt add-on. An imported <code>.obj</code> stays watched: save it again in Blender and the part changes here.</p>
+</section>
+
+<section id="paint"><h2>Paint</h2>
+<figure><img src="img/paint.webp" alt="A car repainted in turquoise" loading="lazy"><figcaption>Hue turned, seen on the car while the slider moves.</figcaption></figure>
+<table>
+<tr><th>Section</th><th>What it does</th></tr>
+<tr><td>Repaint</td><td>Hue, colour, brightness, contrast, warm or cool</td></tr>
+<tr><td>All in one colour</td><td>Tints everything, keeps the light and dark of the painting. Also for grey textures, where hue has nothing to turn</td></tr>
+<tr><td>Swap a colour</td><td>Replaces one colour with another</td></tr>
+<tr><td>Only these colours</td><td>Click colours of the texture to change only those</td></tr>
+<tr><td>Keep it</td><td><em>Save as a new skin</em> writes <code>car-alt1.bmp</code> and keeps the original; <em>Change this car's texture</em> writes over it, with the first one as <code>.bak</code></td></tr>
+<tr><td>Your image editor</td><td><em>Open the texture and watch it</em>: each save there shows here</td></tr>
+</table>
+<p>Nothing is written until you use <em>Keep it</em>.</p>
+<h3>UV and texture editor</h3>
+<figure><img src="img/texture.webp" alt="The UV and texture editor" loading="lazy"></figure>
+<p>Open it with <kbd>U</kbd>. The texture has a part's faces laid over it, and the car in the 3D view follows.</p>
+<table>
+<tr><th>Tool</th><th>Key</th><th></th></tr>
+<tr><td>Select</td><td><kbd>V</kbd></td><td>Faces: click, <kbd>Shift</kbd>, <kbd>Ctrl</kbd>, a box, or double click a whole piece. Move, size, turn, flip, snap, fit, project, unwrap, pack</td></tr>
+<tr><td>Brush</td><td><kbd>B</kbd></td><td>Round or square tip</td></tr>
+<tr><td>Eraser</td><td><kbd>E</kbd></td><td>Brings the original back</td></tr>
+<tr><td>Fill</td><td><kbd>G</kbd></td><td></td></tr>
+<tr><td>Pick a colour</td><td><kbd>I</kbd></td><td></td></tr>
+<tr><td>Line</td><td><kbd>L</kbd></td><td></td></tr>
+<tr><td>Shape</td><td><kbd>P</kbd></td><td>A filled polygon</td></tr>
+<tr><td>Blur, Sharpen, Lighten, Burn</td><td></td><td>Painted on with the brush</td></tr>
+</table>
+<p><em>Generate</em> makes a plain colour, gradient, racing stripes, checks, carbon fibre, grunge, a number, panel lines, a colour per piece, or light and shade, on the whole page or the selected faces. <em>Make a livery</em> does a whole paint job; again for another one. <em>Save the layout as a picture</em> gives a template for other editors.</p>
+</section>
+
+<section id="shade"><h2>Shade</h2>
+<figure><img src="img/shade.webp" alt="The Shade tab with a clay render" loading="lazy"></figure>
+<p>Each polygon holds a colour for each of its corners. <em>Auto shade</em> lights the car like a clay render and bakes that into them: light from the sky, darker where the shape hides it, contact shadows at the floor, and a lamp you drag round the car. <em>Depth</em> says how dark it gets, <em>Surface</em> whether it's smooth or faceted. Sliders show at once, <em>Save</em> keeps it.</p>
+<p><em>Vertex normals</em> (Pro) are separate: the game takes reflections and moving lights from them. <em>Make shadow.bmp</em> draws the shadow under the car from its own shape.</p>
+</section>
+
+<section id="package"><h2>Package</h2>
+<figure><img src="img/package.webp" alt="The Package tab" loading="lazy"></figure>
+<p>The last step. <em>Ready to share?</em> lists the car check, the carbox, the readme and what's not saved.</p>
+<h3>Carbox maker</h3>
+<figure><img src="img/carbox.webp" alt="The carbox maker" loading="lazy"><figcaption>The stock look, with other angles to click.</figcaption></figure>
+<p>The car is cut out of the view with its soft edges and put on a background with its name.</p>
+<ul>
+<li><strong>Ready-made looks</strong>: Stock, Night, Sky, Racing, Side, Clean. One click, then change anything.</li>
+<li><strong>The car</strong>: angle, turn, height, tilt, size, up and down.</li>
+<li><strong>Behind it</strong>: one colour, two, or a picture.</li>
+<li><strong>The name</strong>: style (echoes as the stock cars, plain, outlined), <em>Direction</em> (across, down or up the side, upside down, letters one under the other), <em>Length</em> (as wide as the box by itself), height, width, kerning, slant and place.</li>
+</ul>
+<figure><img src="img/carbox_side.webp" alt="A carbox with the name down the side" loading="lazy"><figcaption>The Side look.</figcaption></figure>
+<p><em>Quick carbox</em> makes the stock look in one click, and <em>A picture of my own</em> takes any picture.</p>
+<h3>Readme</h3>
+<figure><img src="img/readme.webp" alt="The readme generator" loading="lazy"></figure>
+<p>A few answers on the left, the readme as it will be on the right. Speed, weight, polygons and files come from the car. A readme someone else wrote is kept as <code>readme.txt.bak</code>. The layout can also be one of the templates in <code>data\readme</code>, or your own with its <code>[CARNAME]</code>, <code>[AUTHOR]</code>… tags.</p>
+<h3>Zip</h3>
+<p><em>Pack as zip</em> saves the car, offers to write the readme, and makes the zip that players unpack on their game folder.</p>
+</section>
+
+<section id="try"><h2>Trying the car</h2>
+<h3>In RVGL</h3>
+<p><kbd>F5</kbd> saves the car, starts RVGL in a window and goes into a race with it. The track, laps and opponents are under the arrow beside <em>Test run</em>. It uses a settings folder of its own, so your profile and best times aren't touched. RVGL has no command for this, so the Studio goes through its menus with key presses, only while the game's window is in front, and only on Windows: elsewhere the game starts and you pick the car. <kbd>Shift</kbd>+<kbd>F5</kbd> is dev mode: <kbd>Ctrl</kbd>+<kbd>R</kbd> in the game reloads the car.</p>
+<h3>Here</h3>
+<figure><img src="img/race.webp" alt="A race in the Studio" loading="lazy"><figcaption>Race here: your car against three others.</figcaption></figure>
+<p><kbd>F6</kbd> drives on a plain floor, bumps or a ramp. <kbd>F7</kbd> races CPU cars on a built-in road. Both use the physics of the original game. Arrows or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>, or a gamepad (Windows); <kbd>Space</kbd> flips the car when it's on its roof, <kbd>R</kbd> puts it back, <kbd>I</kbd> lets the AI drive, <kbd>Esc</kbd> leaves. The road, the walls and the CPU driver are the Studio's own, so times don't compare with RVGL's.</p>
+<h3>The car check</h3>
+<p>Under the view, always up to date. Errors (a missing file, a damaged model, a texture that isn't square) are things the game would stumble over; warnings (a hull too low, a file in another car's folder) are worth a look; the rest is information.</p>
+</section>
+
+<section id="saving"><h2>Saving and safety</h2>
+<ul>
+<li>Saving changes only the lines you changed in <code>parameters.txt</code>. Comments, <code>;)</code> lines, unknown sections and the checksum of stock files stay.</li>
+<li>The first version of each file stays next to it as <code>.bak</code>.</li>
+<li>Read-only packs are never written. A stock car's changes go to <code>packs\local</code>, and <em>File &gt; Back to the game's version</em> takes them away.</li>
+<li><em>Save by itself</em> (File, or Auto save parameters in Easy) saves a few seconds after each change.</li>
+<li>If <code>parameters.txt</code> is changed in another program, the car is read again (you're asked when you have unsaved changes).</li>
+<li>An error inside the Studio doesn't close it. It's written to <code>crash.log</code> and the Studio goes on.</li>
+</ul>
+<table>
+<tr><th>System</th><th>Settings and crash.log</th></tr>
+<tr><td>Windows</td><td><code>%APPDATA%\RvCarStudio</code></td></tr>
+<tr><td>Linux</td><td><code>~/.config/RvCarStudio</code></td></tr>
+</table>
+</section>
+
+<section id="look"><h2>Look</h2>
+<p>Dark, Light and Classic: the button at the end of the toolbar, or <em>View &gt; Theme</em>. <em>Show &gt; Names on the buttons</em> leaves only the symbols.</p>
+<div class="two">
+<figure><img src="img/light.webp" alt="The Light theme" loading="lazy"><figcaption>Light</figcaption></figure>
+<figure><img src="img/classic.webp" alt="The Classic theme" loading="lazy"><figcaption>Classic</figcaption></figure>
+</div>
+</section>
+
+<section id="keys"><h2>Keys</h2>
+<div class="scroll"><table>
+<tr><th>Key</th><th>What it does</th></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>save</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>undo, redo</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>change the car</td></tr>
+<tr><td><kbd>F1</kbd></td><td>how it drives, and the guide</td></tr>
+<tr><td><kbd>F5</kbd>, <kbd>Shift</kbd>+<kbd>F5</kbd></td><td>test run in RVGL, in dev mode</td></tr>
+<tr><td><kbd>F6</kbd>, <kbd>F7</kbd></td><td>drive here, race here</td></tr>
+<tr><td><kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd></td><td>move, turn, size; then an axis and a number</td></tr>
+<tr><td>Arrows, <kbd>PgUp</kbd> <kbd>PgDn</kbd></td><td>nudge (<kbd>Shift</kbd>: bigger steps)</td></tr>
+<tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></td><td>3D, top, front, side</td></tr>
+<tr><td><kbd>F</kbd></td><td>frame the car</td></tr>
+<tr><td><kbd>U</kbd></td><td>UV and texture editor</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>vertices of the selected part, and back</td></tr>
+<tr><td><kbd>A</kbd>, <kbd>Esc</kbd></td><td>pick all vertices, none</td></tr>
+</table></div>
+</section>
+
+<section id="command"><h2>Command line</h2>
+<pre><code>RvCarStudio -rvpath "D:\ReVolt"      use this game folder
+RvCarStudio -load toyeca             open this car
+RvCarStudio -config                  ask for the game folder again</code></pre>
+</section>
+
+<section id="trouble"><h2>If something doesn't work</h2>
+<table>
+<tr><th>What you see</th><th>What to do</th></tr>
+<tr><td>Hue changes nothing</td><td>The texture is nearly grey. Use <em>All in one colour</em>: choose a colour, then raise Amount.</td></tr>
+<tr><td>The car stops dead on kerbs</td><td>The hull is too low. The car check says so; make the hull again.</td></tr>
+<tr><td>The carbox doesn't show in the game</td><td>It needs RVGL, and <code>TCARBOX</code> in <code>parameters.txt</code>: <em>Save as the carbox</em> sets it.</td></tr>
+<tr><td>Changes to a stock car don't show</td><td>RVGL reads the packs in order. The Studio saves to <code>packs\local</code>; it must be listed in <code>packs\default.txt</code>.</td></tr>
+<tr><td>CPU drivers don't use the car</td><td>Turn on <em>CPU cars can pick it</em>. RVGL chooses the opponents itself.</td></tr>
+<tr><td>Nothing in the 3D view on Linux</td><td>OpenGL 3.3 (or ES 3.0) is needed. Check that your graphics driver is installed.</td></tr>
+<tr><td>Something went wrong message</td><td>Send <code>crash.log</code> with what you clicked, in an <a href="https://github.com/kallelay/RV-Car-Studio/issues">issue</a>.</td></tr>
+</table>
+</section>
+
+<section id="about"><h2>About</h2>
+<p>RV Car Studio by Kallel A.Y (theKDL). Free software under the GPL v3. The source is on <a href="https://github.com/kallelay/RV-Car-Studio">GitHub</a>. Re-Volt is the property of its owners; RVGL is the work of the RVGL team. No game data is included. The car in the pictures is the author's Sienna GT.</p>
+</section>
+</main>
+
+<dialog id="big"><img alt=""></dialog>
+<script>
+(function () {
+  var toc = document.getElementById('toc'), links = [];
+  document.querySelectorAll('main section').forEach(function (s) {
+    function add(h, id, sub) { var a = document.createElement('a'); a.href = '#' + id; a.textContent = h.textContent; if (sub) a.className = 'sub'; toc.appendChild(a); links.push({ a: a, el: h, s: s }); }
+    add(s.querySelector('h2'), s.id);
+    s.querySelectorAll('h3').forEach(function (h) { h.id = s.id + '-' + h.textContent.toLowerCase().replace(/[^a-z0-9]+/g, '-'); add(h, h.id, true); });
+  });
+  function here() {
+    var now = links[0];
+    links.forEach(function (l) { if (l.el.getBoundingClientRect().top < 120) now = l; });
+    links.forEach(function (l) { l.a.classList.toggle('on', l === now); });
+  }
+  addEventListener('scroll', here, { passive: true }); here();
+  document.getElementById('q').addEventListener('input', function (e) {
+    var q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('main section').forEach(function (s) { s.hidden = q !== '' && s.textContent.toLowerCase().indexOf(q) < 0; });
+    links.forEach(function (l) { l.a.hidden = l.s.hidden; l.a.style.display = l.s.hidden ? 'none' : ''; });
+  });
+  var big = document.getElementById('big');
+  document.querySelectorAll('figure img').forEach(function (i) { i.addEventListener('click', function () { var b = big.querySelector('img'); b.src = i.src; b.alt = i.alt; big.showModal(); }); });
+  big.addEventListener('click', function () { big.close(); });
+  var root = document.documentElement;
+  try { var t = localStorage.getItem('rvcs-theme'); if (t) root.dataset.theme = t; } catch (e) {}
+  document.getElementById('theme').addEventListener('click', function () {
+    var dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme:dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('rvcs-theme', root.dataset.theme); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

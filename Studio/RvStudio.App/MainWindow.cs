@@ -441,7 +441,7 @@ public sealed partial class MainWindow : Window
                 // An .obj from Blender: made into a .prm in the car's folder
                 var tmp = Path.Combine(Path.GetTempPath(), "rvcs_" + Guid.NewGuid().ToString("N") + ".prm");
                 ObjModel.Import(p.FilePath).Save(tmp);
-                try { return Doc.BringIn(tmp, Path.GetFileNameWithoutExtension(p.FilePath) + ".prm"); }
+                try { return Doc.BringIn(tmp, Names.Stem(p.FilePath) + ".prm"); }
                 finally { File.Delete(tmp); }
             }
             catch (Exception ex)
@@ -460,7 +460,7 @@ public sealed partial class MainWindow : Window
         if (rel == "") { Doc.RemovePart(s); return; }
         Doc.SetPartModel(s, rel);
         Doc.Select(s);
-        Say(s.Label + ": " + Path.GetFileName(rel));
+        Say(s.Label + ": " + Names.File(rel));
     }
 
     public void SetLocked(bool locked)
@@ -665,6 +665,7 @@ public sealed partial class MainWindow : Window
         for (int i = 0; i < TourNames.Length; i++) { int k = i; tours.Items.Add(Item(TourNames[i], () => StartTour(k))); }
         help.Items.Add(tours);
         help.Items.Add(new Separator());
+        help.Items.Add(Item("Documentation", OpenDocs));
         help.Items.Add(Item("Guide and calculations", ShowGuide, "F1"));
         help.Items.Add(Item("Mouse and keys", () => Say("Click: select, double click: frame it, right click: its menu. Drag a handle, or W E R then type an amount (X Y Z: axis, Enter, Esc). Right drag: turn, middle drag: pan, wheel: zoom. Arrows + PgUp/PgDn: nudge. 1 2 3 4: views. F: frame the car.")));
         help.Items.Add(Item("About", () => Say("RV Car Studio 3 by Kallel A.Y (theKDL). GPL v3. Re-Volt is a trademark of its owners.")));
@@ -1557,6 +1558,15 @@ public sealed partial class MainWindow : Window
     public string? SelectedLevel;
     public bool RaceByItself = true;
     public int RaceCars = 8, RaceLaps = 3;
+
+    /// <summary>docs/index.html beside the program, in the browser (a build without it: the one on GitHub)</summary>
+    void OpenDocs()
+    {
+        var file = Path.Combine(AppContext.BaseDirectory, "docs", "index.html");
+        var what = File.Exists(file) ? file : "https://github.com/kallelay/RV-Car-Studio";
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(what) { UseShellExecute = true }); }
+        catch (Exception ex) { Say("Couldn't open " + what + ": " + ex.Message); }
+    }
 
     void OpenFolder()
     {

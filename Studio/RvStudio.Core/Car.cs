@@ -61,7 +61,7 @@ public sealed class GameFolder
             if (last ? File.Exists(next) : Directory.Exists(next)) { cur = next; continue; }
             if (!Directory.Exists(cur)) return null;
             var match = (last ? Directory.EnumerateFiles(cur) : Directory.EnumerateDirectories(cur))
-                .FirstOrDefault(e => Path.GetFileName(e).Equals(parts[i], StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(e => Names.File(e).Equals(parts[i], StringComparison.OrdinalIgnoreCase));
             if (match == null) return null;
             cur = match;
         }
@@ -140,7 +140,7 @@ public sealed class GameFolder
         {
             var dir = Path.Combine(layer, "cars");
             if (!Directory.Exists(dir)) continue;
-            foreach (var d in Directory.GetDirectories(dir)) seen.Add(Path.GetFileName(d));
+            foreach (var d in Directory.GetDirectories(dir)) seen.Add(Names.File(d));
         }
         return seen;
     }
@@ -351,18 +351,18 @@ public sealed class Car
     public string CopyToOwn(string rel)
     {
         var src = Game.Find(rel) ?? throw new FileNotFoundException(rel);
-        var name = Path.GetFileName(src);
+        var name = Names.File(src);
         Directory.CreateDirectory(Dir);
         var dest = Path.Combine(Dir, name);
         if (File.Exists(dest) && !File.ReadAllBytes(dest).SequenceEqual(File.ReadAllBytes(src)))
         {
-            var stem = Path.GetFileNameWithoutExtension(name);
+            var stem = Names.Stem(name);
             var ext = Path.GetExtension(name);
             int n = 1;
             do dest = Path.Combine(Dir, stem + "_" + n++ + ext); while (File.Exists(dest));
         }
         if (!File.Exists(dest)) File.Copy(src, dest);
-        return "cars\\" + Folder + "\\" + Path.GetFileName(dest);
+        return "cars\\" + Folder + "\\" + Names.File(dest);
     }
 
     /// <summary>Forget saved changes of a car in a read-only pack: it goes back to what the pack has</summary>
@@ -378,14 +378,14 @@ public sealed class Car
         var r = new List<string>();
         var tex = Game.Find(Data.TPage);
         if (tex == null) return r;
-        var stem = Path.GetFileNameWithoutExtension(tex);
-        var box = Data.TCarBox == "" ? "" : Path.GetFileNameWithoutExtension(Data.TCarBox.Replace('\\', '/'));
+        var stem = Names.Stem(tex);
+        var box = Data.TCarBox == "" ? "" : Names.Stem(Data.TCarBox.Replace('\\', '/'));
         var texDir = Path.GetDirectoryName((Game.RelOf(tex) ?? "").Replace('\\', '/'))?.Replace('/', '\\') + "\\";
         foreach (var f in Game.CarFiles(Folder).Where(kv => kv.Key.StartsWith(texDir, StringComparison.OrdinalIgnoreCase) && kv.Key.LastIndexOf('\\') == texDir.Length - 1)
-                     .Select(kv => kv.Value).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+                     .Select(kv => kv.Value).OrderBy(Names.File, StringComparer.OrdinalIgnoreCase))
         {
             if (!Path.GetExtension(f).Equals(".bmp", StringComparison.OrdinalIgnoreCase)) continue;
-            var n = Path.GetFileNameWithoutExtension(f);
+            var n = Names.Stem(f);
             if (!n.StartsWith(stem, StringComparison.OrdinalIgnoreCase) || n.Length - stem.Length > 11) continue;
             if (box != "" && n.StartsWith(box, StringComparison.OrdinalIgnoreCase)) continue;
             r.Add(f);

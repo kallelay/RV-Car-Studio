@@ -105,7 +105,7 @@ public sealed partial class MainWindow
         {
             p.Header("Carbox");
             p.Add(new Border { Child = easyCarbox, BorderBrush = Look.Line, BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 4) });
-            p.Info(() => { ShowCarbox(); easyCarbox.Source = carboxImage.Source; return carboxShown == null ? "No carbox yet" : Path.GetFileName(carboxShown); });
+            p.Info(() => { ShowCarbox(); easyCarbox.Source = carboxImage.Source; return carboxShown == null ? "No carbox yet" : Names.File(carboxShown); });
             p.Button("Carbox maker...", async () => { await OpenCarboxMaker(); p.Refresh(); }, "The car from the angle you like, its name as you want it", true);
             p.Button("Quick carbox", async () => { await MakeCarbox(); p.Refresh(); });
             p.Button("A picture of my own...", async () => { await CarboxFromPicture(); p.Refresh(); });
@@ -127,7 +127,7 @@ public sealed partial class MainWindow
             p.Header("Camber, degrees (RVGL)");
             for (int i = 0; i < 4; i++) { int k = i; p.Num(char.ToUpper(Doc.WheelName(k)[0]) + Doc.WheelName(k)[1..], () => D().Wheels[k].Camber, v => D().Wheels[k].Camber = v, null, -90, 90); }
             p.Header("Skins found");
-            p.Info(() => Doc.Car?.FindSkins() is { Count: > 1 } s ? string.Join(", ", s.Select(Path.GetFileNameWithoutExtension)) : "No other skins");
+            p.Info(() => Doc.Car?.FindSkins() is { Count: > 1 } s ? string.Join(", ", s.Select(Names.Stem)) : "No other skins");
         }));
         Mode("Readme", Own("Readme", p =>
         {

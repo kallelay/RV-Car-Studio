@@ -104,8 +104,8 @@ public static partial class AutoScenario
             Check(!string.IsNullOrEmpty(dd.TShadow) && game.Find(dd.TShadow) != null, "shadow file: " + dd.TShadow);
             Check(!string.IsNullOrEmpty(dd.TCarBox) && game.Find(dd.TCarBox) != null, "carbox file: " + dd.TCarBox);
             var used = new HashSet<string>(dd.Models.Concat(new[] { dd.TPage, dd.Coll, dd.TShadow, dd.TCarBox })
-                .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => Path.GetFileName(x.Trim())), StringComparer.OrdinalIgnoreCase);
-            var spare = Directory.GetFiles(d.Car!.Dir).Select(Path.GetFileName)
+                .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => Names.File(x.Trim())), StringComparer.OrdinalIgnoreCase);
+            var spare = Directory.GetFiles(d.Car!.Dir).Select(Names.File)
                 .Where(f => f!.EndsWith(".prm", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".hul", StringComparison.OrdinalIgnoreCase)
                     || (f.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase) && !used.Contains(f))).Where(f => !used.Contains(f!)).ToList();
             Check(spare.Count == 0, "no files left from the base car: " + string.Join(", ", spare));

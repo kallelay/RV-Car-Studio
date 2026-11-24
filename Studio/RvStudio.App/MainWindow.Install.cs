@@ -56,7 +56,7 @@ public sealed partial class MainWindow
     {
         var game = Doc.Game;
         if (game == null) { Say("Open your Re-Volt folder first"); return; }
-        Say("Looking into " + Path.GetFileName(path) + "...");
+        Say("Looking into " + Names.File(path) + "...");
         InstallPlan plan;
         try { plan = await Task.Run(() => CarInstaller.Inspect(game, path)); }
         catch (Exception ex) { Say("Can't read it: " + ex.Message); return; }

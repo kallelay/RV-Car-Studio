@@ -84,11 +84,11 @@ public static class Readme
         if (c.Game.Find(d.TPage) is { } tex)
         {
             var size = ImageSize(tex);
-            Field(o, "Texture", Path.GetFileName(tex) + (size != null ? $", {size.Value.W} x {size.Value.H}" : "") + (size is { W: > 256 } ? " (RVGL only)" : ""));
+            Field(o, "Texture", Names.File(tex) + (size != null ? $", {size.Value.W} x {size.Value.H}" : "") + (size is { W: > 256 } ? " (RVGL only)" : ""));
         }
         // RVGL's skins: the texture's name, a dash and the skin's (car-alt1.bmp next to car.bmp)
-        var texBase = Path.GetFileNameWithoutExtension(d.TPage.Trim().Replace('\\', '/').Split('/').Last());
-        var skins = texBase == "" ? new List<string>() : files.Select(f => Path.GetFileName(f.Key))
+        var texBase = Names.Stem(d.TPage.Trim().Replace('\\', '/').Split('/').Last());
+        var skins = texBase == "" ? new List<string>() : files.Select(f => Names.File(f.Key))
             .Where(f => f.StartsWith(texBase + "-", StringComparison.OrdinalIgnoreCase) && f.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase)).ToList();
         if (skins.Count > 0) Field(o, "Skins", string.Join(", ", skins));
         var extras = new List<string>();

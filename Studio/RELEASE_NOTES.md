@@ -2,8 +2,14 @@ RV Car Studio 3 is a new car editor for Re-Volt / RVGL, written again from the s
 
 ## Download
 
-- **`RvCarStudio-3.0.0-win-x64.zip`**: for 64-bit Windows. Unzip it anywhere and run `RvCarStudio.exe`. Nothing to install.
-- `RvCarStudio-3.0.0-source.zip`: the source it was built from. `SHA256SUMS.txt`: checksums of both.
+- **Windows (64-bit): `RvCarStudio-3.0.1-win-x64.zip`**. Unzip it anywhere and run `RvCarStudio.exe`. Nothing to install.
+- **Linux (64-bit): `RvCarStudio-3.0.1-linux-x64.tar.gz`**. `tar -xzf` it and run `./RvCarStudio`. Tested on Ubuntu 24.04.
+- `RvCarStudio-3.0.1-source.zip`: the source they were built from. `SHA256SUMS.txt`: checksums.
+
+## New in 3.0.1
+
+- A Linux version. File names with the game's backslashes are read right there, so installing cars and exporting .obj work too.
+- Full documentation with pictures, in the download: Help > Documentation.
 
 It asks for your RVGL folder the first time. Your own folder's `cars` are used; the game's own files are never overwritten: changes to a stock car go to `packs\local`.
 
@@ -22,7 +28,9 @@ It asks for your RVGL folder the first time. Your own folder's `cars` are used; 
 
 ## Good to know
 
-- Windows only for now. It isn't signed, so Windows may ask before it runs the first time.
+- It isn't signed, so Windows may ask before it runs the first time.
+- On Linux, Test run starts RVGL but you pick the car and the track yourself, and gamepads don't work in Drive here. The carbox name uses another heavy font when Impact isn't installed.
+- macOS: it builds from source, but hasn't been tested on a Mac.
 - The hull's fit is a good start, not a replacement for a test race: Test run (F5) is the final check.
 
 GPL v3. Re-Volt is the property of its owners; RVGL is the work of the RVGL team. No game data is included.

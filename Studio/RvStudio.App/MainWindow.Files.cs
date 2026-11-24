@@ -30,7 +30,7 @@ public sealed partial class MainWindow
         {
             if (Doc.Car == null) return "";
             var skins = Doc.Car.FindSkins();
-            return skins.Count > 1 ? "Skins: " + string.Join(", ", skins.Select(Path.GetFileNameWithoutExtension)) : "No other skins";
+            return skins.Count > 1 ? "Skins: " + string.Join(", ", skins.Select(Names.Stem)) : "No other skins";
         });
         p.TextWithButton("Hull", () => D().Coll, v => { D().Coll = v; Doc.LoadHull(); }, "Pick",
             async () => await PickInto("Collision hull", new[] { "*.hul" }, null, (a, b) => File.Copy(a, b, true), rel => { D().Coll = rel; Doc.LoadHull(); }, FileChecks.Hull),
@@ -82,7 +82,7 @@ public sealed partial class MainWindow
                 .OrderBy(f => f.Key, StringComparer.OrdinalIgnoreCase).ToList();
             string Size(string f) { try { var n = new FileInfo(f).Length; return n >= 1024 ? $"{n / 1024.0:0} KB" : $"{n} B"; } catch (Exception) { return "?"; } }
             string Where(string f) => f.Contains(Path.Combine("packs", "local"), StringComparison.OrdinalIgnoreCase) ? "  (your change)" : "";
-            return string.Join(Environment.NewLine, files.Select(f => Path.GetFileName(f.Key) + "   " + Size(f.Value) + Where(f.Value)));
+            return string.Join(Environment.NewLine, files.Select(f => Names.File(f.Key) + "   " + Size(f.Value) + Where(f.Value)));
         });
 
         p.Header("parameters.txt, as text");
@@ -142,7 +142,7 @@ public sealed partial class MainWindow
             if (c.Game.RelOf(path) is { } inGame && Path.GetExtension(path).Equals(Path.GetExtension(name ?? path), StringComparison.OrdinalIgnoreCase)) rel = inGame;
             else
             {
-                var file = name ?? Path.GetFileName(path);
+                var file = name ?? Names.File(path);
                 rel = "cars\\" + c.Folder + "\\" + file;
                 var target = c.Game.WritePath(rel);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -154,7 +154,7 @@ public sealed partial class MainWindow
             filesPage.Refresh();
             Say(what + ": " + rel);
         }
-        catch (Exception ex) { Say("Couldn't use " + Path.GetFileName(path) + ": " + ex.Message); }
+        catch (Exception ex) { Say("Couldn't use " + Names.File(path) + ": " + ex.Message); }
     }
 
     async Task PickShadow() =>
@@ -240,7 +240,7 @@ public sealed partial class MainWindow
         if (files.FirstOrDefault()?.TryGetLocalPath() is not { } path) return;
         if (FileChecks.Picture(path) is { } why) { await Dialogs.Ask(this, "Carbox not changed:" + Environment.NewLine + why, "OK"); return; }
         using var pic = Images.Load(path);
-        if (pic == null) { Say("That isn't a picture: " + Path.GetFileName(path)); return; }
+        if (pic == null) { Say("That isn't a picture: " + Names.File(path)); return; }
         using var box = new SKBitmap(256, 256, SKColorType.Bgra8888, SKAlphaType.Opaque);
         using (var cv = new SKCanvas(box))
         {
@@ -287,7 +287,7 @@ public sealed partial class MainWindow
         p.Header("Carbox");
         p.Note("The car's picture on the selection screen.");
         p.Add(new Border { Child = carboxImage, BorderBrush = Look.Line, BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 4) });
-        p.Info(() => { ShowCarbox(); return carboxShown == null ? "No carbox yet" : Path.GetFileName(carboxShown); });
+        p.Info(() => { ShowCarbox(); return carboxShown == null ? "No carbox yet" : Names.File(carboxShown); });
         p.Button("Carbox maker...", async () => await OpenCarboxMaker(), "The car from the angle you like, your background, its name as you want it, seen as you change it", true);
         p.Button("Quick carbox", async () => await MakeCarbox(), "In one click: the car from the front left, its name above, on white");
         p.Button("A picture of my own...", async () => await CarboxFromPicture(), "Any picture, fitted into the square");
